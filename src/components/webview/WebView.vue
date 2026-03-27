@@ -149,8 +149,8 @@ const emit = defineEmits([
 
 const webviewRef = ref(null)
 const isWebviewReady = ref(false)
-let passwordCheckInterval = null
-let loginPageMonitorInterval = null // 登录页面密码监控
+let passwordCaptureInterval = null
+let passwordCaptureStopTimeout = null
 const activeTimeouts = new Set() // 用于跟踪所有活动的定时器
 let hasFavicon = false // 标记是否已通过内置事件获取到 favicon
 const lastSetSrc = ref('') // 记录上次设置的 src，避免重复设置导致刷新（使用 ref 确保每个组件实例独立）
@@ -276,6 +276,24 @@ watch(() => savedPasswords.value, (newVal) => {
     }, 200)
   }
 }, { deep: true, immediate: true })
+
+watch(() => props.isActive, async (active) => {
+  if (!active) {
+    stopPasswordCapturePolling()
+    return
+  }
+  const webview = getWebview()
+  if (!webview) return
+  try {
+    const currentUrl = webview.getURL()
+    if (isLoginLikeUrl(currentUrl)) {
+      setupPasswordSaveListener()
+      startPasswordCapturePolling()
+    }
+  } catch (e) {
+    // ignore
+  }
+})
 
 // 更新导航状态
 const updateNavigationState = () => {
@@ -539,6 +557,59 @@ const getFaviconComplex = async (retryCount = 0) => {
   return null
 }
 
+const isLoginLikeUrl = (url) => {
+  if (!url) return false
+  const lower = url.toLowerCase()
+  return lower.includes('login') ||
+    lower.includes('signin') ||
+    lower.includes('sign_in') ||
+    lower.includes('authenticate')
+}
+
+const stopPasswordCapturePolling = () => {
+  if (passwordCaptureInterval) {
+    clearInterval(passwordCaptureInterval)
+    passwordCaptureInterval = null
+  }
+  if (passwordCaptureStopTimeout) {
+    clearTimeout(passwordCaptureStopTimeout)
+    passwordCaptureStopTimeout = null
+  }
+}
+
+const startPasswordCapturePolling = () => {
+  stopPasswordCapturePolling()
+  passwordCaptureInterval = setInterval(async () => {
+    if (!props.isActive || showPasswordSaveDialog.value) return
+    const webview = getWebview()
+    if (!webview) {
+      stopPasswordCapturePolling()
+      return
+    }
+    try {
+      const result = await webview.executeJavaScript(`
+        (function() {
+          if (window.__passwordToSave) {
+            const data = window.__passwordToSave
+            window.__passwordToSave = null
+            return data
+          }
+          return null
+        })()
+      `)
+      if (result && result.username && result.password && result.domain) {
+        await handlePasswordSaveRequest(result)
+      }
+    } catch (err) {
+      // 页面跳转过程中的执行失败可以忽略
+    }
+  }, 1200)
+
+  passwordCaptureStopTimeout = setTimeout(() => {
+    stopPasswordCapturePolling()
+  }, 45000)
+}
+
 // 设置密码保存监听器
 const setupPasswordSaveListener = () => {
   const webview = getWebview()
@@ -557,14 +628,13 @@ const setupPasswordSaveListener = () => {
   // 静默设置，减少日志输出
   
   try {
-    // 清除旧的定时器
-    if (passwordCheckInterval) {
-      clearInterval(passwordCheckInterval)
-      passwordCheckInterval = null
-    }
-    
     const script = `
       (function() {
+        if (window.__openGitPasswordListenerInjected) {
+          return true
+        }
+        window.__openGitPasswordListenerInjected = true
+
         if (window.__passwordSaveSubmitHandler) {
           document.removeEventListener('submit', window.__passwordSaveSubmitHandler, true)
         }
@@ -769,59 +839,7 @@ const setupPasswordSaveListener = () => {
     const injectScript = () => {
       const currentWebview = getWebview()
       if (currentWebview) {
-        // 注入密码保存监听器脚本
-        currentWebview.executeJavaScript(script).then(() => {
-          // 设置轮询检测（仅在活动标签时运行，频率 2 秒）
-          if (passwordCheckInterval) {
-            clearInterval(passwordCheckInterval)
-          }
-          passwordCheckInterval = setInterval(async () => {
-            // 如果不是活动标签，跳过检测
-            if (!props.isActive) {
-              return
-            }
-            
-            const webview = getWebview()
-            if (!webview) {
-              if (passwordCheckInterval) {
-                clearInterval(passwordCheckInterval)
-                passwordCheckInterval = null
-              }
-              return
-            }
-            try {
-              const result = await webview.executeJavaScript(`
-                (function() {
-                  if (window.__passwordToSave) {
-                    const data = window.__passwordToSave
-                    window.__passwordToSave = null
-                    return data
-                  }
-                  return null
-                })()
-              `)
-              
-              if (result && result.username && result.password && result.domain) {
-                // 防止重复处理
-                if (showPasswordSaveDialog.value) {
-                  return
-                }
-                
-                // 检查是否和上次处理的是同一个请求
-                const requestKey = result.username + '@' + result.domain
-                if (window.__lastPasswordSaveKey === requestKey) {
-                  return // 同一个请求，跳过
-                }
-                window.__lastPasswordSaveKey = requestKey
-                
-                console.log('🔐 轮询检测到密码保存请求:', result.username, '@', result.domain)
-                await handlePasswordSaveRequest(result)
-              }
-            } catch (err) {
-              // 忽略错误
-            }
-          }, 2000) // 降低频率到 2 秒
-        }).catch(err => {
+        currentWebview.executeJavaScript(script).catch(() => {
           // 1秒后重试注入脚本
           const timeout = setTimeout(injectScript, 1000)
           activeTimeouts.add(timeout)
@@ -1042,19 +1060,16 @@ const onLoadStop = (event) => {
       if (currentUrl && currentUrl.startsWith('http')) {
         // 更新 lastPageUrl
         lastPageUrl = currentUrl
-        
-        // 如果是登录页面，设置密码监控（仅在活动标签时）
-        if (props.isActive && (
-            currentUrl.toLowerCase().includes('login') ||
-            currentUrl.toLowerCase().includes('signin') ||
-            currentUrl.toLowerCase().includes('sign_in') ||
-            currentUrl.toLowerCase().includes('authenticate'))) {
-          // 注入密码监控脚本
-          setupLoginPagePasswordMonitor()
-        }
-        
+
         setupPasswordSaveListener()
         checkAndFillPassword()
+        if (props.isActive && isLoginLikeUrl(currentUrl)) {
+          startPasswordCapturePolling()
+        } else {
+          stopPasswordCapturePolling()
+        }
+      } else {
+        stopPasswordCapturePolling()
       }
     } catch (e) {
       // 静默失败
@@ -1062,112 +1077,10 @@ const onLoadStop = (event) => {
   }
 }
 
-// 在登录页面监控密码字段
-const setupLoginPagePasswordMonitor = () => {
-    const webview = getWebview()
-  if (!webview) return
-  
-  // 清理之前的监控
-  if (loginPageMonitorInterval) {
-    clearInterval(loginPageMonitorInterval)
-    loginPageMonitorInterval = null
-  }
-  
-  // 每 3 秒检查一次密码字段（降低频率）
-  loginPageMonitorInterval = setInterval(async () => {
-    // 如果不是活动标签，跳过检测
-    if (!props.isActive) {
-      return
-    }
-    
-    try {
-      const currentWebview = getWebview()
-      if (!currentWebview) {
-        if (loginPageMonitorInterval) {
-          clearInterval(loginPageMonitorInterval)
-          loginPageMonitorInterval = null
-        }
-        return
-      }
-      
-      const currentUrl = currentWebview.getURL()
-      // 如果页面已经离开登录页面，停止监控
-      if (!currentUrl || !(
-        currentUrl.toLowerCase().includes('login') ||
-        currentUrl.toLowerCase().includes('signin') ||
-        currentUrl.toLowerCase().includes('sign_in') ||
-        currentUrl.toLowerCase().includes('authenticate')
-      )) {
-        clearInterval(loginPageMonitorInterval)
-        loginPageMonitorInterval = null
-        return
-      }
-      
-      // 获取密码字段的值
-      const result = await currentWebview.executeJavaScript(`
-        (function() {
-          // Jenkins 特有字段
-          let usernameInput = document.querySelector('input[name="j_username"]')
-          let passwordInput = document.querySelector('input[name="j_password"]')
-          
-          if (!usernameInput || !passwordInput || !usernameInput.value || !passwordInput.value) {
-            // 通用选择器
-            const usernameSelectors = 'input[name="username"], input[type="text"], input[type="email"], input[name*="user" i], input[id*="user" i]'
-            const allUsernameInputs = document.querySelectorAll(usernameSelectors)
-            const allPasswordInputs = document.querySelectorAll('input[type="password"]')
-            
-            for (let input of allUsernameInputs) {
-              if (input.offsetParent !== null && input.value) {
-                usernameInput = input
-                break
-              }
-            }
-            
-            for (let input of allPasswordInputs) {
-              if (input.offsetParent !== null && input.value) {
-                passwordInput = input
-                break
-              }
-            }
-          }
-          
-          if (usernameInput && passwordInput && usernameInput.value && passwordInput.value) {
-            return {
-              username: usernameInput.value.trim(),
-              password: passwordInput.value,
-              domain: window.location.hostname
-            }
-          }
-          return null
-        })()
-      `)
-      
-      if (result && result.username && result.password) {
-        // 保存密码数据，以便在导航时使用
-        lastPagePasswordData = result
-      }
-    } catch (e) {
-      // 页面可能已跳转，停止监控
-      if (loginPageMonitorInterval) {
-        clearInterval(loginPageMonitorInterval)
-        loginPageMonitorInterval = null
-      }
-    }
-  }, 3000) // 降低频率到 3 秒
-  
-  // 60秒后自动停止监控
-  const stopTimeout = setTimeout(() => {
-    if (loginPageMonitorInterval) {
-      clearInterval(loginPageMonitorInterval)
-      loginPageMonitorInterval = null
-    }
-  }, 60000)
-  activeTimeouts.add(stopTimeout)
-}
-
 // 在导航发生前检查密码（will-navigate 事件）- 自动保存，不需要用户确认
 const onWillNavigate = async (event) => {
   console.log('🔐 will-navigate: 页面即将导航到:', event.url)
+  stopPasswordCapturePolling()
   
   // 检查是否从登录页面跳转（URL 变化）
     const webview = getWebview()
@@ -1263,49 +1176,10 @@ const onWillNavigate = async (event) => {
 
 // 记录上一个页面的 URL 和密码数据（用于页面跳转时自动保存）
 let lastPageUrl = ''
-let lastPagePasswordData = null
 
 const onNavigate = async (event) => {
   emit('did-navigate', event, props.tabId)
   updateNavigationState()
-  
-  // 检查上一个页面是否是登录页面，且有保存的密码数据
-  // 这种情况是弹框无法显示的备用方案，自动保存
-  if (lastPageUrl && lastPagePasswordData && (
-    lastPageUrl.toLowerCase().includes('login') ||
-    lastPageUrl.toLowerCase().includes('signin') ||
-    lastPageUrl.toLowerCase().includes('sign_in') ||
-    lastPageUrl.toLowerCase().includes('authenticate')
-  )) {
-    console.log('🔐 did-navigate: 从登录页面跳转，检测到待保存密码')
-    
-    // 检查是否和之前填充的相同
-    if (!(filledPassword.value && 
-          filledPassword.value.username === lastPagePasswordData.username &&
-          filledPassword.value.password === lastPagePasswordData.password &&
-          filledPassword.value.domain === lastPagePasswordData.domain)) {
-      
-      // 检查是否已存在相同的密码
-      const existing = findPassword(lastPagePasswordData.domain, lastPagePasswordData.username)
-      if (!(existing && existing.password === lastPagePasswordData.password)) {
-        // 自动保存密码（弹框无法显示的备用方案）
-        console.log('🔐 自动保存密码（备用方案）:', lastPagePasswordData.username, '@', lastPagePasswordData.domain)
-        try {
-          const saveResult = await savePassword(
-            lastPagePasswordData.username, 
-            lastPagePasswordData.password, 
-            lastPagePasswordData.domain
-          )
-          if (saveResult.success) {
-            console.log('✅ 密码已自动保存')
-          }
-        } catch (saveErr) {
-          console.error('❌ 保存密码异常:', saveErr)
-        }
-      }
-    }
-    lastPagePasswordData = null
-  }
   
   // 更新上一个页面 URL
   lastPageUrl = event.url
@@ -1449,17 +1323,7 @@ onUnmounted(() => {
   // 标记组件已卸载
   isUnmounted = true
   
-  // 清理密码检查定时器
-  if (passwordCheckInterval) {
-    clearInterval(passwordCheckInterval)
-    passwordCheckInterval = null
-  }
-  
-  // 清理登录页面密码监控
-  if (loginPageMonitorInterval) {
-    clearInterval(loginPageMonitorInterval)
-    loginPageMonitorInterval = null
-  }
+  stopPasswordCapturePolling()
   
   // 清理所有活动的 setTimeout
   activeTimeouts.forEach(timeout => {
@@ -1611,4 +1475,3 @@ const cancelSavePassword = () => {
   margin: 4px 0;
 }
 </style>
-

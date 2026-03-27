@@ -127,6 +127,7 @@
       <div class="toolbar-center">
           <div class="url-input-wrapper">
           <input 
+          ref="urlInputRef"
           v-model="urlInput" 
           @input="onUrlInputChange"
           @keydown="onUrlInputKeydown"
@@ -217,11 +218,21 @@
             </div>
               </Teleport>
                   </div>
-                      </div>
-                    </div>
+      </div>
+    </div>
+    <div v-if="loadingProgressVisible" class="loading-progress-track">
+      <div class="loading-progress-bar" :style="{ width: `${loadingProgress}%` }"></div>
+    </div>
                     
     <!-- 主内容区域 -->
     <div class="browser-content">
+      <div v-if="activeTabLoadError" class="browser-error-banner">
+        <div class="error-main">
+          <span class="error-title">页面加载失败</span>
+          <span class="error-detail">{{ activeTabLoadError.errorDescription || '未知错误' }} ({{ activeTabLoadError.errorCode }})</span>
+        </div>
+        <button class="error-retry-btn" @click="retryActiveTabLoad">重试</button>
+      </div>
       <!-- 网页内容 -->
       <div class="browser-main" v-if="isBrowserReady">
         <!-- 所有标签页 - 每个 NewTabPage 自己控制显示/隐藏 -->
@@ -485,6 +496,76 @@ const getTabRouteType = (tab) => {
 // 状态（当前活动标签页的）
 const currentUrl = ref('')
 const urlInput = ref('') // 输入框的值，与 currentUrl 分离
+const urlInputRef = ref(null)
+const loadingProgress = ref(0)
+const loadingProgressVisible = ref(false)
+let loadingProgressTimer = null
+let loadingProgressHideTimer = null
+
+const clearLoadingProgressTimers = () => {
+  if (loadingProgressTimer) {
+    clearInterval(loadingProgressTimer)
+    loadingProgressTimer = null
+  }
+  if (loadingProgressHideTimer) {
+    clearTimeout(loadingProgressHideTimer)
+    loadingProgressHideTimer = null
+  }
+}
+
+const startLoadingProgress = () => {
+  clearLoadingProgressTimers()
+  loadingProgressVisible.value = true
+  loadingProgress.value = Math.max(loadingProgress.value, 8)
+
+  loadingProgressTimer = setInterval(() => {
+    if (loadingProgress.value >= 85) return
+    const remain = 85 - loadingProgress.value
+    const step = Math.max(1, Math.round(remain * 0.18))
+    loadingProgress.value = Math.min(85, loadingProgress.value + step)
+  }, 120)
+}
+
+const finishLoadingProgress = () => {
+  clearLoadingProgressTimers()
+  loadingProgressVisible.value = true
+  loadingProgress.value = 100
+  loadingProgressHideTimer = setTimeout(() => {
+    loadingProgressVisible.value = false
+    loadingProgress.value = 0
+    loadingProgressHideTimer = null
+  }, 220)
+}
+
+const syncLoadingProgressWithActiveTab = () => {
+  if (currentTab.value?.routeType === 'webview' && currentTab.value.isLoading) {
+    startLoadingProgress()
+  } else {
+    clearLoadingProgressTimers()
+    loadingProgressVisible.value = false
+    loadingProgress.value = 0
+  }
+}
+
+const clearTabLoadError = (tab) => {
+  if (!tab) return
+  tab.loadError = null
+}
+
+const activeTabLoadError = computed(() => currentTab.value?.loadError || null)
+
+const retryActiveTabLoad = () => {
+  if (!currentTab.value) return
+  clearTabLoadError(currentTab.value)
+  if (currentTab.value.routeType === 'webview') {
+    const webview = getCurrentWebview()
+    if (webview && typeof webview.reload === 'function') {
+      webview.reload()
+      return
+    }
+  }
+  refresh()
+}
 
 // 监听标签页切换，同步状态（不重新加载 webview）
 watch(() => activeBrowserTabId.value, (newTabId, oldTabId) => {
@@ -530,6 +611,7 @@ watch(() => activeBrowserTabId.value, (newTabId, oldTabId) => {
   
   // 更新导航状态
   updateNavigationState()
+  syncLoadingProgressWithActiveTab()
 }, { immediate: true })
 // 当前活动标签页的状态（从 currentTab 同步）
 const canGoBack = computed(() => {
@@ -938,6 +1020,17 @@ const onUrlInputKeydown = (event) => {
     return
   }
 
+  if (event.key === 'Enter' && event.altKey) {
+    event.preventDefault()
+    const targetUrl = normalizeUrl(urlInput.value.trim())
+    if (targetUrl) {
+      showSuggestions.value = false
+      userSelectedSuggestion.value = false
+      openNewTab(targetUrl)
+    }
+    return
+  }
+
   if (!showSuggestions.value || allSuggestions.value.length === 0) {
     // 如果没有显示提示，正常处理 Enter
     if (event.key === 'Enter') {
@@ -1057,23 +1150,42 @@ const getWebViewSrc = (tab) => {
 }
 
 // 方法
-const normalizeUrl = (url) => {
-  if (!url) return ''
-  url = url.trim()
-  if (!url) return ''
+const buildSearchUrl = (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`
 
-  // 如果已经是完整 URL，直接返回
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url
+const isLikelyUrlInput = (raw) => {
+  if (!raw) return false
+  const value = raw.trim()
+  if (!value || /\s/.test(value)) return false
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(value)) return true
+  if (value.startsWith('about:') || value.startsWith('git:')) return true
+  if (value.startsWith('localhost') || value.startsWith('127.0.0.1') || value.startsWith('[::1]')) return true
+  if (/^\d{1,3}(\.\d{1,3}){3}(:\d+)?(\/.*)?$/.test(value)) return true
+  return value.includes('.')
+}
+
+const normalizeUrl = (url, options = {}) => {
+  const { allowSearch = true } = options
+  if (!url) return ''
+  const value = url.trim()
+  if (!value) return ''
+
+  if (value.startsWith('about:') || value.startsWith('git:')) {
+    return value
   }
 
-  // 如果是特殊页面（about: 或 git:）
-  if (url.startsWith('about:') || url.startsWith('git:')) {
-    return url
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(value)) {
+    return value
   }
 
-  // 否则添加 https://
-  return `https://${url}`
+  if (allowSearch && !isLikelyUrlInput(value)) {
+    return buildSearchUrl(value)
+  }
+
+  if (value.startsWith('localhost') || value.startsWith('127.0.0.1') || value.startsWith('[::1]')) {
+    return `http://${value}`
+  }
+
+  return `https://${value}`
 }
 
 /**
@@ -1128,6 +1240,7 @@ const openInCurrentTab = async (url, tabId) => {
     console.log('⚠️ 找不到标签页:', tabId)
     return
   }
+  clearTabLoadError(tab)
   
   // 解析 URL 获取路由信息
   const route = parseRoute(url)
@@ -1331,6 +1444,9 @@ const navigateToUrlForTab = async (tab, url) => {
   }
   
   // 更新标签页状态
+  clearTabLoadError(tab)
+  if (!tab.forwardHistory) tab.forwardHistory = []
+  tab.forwardHistory = []
   tab.url = route.url
   tab.isLoading = true
   
@@ -1427,12 +1543,17 @@ const handleUrlInputEnter = async () => {
 // 导航到 URL（使用当前标签页）
 const goBack = async () => {
   if (!currentTab.value) return
+  clearTabLoadError(currentTab.value)
   
   // 如果当前是新标签页，从历史记录返回
   if (currentTab.value.routeType === 'new-tab') {
     if (currentTab.value.history && currentTab.value.history.length > 0) {
       const previousUrl = currentTab.value.history.pop()
       console.log('🔄 从新标签页历史记录返回:', previousUrl)
+      if (!currentTab.value.forwardHistory) currentTab.value.forwardHistory = []
+      if (currentTab.value.url) {
+        currentTab.value.forwardHistory.push(currentTab.value.url)
+      }
       
       // 导航到之前的页面
       await navigateToUrl(previousUrl, { forceCurrentTab: true })
@@ -1460,6 +1581,10 @@ const goBack = async () => {
   if (currentTab.value.history && currentTab.value.history.length > 0) {
     const previousUrl = currentTab.value.history.pop()
     console.log('🔄 从标签页历史记录返回:', previousUrl)
+    if (!currentTab.value.forwardHistory) currentTab.value.forwardHistory = []
+    if (currentTab.value.url) {
+      currentTab.value.forwardHistory.push(currentTab.value.url)
+    }
     
     // 导航到之前的页面
     await navigateToUrl(previousUrl, { forceCurrentTab: true })
@@ -1474,14 +1599,25 @@ const goBack = async () => {
                   goHome()
                 }
 
-const goForward = () => {
+const goForward = async () => {
+  if (!currentTab.value) return
+  clearTabLoadError(currentTab.value)
   const webview = getCurrentWebview()
   if (webview && canGoForward.value) {
     try {
       webview.goForward()
-              } catch (e) {
+      return
+    } catch (e) {
       console.warn('goForward 失败:', e)
     }
+  }
+  if (currentTab.value.forwardHistory && currentTab.value.forwardHistory.length > 0) {
+    const nextUrl = currentTab.value.forwardHistory.pop()
+    if (!currentTab.value.history) currentTab.value.history = []
+    if (currentTab.value.url) {
+      currentTab.value.history.push(currentTab.value.url)
+    }
+    await navigateToUrl(nextUrl, { forceCurrentTab: true })
   }
 }
 
@@ -1497,6 +1633,7 @@ const refresh = () => {
     console.log('⚠️ 找不到当前标签页，无法刷新')
     return
   }
+  clearTabLoadError(currentTab)
   
   console.log('🔄 刷新当前标签页:', currentTab.routeType || 'webview', currentTab.id)
   
@@ -1528,7 +1665,10 @@ const refresh = () => {
     webview.reload()
       console.log('✅ 网页刷新完成')
       } else {
-        console.log('⚠️ 无法获取 webview 实例，无法刷新')
+        console.log('⚠️ 无法获取 webview 实例，尝试重新导航当前 URL')
+        if (currentTab.url) {
+          navigateToUrlForTab(currentTab, currentTab.url)
+        }
     }
   } else {
     console.log('⚠️ 未知的标签类型，无法刷新:', currentTab.type)
@@ -1575,13 +1715,19 @@ const goHome = async () => {
   currentTab.value.title = '新标签页'
   currentTab.value.routeType = 'new-tab'
   currentTab.value.routeConfig = routeConfig['new-tab'] || { showWebview: false }
+  currentTab.value.routeProps = {}
+  currentTab.value.isLoading = false
   currentTab.value.webviewSrc = 'about:blank'
   currentTab.value.initialUrl = ''
   currentTab.value.canGoBack = currentTab.value.history && currentTab.value.history.length > 0
   currentTab.value.canGoForward = false
+  currentTab.value.forwardHistory = []
+  clearTabLoadError(currentTab.value)
   
   currentUrl.value = ''
   urlInput.value = ''
+  showSuggestions.value = false
+  syncLoadingProgressWithActiveTab()
 }
 
 // 处理 GitProject 组件的 navigate 事件
@@ -1609,10 +1755,11 @@ const onLoadStart = (event, tabId) => {
   const tab = browserTabs.value.find(t => t.id === tabId)
   if (tab) {
     tab.isLoading = true
+    clearTabLoadError(tab)
   }
   // 如果是当前标签页，更新 UI
   if (tabId === activeBrowserTabId.value) {
-    // computed 会自动从 currentTab 同步
+    startLoadingProgress()
   }
 }
 
@@ -1623,6 +1770,7 @@ const onLoadStop = async (event, tabId) => {
   }
   // 如果是当前标签页，更新导航状态
   if (tabId === activeBrowserTabId.value) {
+    finishLoadingProgress()
     updateNavigationState()
   }
 }
@@ -1630,6 +1778,7 @@ const onLoadStop = async (event, tabId) => {
 const onNavigate = (event, tabId) => {
   const tab = browserTabs.value.find(t => t.id === tabId)
   if (!tab) return
+  clearTabLoadError(tab)
   
   // 检查是否是重复的导航事件（同一个 URL）
   if (tab.url === event.url) {
@@ -1690,6 +1839,7 @@ const onNavigate = (event, tabId) => {
 const onNavigateInPage = (event, tabId) => {
   const tab = browserTabs.value.find(t => t.id === tabId)
   if (!tab) return
+  clearTabLoadError(tab)
   
   // 更新标签页的 URL（不更新 webviewSrc，避免触发 Vue 响应式更新导致重新加载）
   tab.url = event.url
@@ -1820,6 +1970,18 @@ const onLoadFail = (event, tabId) => {
   const tab = browserTabs.value.find(t => t.id === tabId)
   if (tab) {
     tab.isLoading = false
+    const isMainFrame = event?.isMainFrame !== false
+    const isAbort = Number(event?.errorCode) === -3
+    if (isMainFrame && !isAbort) {
+      tab.loadError = {
+        errorCode: event?.errorCode ?? 'unknown',
+        errorDescription: event?.errorDescription || '页面加载失败',
+        validatedURL: event?.validatedURL || tab.url || ''
+      }
+    }
+  }
+  if (tabId === activeBrowserTabId.value) {
+    finishLoadingProgress()
   }
   console.error('❌ 页面加载失败:', {
     tabId,
@@ -1972,7 +2134,9 @@ const createBrowserTab = (url = '', title = '') => {
     routeConfig: route.config,
     routeProps: route.props || {},
     history: [], // 历史记录（用于返回功能）
-    needsSaveHistory: shouldSaveHistory // 是否需要保存到浏览历史
+    forwardHistory: [], // 前进栈（用于返回后前进）
+    needsSaveHistory: shouldSaveHistory, // 是否需要保存到浏览历史
+    loadError: null
   }
   
   browserTabs.value.push(tab)
@@ -2010,6 +2174,8 @@ const updateTabRoute = (tab, newUrl) => {
   tab.routeConfig = route.config
   tab.routeProps = route.props || {}
   tab.url = route.url
+  clearTabLoadError(tab)
+  tab.forwardHistory = []
   
   // 更新标题（处理函数类型的 title）
   if (route.title) {
@@ -2317,6 +2483,7 @@ const switchBrowserTab = async (tabId) => {
   activeBrowserTabId.value = tabId
   // 等待下一个 tick，确保组件更新完成
   await nextTick()
+  syncLoadingProgressWithActiveTab()
   
   // 状态会通过 watch 自动同步（watch 中也不会触发重新加载）
 }
@@ -2418,7 +2585,10 @@ const createNewBrowserTab = async () => {
     pendingUrl: '', // pendingUrl 也为空
     routeType: 'new-tab', // 特殊类型：新标签页，显示首页内容
     routeConfig: { showWebview: false }, // 新标签页不显示 webview
-    routeProps: {}
+    routeProps: {},
+    history: [],
+    forwardHistory: [],
+    loadError: null
   }
   
   console.log('🆕 创建新标签页:', { id: newTab.id, routeType: newTab.routeType })
@@ -2820,8 +2990,20 @@ onMounted(async () => {
     
     // 监听 Command+R 快捷键
     const handleKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'l') {
+        event.preventDefault()
+        event.stopPropagation()
+        nextTick(() => {
+          const input = urlInputRef.value || document.querySelector('.url-input')
+          if (input) {
+            input.focus()
+            input.select()
+          }
+        })
+        return
+      }
       // 检查是否是 Command+R (Mac) 或 Ctrl+R (Windows/Linux)
-      if ((event.metaKey || event.ctrlKey) && event.key === 'r') {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
         event.preventDefault() // 阻止默认刷新行为
         event.stopPropagation() // 阻止事件冒泡
         
@@ -2832,6 +3014,25 @@ onMounted(async () => {
         } else {
           console.log('⚠️ 没有活动标签页，忽略 Command+R')
         }
+      }
+      if ((event.metaKey && event.key === '[') || (event.altKey && event.key === 'ArrowLeft')) {
+        event.preventDefault()
+        goBack()
+        return
+      }
+      if ((event.metaKey && event.key === ']') || (event.altKey && event.key === 'ArrowRight')) {
+        event.preventDefault()
+        goForward()
+        return
+      }
+      if (event.key === 'F5') {
+        event.preventDefault()
+        refresh()
+        return
+      }
+      if (event.altKey && event.key === 'Home') {
+        event.preventDefault()
+        goHome()
       }
     }
     
@@ -2917,6 +3118,7 @@ onMounted(async () => {
 
 // 组件卸载时保存标签页
 onUnmounted(() => {
+  clearLoadingProgressTimers()
   // 移除 Command+R 快捷键监听器
   if (window.__browserKeyDownHandler) {
     window.removeEventListener('keydown', window.__browserKeyDownHandler)
@@ -3261,6 +3463,20 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   z-index: 5; /* 确保在拖拽区域上方 */
 }
 
+.loading-progress-track {
+  height: 2px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.loading-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #4f8cff 0%, #57d3ff 100%);
+  transition: width 0.14s ease-out;
+}
+
 .toolbar-left,
 .toolbar-right {
   display: flex;
@@ -3493,6 +3709,59 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
+}
+
+.browser-error-banner {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(111, 29, 29, 0.92);
+  border: 1px solid rgba(255, 130, 130, 0.35);
+  color: #ffd7d7;
+}
+
+.error-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.error-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.error-detail {
+  font-size: 11px;
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.error-retry-btn {
+  border: 1px solid rgba(255, 199, 199, 0.4);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.error-retry-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 
@@ -3656,4 +3925,3 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 </style>
-
