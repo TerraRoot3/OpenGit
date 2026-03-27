@@ -1,0 +1,164 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.allow_failure }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            build_args: --mac --arm64 --x64
+            artifact_name: release-macos
+            allow_failure: false
+          - os: windows-latest
+            build_args: --win zip
+            artifact_name: release-windows
+            allow_failure: true
+          - os: ubuntu-latest
+            build_args: --linux AppImage
+            artifact_name: release-linux
+            allow_failure: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync package version from tag
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME:-}"
+          VERSION="${TAG#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$TAG" ]; then
+            echo "Invalid tag: $TAG"
+            exit 1
+          fi
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          echo "Build version set to:"
+          node -p "require('./package.json').version"
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Build Electron app (mac prepackaged dir)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: npx electron-builder --mac --arm64 --x64 --dir --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Ad-hoc sign mac app bundles
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          APP_NAME="$(node -p "require('./package.json').build?.productName || 'OpenGit'")"
+          APPS=(dist-electron/mac*/"${APP_NAME}.app")
+          if [ ${#APPS[@]} -eq 0 ]; then
+            APPS=(dist-electron/mac*/*.app)
+          fi
+          if [ ${#APPS[@]} -eq 0 ]; then
+            echo "No app bundles found in dist-electron/mac*"
+            ls -la dist-electron || true
+            exit 1
+          fi
+          echo "Found app bundles:"
+          printf ' - %s\n' "${APPS[@]}"
+          for APP in "${APPS[@]}"; do
+            echo "Ad-hoc signing: $APP"
+            xattr -cr "$APP" 2>/dev/null || true
+            codesign --force --deep --sign - "$APP"
+            codesign --verify --deep --verbose=2 "$APP"
+          done
+
+      - name: Repackage signed mac artifacts
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          rm -f dist-electron/*.dmg dist-electron/*-mac.zip dist-electron/*.blockmap dist-electron/latest*.yml 2>/dev/null || true
+          BUILT_ANY=0
+          if [ -d "dist-electron/mac-arm64" ]; then
+            npx electron-builder --mac --arm64 --prepackaged="dist-electron/mac-arm64" --publish never
+            BUILT_ANY=1
+          else
+            echo "Skip arm64 repackage: dist-electron/mac-arm64 not found"
+          fi
+          if [ -d "dist-electron/mac" ]; then
+            npx electron-builder --mac --x64 --prepackaged="dist-electron/mac" --publish never
+            BUILT_ANY=1
+          else
+            echo "Skip x64 repackage: dist-electron/mac not found"
+          fi
+          if [ "$BUILT_ANY" -ne 1 ]; then
+            echo "No prepackaged mac directories found"
+            ls -la dist-electron || true
+            exit 1
+          fi
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Build Electron app (no publish)
+        if: runner.os != 'macOS'
+        run: npx electron-builder ${{ matrix.build_args }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            dist-electron/*.dmg
+            dist-electron/*.zip
+            dist-electron/*.exe
+            dist-electron/*.AppImage
+            dist-electron/*.deb
+            dist-electron/*.blockmap
+            dist-electron/latest*.yml
+          if-no-files-found: ignore
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create GitHub release (auto notes)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

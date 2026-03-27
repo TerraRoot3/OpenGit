@@ -1,0 +1,739 @@
+<template>
+  <div class="terminal-container" ref="containerRef">
+    <div class="terminal-header">
+      <div class="terminal-tabs">
+        <div
+          v-for="term in terminals"
+          :key="term.termId"
+          class="terminal-tab"
+          :class="{ active: term.termId === activeTermId }"
+          @click="switchTerminal(term.termId)"
+        >
+          <TerminalIcon :size="12" />
+          <span class="tab-label">{{ term.label }}</span>
+          <button
+            v-if="terminals.length > 1"
+            class="tab-close-btn"
+            @mousedown.prevent.stop
+            @click.stop="closeTerminal(term.termId)"
+          >
+            <X :size="10" />
+          </button>
+        </div>
+        <button class="terminal-btn add-btn" @mousedown.prevent @click="handleAddTerminal" title="新建终端">
+          <Plus :size="14" />
+        </button>
+        <!-- 多根目录时显示"在目录中打开"下拉 -->
+        <div v-if="props.workspaceRoots.length > 1" class="terminal-cwd-picker" ref="cwdMenuRef">
+          <button class="terminal-btn" @mousedown.prevent @click="showCwdMenu = !showCwdMenu" title="在目录中打开终端">
+            <FolderOpen :size="13" />
+          </button>
+          <div v-if="showCwdMenu" class="cwd-dropdown">
+            <div
+              v-for="root in props.workspaceRoots"
+              :key="root.path"
+              class="cwd-item"
+              @click="addTerminalInDir(root.path, root.name)"
+            >
+              <span>{{ root.name }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="terminal-actions">
+        <span class="terminal-path" :title="currentCwd">{{ pathDisplay }}</span>
+        <button class="terminal-btn" @mousedown.prevent @click="clearTerminal" title="清屏">
+          <Eraser :size="14" />
+        </button>
+        <button class="terminal-btn" @mousedown.prevent @click="restartTerminal" title="重启终端">
+          <RefreshCw :size="14" />
+        </button>
+      </div>
+    </div>
+    <div class="terminal-body" ref="terminalBodyRef"></div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
+import { Terminal as TerminalIcon, Eraser, RefreshCw, Plus, X, FolderOpen } from 'lucide-vue-next'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
+import { useTerminalRouter } from '../../composables/useTerminalRouter'
+import '@xterm/xterm/css/xterm.css'
+
+const props = defineProps({
+  defaultCwd: { type: String, default: '' },
+  isActive: { type: Boolean, default: true },
+  workspaceRoots: { type: Array, default: () => [] },
+  /** 独立终端页（about:terminal）无项目路径时仍自动建第一个会话，cwd 由主进程回退到用户目录 */
+  allowFirstTerminalWithoutCwd: { type: Boolean, default: false }
+})
+
+const containerRef = ref(null)
+const terminalBodyRef = ref(null)
+const terminals = ref([])
+const activeTermId = ref(null)
+const terminalCache = new Map()
+const showCwdMenu = ref(false)
+const cwdMenuRef = ref(null)
+let ensureDefaultPromise = null
+const handleDocumentClick = (event) => {
+  if (cwdMenuRef.value && !cwdMenuRef.value.contains(event.target)) {
+    showCwdMenu.value = false
+  }
+}
+
+const { register, unregister } = useTerminalRouter()
+
+function normalizeIncomingPath(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return ''
+  let s = raw.trim()
+  try {
+    s = decodeURIComponent(s)
+  } catch {
+    /* 保持 s */
+  }
+  // 与主进程一致：file URL → 本地路径（否则 path 传到主进程后 isAbsolute 为 false）
+  if (/^file:\/\//i.test(s)) {
+    try {
+      s = new URL(s).pathname
+      if (s.startsWith('/') && /^\/[A-Za-z]:/.test(s)) {
+        s = s.slice(1)
+      }
+    } catch {
+      return raw.trim()
+    }
+  }
+  return s
+}
+
+/** 项目根目录快照：与 props 同步，不依赖 terminals[0] 是否已创建/是否已拿到 resolvedCwd（避免连点第二个终端时 cwd 为空） */
+const projectRootRef = ref('')
+watch(
+  () => props.defaultCwd,
+  (v) => {
+    projectRootRef.value = normalizeIncomingPath(v || '')
+  },
+  { immediate: true }
+)
+
+const currentTerminal = computed(() =>
+  terminals.value.find(t => t.termId === activeTermId.value)
+)
+
+const currentCwd = computed(() => {
+  const cwd = currentTerminal.value?.cwd || props.defaultCwd || ''
+  if (typeof cwd !== 'string') {
+    console.error('[TerminalPanel] currentCwd is not a string:', cwd, 'defaultCwd:', props.defaultCwd, 'term.cwd:', currentTerminal.value?.cwd)
+    return ''
+  }
+  return cwd
+})
+
+const pathDisplay = computed(() => {
+  const p = currentCwd.value
+  if (!p) return ''
+  const parts = p.split('/')
+  return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : p
+})
+
+const XTERM_OPTS = {
+  cursorBlink: true,
+  cursorStyle: 'block',
+  fontSize: 13,
+  fontFamily: "'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace",
+  theme: {
+    background: '#1e1e1e',
+    foreground: '#d4d4d4',
+    cursor: '#d4d4d4',
+    cursorAccent: '#1e1e1e',
+    selectionBackground: 'rgba(255, 255, 255, 0.3)',
+    black: '#000000', red: '#cd3131', green: '#0dbc79', yellow: '#e5e510',
+    blue: '#2472c8', magenta: '#bc3fbc', cyan: '#11a8cd', white: '#e5e5e5',
+    brightBlack: '#666666', brightRed: '#f14c4c', brightGreen: '#23d18b',
+    brightYellow: '#f5f543', brightBlue: '#3b8eea', brightMagenta: '#d670d6',
+    brightCyan: '#29b8db', brightWhite: '#ffffff'
+  },
+  allowProposedApi: true,
+  scrollback: 10000
+}
+
+// ---- 终端实例管理 ----
+
+const createXterm = () => {
+  const el = document.createElement('div')
+  el.style.cssText = 'width:100%;height:100%;display:none;overflow:hidden;'
+  terminalBodyRef.value.appendChild(el)
+
+  const xterm = new Terminal(XTERM_OPTS)
+  const fitAddon = new FitAddon()
+  xterm.loadAddon(fitAddon)
+  xterm.loadAddon(new WebLinksAddon())
+  xterm.open(el)
+
+  return { xterm, fitAddon, el }
+}
+
+const nextIndex = () => {
+  const used = new Set(terminals.value.map(t => t._termIndex))
+  for (let i = 1; ; i++) { if (!used.has(i)) return i }
+}
+
+const getProjectRootCwd = () => {
+  if (projectRootRef.value) return projectRootRef.value
+  return normalizeIncomingPath(props.defaultCwd)
+}
+
+/** 新建终端默认使用当前项目根目录，避免缓存会话把 cwd 带偏 */
+const getBaseCwd = () => {
+  const projectRoot = getProjectRootCwd()
+  if (projectRoot) return projectRoot
+  const active = currentTerminal.value
+  if (active && typeof active.cwd === 'string' && active.cwd.trim()) return active.cwd.trim()
+  const first = terminals.value[0]
+  if (first && typeof first.cwd === 'string' && first.cwd.trim()) return first.cwd.trim()
+  return ''
+}
+
+const normalizeRequestedCwd = (cwdOverride) => {
+  if (typeof cwdOverride !== 'string') return ''
+  return normalizeIncomingPath(cwdOverride)
+}
+
+const addTerminal = async (cwdOverride = null) => {
+  const idx = nextIndex()
+  const termId = `term-${Date.now()}-${idx}`
+  const explicitCwd = normalizeRequestedCwd(cwdOverride)
+  let rawCwd = explicitCwd
+    ? explicitCwd
+    : getBaseCwd()
+  if (!props.allowFirstTerminalWithoutCwd && (!rawCwd || !String(rawCwd).trim())) {
+    rawCwd = getProjectRootCwd()
+  }
+  const cwd = typeof rawCwd === 'string' ? String(rawCwd).trim() : ''
+  const { xterm, fitAddon, el } = createXterm()
+
+  if (!props.allowFirstTerminalWithoutCwd && !cwd) {
+    xterm.write('\r\n\x1b[31m无法创建终端：项目目录未就绪，请稍后重试\x1b[0m\r\n')
+    try { xterm.dispose() } catch (e) {}
+    el.remove()
+    return
+  }
+
+  const term = {
+    termId,
+    label: `终端 ${idx}`,
+    _termIndex: idx,
+    cwd,
+    xterm,
+    fitAddon,
+    el,
+    connected: false,
+    ptyId: null,
+    hasUserInput: false
+  }
+
+  xterm.onData((data) => {
+    if (term.ptyId && term.connected) {
+      term.hasUserInput = true
+      window.electronAPI.terminal.write({ id: term.ptyId, data })
+    }
+  })
+  xterm.onResize(({ cols, rows }) => {
+    if (term.ptyId && term.connected) {
+      window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
+    }
+  })
+
+  try {
+    // 显式传 string：避免 cwd 被省略时主进程误用 ~
+    const res = await window.electronAPI.terminal.create({
+      id: termId,
+      cwd: props.allowFirstTerminalWithoutCwd ? (cwd || undefined) : cwd
+    })
+    if (res.success) {
+      term.ptyId = res.id
+      if (res.resolvedCwd && typeof res.resolvedCwd === 'string') {
+        term.cwd = res.resolvedCwd
+      }
+      term.connected = true
+    } else {
+      xterm.write('\r\n\x1b[31m终端创建失败: ' + res.error + '\x1b[0m\r\n')
+    }
+  } catch (e) {
+    xterm.write('\r\n\x1b[31m终端创建异常: ' + e.message + '\x1b[0m\r\n')
+  }
+
+  terminals.value.push(term)
+  switchTerminal(termId)
+}
+
+const handleAddTerminal = async () => {
+  await addTerminal(getProjectRootCwd() || null)
+}
+
+const addTerminalInDir = async (cwd, label) => {
+  showCwdMenu.value = false
+  await addTerminal(cwd)
+}
+
+const canMeasureTerminal = () => {
+  if (!props.isActive || !containerRef.value) return false
+  const rect = containerRef.value.getBoundingClientRect()
+  return rect.width > 0 && rect.height > 0
+}
+
+const refreshVisibleTerminal = (term, focus = true) => {
+  if (!term) return
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      if (!canMeasureTerminal()) return
+      try {
+        term.fitAddon.fit()
+      } catch (error) {}
+      try {
+        if (typeof term.xterm.rows === 'number' && term.xterm.rows > 0) {
+          term.xterm.refresh(0, term.xterm.rows - 1)
+        }
+      } catch (error) {}
+      if (focus) {
+        try { term.xterm.focus() } catch (error) {}
+      }
+    })
+  })
+}
+
+const switchTerminal = (termId) => {
+  for (const t of terminals.value) {
+    t.el.style.display = t.termId === termId ? '' : 'none'
+  }
+  activeTermId.value = termId
+  const term = terminals.value.find(t => t.termId === termId)
+  refreshVisibleTerminal(term, true)
+}
+
+const closeTerminal = async (termId) => {
+  if (terminals.value.length <= 1) return
+  const idx = terminals.value.findIndex(t => t.termId === termId)
+  if (idx === -1) return
+
+  const term = terminals.value[idx]
+  if (term.ptyId) {
+    await window.electronAPI.terminal.destroy({ id: term.ptyId }).catch(() => {})
+  }
+  try { term.xterm.dispose() } catch (e) {}
+  term.el.remove()
+  terminals.value.splice(idx, 1)
+
+  if (activeTermId.value === termId) {
+    const nextIdx = Math.min(idx, terminals.value.length - 1)
+    switchTerminal(terminals.value[nextIdx].termId)
+  }
+}
+
+const clearTerminal = () => {
+  const term = currentTerminal.value
+  if (!term) return
+  if (term.ptyId && term.connected) {
+    // Ctrl+L 清屏，与 VS Code 行为一致
+    window.electronAPI.terminal.write({ id: term.ptyId, data: '\x0c' })
+  } else {
+    term.xterm.clear()
+  }
+  term.xterm.focus()
+}
+
+const restartTerminal = async (cwdOverride = null) => {
+  const term = currentTerminal.value
+  if (!term) return
+  if (term.ptyId) {
+    await window.electronAPI.terminal.destroy({ id: term.ptyId }).catch(() => {})
+    term.ptyId = null; term.connected = false
+  }
+  term.xterm.reset()
+  term.xterm.write('\x1b[33m正在重启终端...\x1b[0m\r\n')
+  try {
+    let restartCwd = (cwdOverride != null && String(cwdOverride).trim() !== '')
+      ? String(cwdOverride).trim()
+      : ((term.cwd && String(term.cwd).trim()) || getBaseCwd())
+    if (!props.allowFirstTerminalWithoutCwd && !restartCwd.trim()) {
+      restartCwd = getProjectRootCwd() || ''
+    }
+    const res = await window.electronAPI.terminal.create({
+      id: `term-${Date.now()}`,
+      cwd: props.allowFirstTerminalWithoutCwd ? (restartCwd || undefined) : restartCwd
+    })
+    if (res.success) {
+      term.ptyId = res.id
+      if (res.resolvedCwd && typeof res.resolvedCwd === 'string') {
+        term.cwd = res.resolvedCwd
+      }
+      term.connected = true
+      term.hasUserInput = false
+      term.xterm.focus()
+    }
+  } catch (e) {
+    term.xterm.write('\r\n\x1b[31m重启失败: ' + e.message + '\x1b[0m\r\n')
+  }
+}
+
+const ensureDefaultTerminal = async (cwdOverride = '') => {
+  if (ensureDefaultPromise) {
+    return ensureDefaultPromise
+  }
+
+  ensureDefaultPromise = (async () => {
+    const targetCwd = normalizeIncomingPath(cwdOverride || getProjectRootCwd())
+    if (!terminals.value.length) {
+      await addTerminal(targetCwd || null)
+      return
+    }
+
+    if (!activeTermId.value && terminals.value[0]) {
+      switchTerminal(terminals.value[0].termId)
+    }
+
+    const term = currentTerminal.value || terminals.value[0]
+    if (!term || !targetCwd) return
+
+    const current = normalizeIncomingPath(term.cwd || '')
+    if (terminals.value.length === 1 && !term.hasUserInput && current !== targetCwd) {
+      await restartTerminal(targetCwd)
+    }
+  })()
+
+  try {
+    await ensureDefaultPromise
+  } finally {
+    ensureDefaultPromise = null
+  }
+}
+
+// ---- 项目切换：缓存 & 恢复 ----
+
+const normalizeCacheKey = (path) => normalizeIncomingPath(path || '')
+
+const detachTerminalsFromDom = (terms) => {
+  if (!Array.isArray(terms)) return
+  for (const t of terms) {
+    if (!t?.el) continue
+    t.el.style.display = 'none'
+    if (t.el.parentNode === terminalBodyRef.value) {
+      terminalBodyRef.value.removeChild(t.el)
+    }
+  }
+}
+
+const saveCurrentState = (path) => {
+  const cacheKey = normalizeCacheKey(path)
+  if (!cacheKey || terminals.value.length === 0) return
+  detachTerminalsFromDom(terminals.value)
+  terminalCache.set(cacheKey, {
+    terminals: terminals.value,
+    activeTermId: activeTermId.value
+  })
+}
+
+const restoreState = (path) => {
+  const cacheKey = normalizeCacheKey(path)
+  const cached = terminalCache.get(cacheKey)
+  if (!cached) return false
+
+  terminals.value = cached.terminals
+  activeTermId.value = cached.activeTermId
+
+  for (const t of cached.terminals) {
+    if (t.el.parentNode !== terminalBodyRef.value) {
+      terminalBodyRef.value.appendChild(t.el)
+    }
+  }
+
+  nextTick(() => {
+    for (const t of terminals.value) {
+      t.el.style.display = t.termId === activeTermId.value ? '' : 'none'
+    }
+    refreshVisibleTerminal(currentTerminal.value, true)
+  })
+  return true
+}
+
+const destroyTerminals = (terms) => {
+  for (const t of terms) {
+    if (t.ptyId) window.electronAPI.terminal.destroy({ id: t.ptyId }).catch(() => {})
+    try { t.xterm.dispose() } catch (e) {}
+    t.el.remove()
+  }
+}
+
+// ---- IPC 路由 ----
+
+const ipcHandler = {
+  onOutput(data) {
+    for (const t of terminals.value) {
+      if (t.ptyId === data.id) { t.xterm.write(data.data); return }
+    }
+    for (const [, cached] of terminalCache) {
+      for (const t of cached.terminals) {
+        if (t.ptyId === data.id) { t.xterm.write(data.data); return }
+      }
+    }
+  },
+  onExit(data) {
+    for (const t of terminals.value) {
+      if (t.ptyId === data.id) {
+        t.connected = false
+        t.xterm.write('\r\n\x1b[33m终端已退出 (code: ' + data.exitCode + ')\x1b[0m\r\n')
+        return
+      }
+    }
+    for (const [, cached] of terminalCache) {
+      for (const t of cached.terminals) {
+        if (t.ptyId === data.id) {
+          t.connected = false
+          t.xterm.write('\r\n\x1b[33m终端已退出 (code: ' + data.exitCode + ')\x1b[0m\r\n')
+          return
+        }
+      }
+    }
+  },
+  onTitleChange(data) {
+    const updateLabel = (t) => {
+      if (t.ptyId === data.id) {
+        const name = data.title.split('/').pop()
+        const idx = t._termIndex || 1
+        t.label = `${name} ${idx}`
+        return true
+      }
+      return false
+    }
+    for (const t of terminals.value) {
+      if (updateLabel(t)) return
+    }
+    for (const [, cached] of terminalCache) {
+      for (const t of cached.terminals) {
+        if (updateLabel(t)) return
+      }
+    }
+  }
+}
+
+// ---- 生命周期 ----
+
+let resizeTimer = null
+
+watch(() => props.isActive, (active) => {
+  if (active && currentTerminal.value) {
+    refreshVisibleTerminal(currentTerminal.value, true)
+  }
+})
+
+watch(() => props.defaultCwd, (newCwd, oldCwd) => {
+  if (newCwd === oldCwd) return
+  saveCurrentState(oldCwd)
+  if (!restoreState(newCwd)) {
+    terminals.value = []
+    activeTermId.value = null
+    addTerminal()
+  }
+})
+
+// 项目详情：进入「终端」视图且已有项目路径时再建第一个 PTY（避免在文件状态页 onMounted 就建、cwd 不稳）。
+// 加号：始终走 addTerminal()，依赖 projectRootRef / getBaseCwd。
+// about:terminal：无项目路径，allowFirstTerminalWithoutCwd 为 true 时仍可自动建第一个。
+watch(
+  () => [props.isActive, projectRootRef.value, props.allowFirstTerminalWithoutCwd],
+  ([active, root, allowEmpty]) => {
+    if (!active || terminals.value.length > 0) return
+    if (allowEmpty && !root) {
+      addTerminal()
+    }
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  register(ipcHandler)
+
+  const ro = new ResizeObserver(() => {
+    if (resizeTimer) clearTimeout(resizeTimer)
+    resizeTimer = setTimeout(() => {
+      refreshVisibleTerminal(currentTerminal.value, false)
+    }, 100)
+  })
+  if (containerRef.value) {
+    ro.observe(containerRef.value)
+    containerRef.value._ro = ro
+  }
+
+  document.addEventListener('click', handleDocumentClick)
+})
+
+onUnmounted(() => {
+  if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null }
+  document.removeEventListener('click', handleDocumentClick)
+  containerRef.value?._ro?.disconnect()
+  destroyTerminals(terminals.value)
+  terminals.value = []
+  for (const [, cached] of terminalCache) {
+    destroyTerminals(cached.terminals)
+  }
+  terminalCache.clear()
+  unregister(ipcHandler)
+})
+
+defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal })
+</script>
+
+<style scoped>
+.terminal-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1e1e1e;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 8px;
+  height: 36px;
+  background: #252526;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.terminal-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+}
+.terminal-tabs::-webkit-scrollbar { height: 0; }
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px 4px 0 0;
+  color: #888;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.terminal-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ccc;
+}
+.terminal-tab.active {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-bottom-color: #007acc;
+}
+.tab-label {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: #666;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s;
+}
+.terminal-tab:hover .tab-close-btn { opacity: 1; }
+.terminal-tab.active .tab-close-btn { opacity: 0.6; }
+.tab-close-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #d4d4d4;
+  opacity: 1 !important;
+}
+.add-btn {
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+.terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.terminal-path {
+  color: #888;
+  font-size: 11px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminal-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.terminal-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #d4d4d4;
+}
+.terminal-body {
+  flex: 1;
+  padding: 8px;
+  overflow: hidden;
+  position: relative;
+}
+.terminal-body :deep(.xterm) { height: 100%; }
+.terminal-body :deep(.xterm-viewport) { overflow-y: auto !important; }
+.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar { width: 8px; }
+.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-track { background: transparent; }
+.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+.terminal-cwd-picker {
+  position: relative;
+}
+.cwd-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #252526;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  min-width: 140px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  padding: 4px 0;
+}
+.cwd-item {
+  padding: 5px 12px;
+  font-size: 12px;
+  color: #d4d4d4;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cwd-item:hover { background: rgba(255,255,255,0.08); }
+</style>
