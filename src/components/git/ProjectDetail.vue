@@ -404,6 +404,7 @@
     <div v-if="showBranchContextMenuModal" class="context-menu" :style="{ top: branchContextMenuPosition.y + 'px', left: branchContextMenuPosition.x + 'px' }" @click.stop>
       <div class="context-menu-item" @click="copyBranchName">复制分支名</div>
       <div v-if="branchContextMenuType === 'local'" class="context-menu-item" @click="createBranchFromContext">创建分支</div>
+      <div v-if="branchContextMenuType === 'remote'" class="context-menu-item" @click="createTagFromRemoteBranch">创建标签</div>
       <div class="context-menu-divider"></div>
       <div class="context-menu-item" @click="checkoutBranchAction">检出分支 {{ branchContextMenuBranch }}</div>
       <div v-if="branchContextMenuType === 'local'" :class="['context-menu-item', { disabled: branchContextMenuBranch === currentBranch }]" @click="mergeBranchAction">
@@ -1410,6 +1411,16 @@ const createBranchFromContext = () => {
   baseBranch.value = branchContextMenuBranch.value
   newBranchName.value = ''
   showCreateBranchDialog.value = true
+}
+
+const createTagFromRemoteBranch = () => {
+  if (!branchContextMenuBranch.value) return
+  showBranchContextMenuModal.value = false
+  newTagName.value = ''
+  newTagMessage.value = ''
+  tagCommit.value = `origin/${branchContextMenuBranch.value}`
+  pushTagAfterCreate.value = false
+  showCreateTagDialog.value = true
 }
 
 const mergeBranchAction = () => {
