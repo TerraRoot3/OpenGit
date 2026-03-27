@@ -706,8 +706,13 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal })
   position: relative;
 }
 .terminal-body :deep(.xterm) { height: 100%; }
-.terminal-body :deep(.xterm-viewport) { overflow-y: auto !important; }
-.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar { width: 8px; }
+.terminal-body :deep(.xterm-viewport) {
+  overflow-y: scroll !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-gutter: stable;
+}
+.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar { width: 4px; }
 .terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-track { background: transparent; }
 .terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
 .terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }

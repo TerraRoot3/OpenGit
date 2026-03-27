@@ -2959,26 +2959,36 @@ onUnmounted(() => {
 }
 
 /* 滚动条样式 - 最小化 */
-* {
+.project-list-container,
+.branches-panel,
+.combobox-dropdown {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
-::-webkit-scrollbar {
+.project-list-container::-webkit-scrollbar,
+.branches-panel::-webkit-scrollbar,
+.combobox-dropdown::-webkit-scrollbar {
   width: 3px;
   height: 3px;
 }
 
-::-webkit-scrollbar-track {
+.project-list-container::-webkit-scrollbar-track,
+.branches-panel::-webkit-scrollbar-track,
+.combobox-dropdown::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
+.project-list-container::-webkit-scrollbar-thumb,
+.branches-panel::-webkit-scrollbar-thumb,
+.combobox-dropdown::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 1.5px;
 }
 
-::-webkit-scrollbar-corner {
+.project-list-container::-webkit-scrollbar-corner,
+.branches-panel::-webkit-scrollbar-corner,
+.combobox-dropdown::-webkit-scrollbar-corner {
   background: transparent;
 }
 </style>

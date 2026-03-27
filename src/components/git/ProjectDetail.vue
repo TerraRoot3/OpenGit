@@ -2521,26 +2521,26 @@ defineExpose({
 }
 
 /* 滚动条样式 - 最小化 */
-* {
+.branches-panel {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
-::-webkit-scrollbar {
+.branches-panel::-webkit-scrollbar {
   width: 3px;
   height: 3px;
 }
 
-::-webkit-scrollbar-track {
+.branches-panel::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
+.branches-panel::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 1.5px;
 }
 
-::-webkit-scrollbar-corner {
+.branches-panel::-webkit-scrollbar-corner {
   background: transparent;
 }
 </style>
