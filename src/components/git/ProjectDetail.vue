@@ -96,16 +96,6 @@
               <span>暂存列表</span>
             </div>
 
-            <!-- MR 列表按钮 -->
-            <div
-              class="file-status-button"
-              :class="{ active: currentView === 'merge-request' }"
-              @click="selectMergeRequest"
-            >
-              <GitMerge :size="16" />
-              <span>MR 记录</span>
-            </div>
-
             <!-- 本地分支 -->
             <div class="branch-section">
               <div class="branch-section-header" @click="toggleLocalBranches">
@@ -222,15 +212,6 @@
               :project-path="path"
               :execute-command="executeCommand"
               ref="stashListRef"
-            />
-
-            <!-- MR 列表 -->
-            <ProjectMergeRequestList 
-              v-if="currentView === 'merge-request'"
-              :project-path="path"
-              :current-branch="currentBranch"
-              :execute-command="executeCommand"
-              ref="mergeRequestListRef"
             />
 
             <!-- 终端 - 使用 v-show 保持存活，避免切换时重新创建 -->
@@ -429,7 +410,6 @@ import {
 } from 'lucide-vue-next'
 import ProjectFileStatus from './ProjectFileStatus.vue'
 import ProjectStashList from './ProjectStashList.vue'
-import ProjectMergeRequestList from './ProjectMergeRequestList.vue'
 import ProjectCommitHistory from './ProjectCommitHistory.vue'
 import OperationDialog from '../dialog/OperationDialog.vue'
 import ProjectSettingsDialog from '../dialog/ProjectSettingsDialog.vue'
@@ -508,7 +488,6 @@ const emit = defineEmits([
 // ==================== Refs ====================
 const fileStatusRef = ref(null)
 const stashListRef = ref(null)
-const mergeRequestListRef = ref(null)
 const terminalRef = ref(null)
 
 /** 传给嵌入式终端的项目根（解码 git: 路由里可能出现的 %20 等），保证主进程拿到真实绝对路径 */
@@ -541,7 +520,7 @@ const getExpandStateKey = (path) => `expandState_${path?.replace(/[^a-zA-Z0-9]/g
 const getSavedCurrentView = (path) => {
   try {
     const saved = localStorage.getItem(getProjectViewKey(path))
-    if (saved && ['file-status', 'commit-history', 'stash-list', 'merge-request', 'terminal'].includes(saved)) {
+    if (saved && ['file-status', 'commit-history', 'stash-list', 'terminal'].includes(saved)) {
       return saved
     }
   } catch (e) {}
@@ -1060,14 +1039,6 @@ const selectStashList = () => {
   saveCurrentView('stash-list')
   if (stashListRef.value) {
     stashListRef.value.loadStashList?.()
-  }
-}
-
-const selectMergeRequest = () => {
-  currentView.value = 'merge-request'
-  saveCurrentView('merge-request')
-  if (mergeRequestListRef.value) {
-    mergeRequestListRef.value.loadMergeRequests?.()
   }
 }
 
