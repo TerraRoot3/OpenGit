@@ -393,6 +393,15 @@ const refreshVisibleTerminal = (term, focus = true) => {
           term.xterm.refresh(0, term.xterm.rows - 1)
         }
       } catch (error) {}
+      // 某些 TUI（如 codex/claude）在隐藏后恢复可见时需要一次 resize 才会立即重绘。
+      // 即使 cols/rows 未变化，也主动发一次，等价于你手动按回车触发 redraw。
+      try {
+        const cols = term.xterm.cols
+        const rows = term.xterm.rows
+        if (term.ptyId && term.connected && Number.isFinite(cols) && Number.isFinite(rows) && cols > 0 && rows > 0) {
+          window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
+        }
+      } catch (error) {}
       if (focus) {
         try { term.xterm.focus() } catch (error) {}
       }
