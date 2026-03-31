@@ -205,6 +205,10 @@
                 <Key :size="16" />
                 <span>密码管理</span>
               </div>
+              <div class="menu-item" @click="openDownloadPanel">
+                <Download :size="16" />
+                <span>下载管理</span>
+              </div>
               <div class="menu-divider"></div>
               <div class="menu-item" @click="openBackupManager">
                 <HardDrive :size="16" />
@@ -225,7 +229,7 @@
     </div>
                     
     <!-- 主内容区域 -->
-    <div class="browser-content">
+    <div ref="browserContentRef" class="browser-content">
       <div v-if="activeTabLoadError" class="browser-error-banner">
         <div class="error-main">
           <span class="error-title">页面加载失败</span>
@@ -244,6 +248,7 @@
               :tab-id="tab.id"
           :route-type="getTabRouteType(tab)"
           :route-props="tab.routeProps"
+          :content-host="tab.contentHost || 'webcontentsview'"
           :src="tab.routeConfig?.showWebview ? (tab.initialUrl || 'about:blank') : 'about:blank'"
               :user-agent="userAgent"
           :is-active="tab.id === activeBrowserTabId"
@@ -261,6 +266,28 @@
               @title-updated="(title, tabId) => onTitleUpdatedFromWebView(title, tabId)"
               @favicon-updated="(favicon, tabId) => onFaviconUpdated(favicon, tabId)"
             />
+      </div>
+      <div v-if="showDownloadPanel || downloadItems.length > 0" class="download-status-panel">
+        <div class="download-header">
+          <span>下载管理</span>
+          <button class="download-close" @click="showDownloadPanel = false">
+            <X :size="12" />
+          </button>
+        </div>
+        <div v-if="downloadItems.length === 0" class="download-empty">
+          暂无下载任务
+        </div>
+        <div
+          v-for="item in downloadItems.slice(0, 3)"
+          :key="item.id"
+          class="download-item"
+        >
+          <span class="download-name">{{ item.fileName || '下载任务' }}</span>
+          <span class="download-state">{{ item.state }}</span>
+          <span v-if="item.totalBytes > 0" class="download-progress">
+            {{ Math.round((item.receivedBytes / item.totalBytes) * 100) }}%
+          </span>
+        </div>
       </div>
     </div>
   </div>
@@ -289,6 +316,7 @@ import {
   FileText,
   History,
   HardDrive,
+  Download,
   Puzzle,
   GitBranch,
   FolderGit2
@@ -296,6 +324,7 @@ import {
 import HistoryManager from './HistoryManager.vue'
 import BackupManager from '../BackupManager.vue'
 import ExtensionManager from '../ExtensionManager.vue'
+import { createBrowserContentAdapter } from './browserContentAdapter'
 
 const props = defineProps({
   initialUrl: {
@@ -303,6 +332,9 @@ const props = defineProps({
     default: ''
   }
 })
+
+const browserContentRef = ref(null)
+let browserContentAdapter = null
 
 // ==================== 路由配置系统 ====================
 // 定义所有页面类型的路由规则
@@ -470,6 +502,7 @@ const parseRoute = (url) => {
 // 浏览器标签页管理
 const browserTabs = ref([])
 const activeBrowserTabId = ref(null)
+const downloadStates = ref({})
 const isBrowserReady = ref(false) // 标记浏览器组件是否已准备好
 let nextBrowserTabId = 1
 let isRestoringTabs = false // 标记是否正在恢复标签页
@@ -553,14 +586,15 @@ const clearTabLoadError = (tab) => {
 }
 
 const activeTabLoadError = computed(() => currentTab.value?.loadError || null)
+const downloadItems = computed(() =>
+  Object.values(downloadStates.value).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+)
 
 const retryActiveTabLoad = () => {
   if (!currentTab.value) return
   clearTabLoadError(currentTab.value)
   if (currentTab.value.routeType === 'webview') {
-    const webview = getCurrentWebview()
-    if (webview && typeof webview.reload === 'function') {
-      webview.reload()
+    if (browserContentAdapter.reload(currentTab.value)) {
       return
     }
   }
@@ -612,6 +646,7 @@ watch(() => activeBrowserTabId.value, (newTabId, oldTabId) => {
   // 更新导航状态
   updateNavigationState()
   syncLoadingProgressWithActiveTab()
+  syncActiveContentHost()
 }, { immediate: true })
 // 当前活动标签页的状态（从 currentTab 同步）
 const canGoBack = computed(() => {
@@ -647,12 +682,31 @@ const {
 
 // 菜单相关
 const showMenu = ref(false)
+const showDownloadPanel = ref(false)
 
 // 菜单位置
 const menuPosition = ref({ top: 0, right: 0 })
 
 // 切换菜单显示
 const toggleMenu = () => {
+  if (window.electronAPI?.showBrowserFloatingMenu) {
+    const menuBtn = document.querySelector('.toolbar-menu-wrapper .toolbar-btn')
+    if (!menuBtn) return
+    const rect = menuBtn.getBoundingClientRect()
+    const anchor = {
+      // 与旧版 right: 0 保持一致：按窗口右边缘对齐
+      x: Math.round(window.screenX + window.innerWidth),
+      y: Math.round(window.screenY + rect.bottom + 4)
+    }
+    window.electronAPI.showBrowserFloatingMenu(anchor).then((action) => {
+      if (!action) return
+      handleNativeMenuAction(action)
+    }).catch((error) => {
+      console.error('显示浮层菜单失败:', error)
+    })
+    return
+  }
+
   if (!showMenu.value) {
     // 计算菜单位置
     nextTick(() => {
@@ -667,6 +721,39 @@ const toggleMenu = () => {
     })
   }
   showMenu.value = !showMenu.value
+}
+
+const openDownloadPanel = () => {
+  showMenu.value = false
+  showDownloadPanel.value = true
+}
+
+const handleNativeMenuAction = (action) => {
+  switch (action) {
+    case 'remote-repo':
+      openRemoteRepo()
+      break
+    case 'saved-projects':
+      openSavedProjects()
+      break
+    case 'favorites-manager':
+      openFavoritesManager()
+      break
+    case 'browsing-history':
+      openBrowsingHistory()
+      break
+    case 'password-manager':
+      openPasswordManager()
+      break
+    case 'download-panel':
+      openDownloadPanel()
+      break
+    case 'backup-manager':
+      openBackupManager()
+      break
+    default:
+      break
+  }
 }
 
 // 打开密码网站
@@ -1250,6 +1337,8 @@ const openInCurrentTab = async (url, tabId) => {
   tab.routeType = route.type
   tab.routeConfig = route.config // 重要：更新 routeConfig
   tab.routeProps = route.props
+  tab.contentKind = route.config.showWebview ? 'web' : 'builtin'
+  tab.contentHost = route.config.showWebview ? 'webcontentsview' : 'builtin'
   tab.url = route.url
   // 更新标题（优先使用 route.title，处理函数类型的 config.title）
   if (route.title) {
@@ -1262,11 +1351,11 @@ const openInCurrentTab = async (url, tabId) => {
   }
   
   if (route.type === 'webview') {
-    // WebView 类型：设置 webviewSrc 和 initialUrl，让 WebView 加载
+    // WebView 类型：设置基础状态，实际加载走 WebContentsView
     tab.webviewSrc = route.url
     tab.initialUrl = route.url // 重要：更新 initialUrl，getWebViewSrc 使用它
     tab.pendingUrl = '' // 清空 pendingUrl，直接用 webviewSrc
-    tab.webviewReady = false // 重置 webview 状态
+    tab.webviewReady = true
     tab.initialLoadDone = false
     tab.isLoading = true // 开始加载
     
@@ -1276,6 +1365,8 @@ const openInCurrentTab = async (url, tabId) => {
     }
   } else {
     tab.needsSaveHistory = false
+    tab.webviewReady = false
+    destroyWebContentsViewTab(tab)
   }
   
   // 更新 UI 状态
@@ -1283,6 +1374,19 @@ const openInCurrentTab = async (url, tabId) => {
     currentUrl.value = route.url
     // 对于所有类型都显示 URL（包括 about: 特殊页面）
     urlInput.value = route.url
+  }
+
+  if (route.type === 'webview') {
+    await ensureWebContentsViewTab(tab, route.url)
+    if (tab.id === activeBrowserTabId.value) {
+      await activateWebContentsViewTab(tab)
+      await window.electronAPI?.webTabNavigate?.({
+        tabId: getWebContentsViewTabId(tab),
+        url: normalizeUrl(route.url)
+      })
+    }
+  } else if (tab.id === activeBrowserTabId.value) {
+    await hideAllWebContentsViewTabs()
   }
   
   console.log('🔄 标签页更新后:', { 
@@ -1362,10 +1466,7 @@ const navigateToUrl = async (url, options = {}) => {
   
   if (shouldOpenInCurrentTab && currentTab) {
     console.log('🌐 在当前标签页打开（动态切换类型）:', normalizedUrl)
-    // 使用动态类型切换
-    // updateTabRoute 已经设置了 tab.initialUrl，Vue 响应式会自动触发 webview 加载
-    // 不需要再调用 navigateToUrlForTab，否则会导致重复加载
-    updateTabRoute(currentTab, normalizedUrl)
+    await openInCurrentTab(normalizedUrl, currentTab.id)
     
     // 更新 UI 状态（让输入框失去焦点）
     await nextTick()
@@ -1405,7 +1506,7 @@ const navigateToUrlForTab = async (tab, url) => {
       oldType: tab.routeType, 
       newType: route.type 
     })
-    updateTabRoute(tab, normalizedUrl)
+    await openInCurrentTab(normalizedUrl, tab.id)
     // 更新 UI 状态
     await nextTick()
     const urlInputElement = document.querySelector('.url-input')
@@ -1416,21 +1517,9 @@ const navigateToUrlForTab = async (tab, url) => {
   }
   
   // 路由类型未变化，需要检查是否真的需要导航
-  const webview = getWebviewForTab(tab.id)
-  
-  // 检查 webview 当前加载的 URL
-  let currentSrc = ''
-  if (webview) {
-    try {
-      currentSrc = webview.src || ''
-    } catch (e) {
-      // 静默失败
-    }
-  }
-  
-  // 判断是否是新标签页或空白页
+  const currentSrc = tab.url || ''
   const isBlankPage = !currentSrc || currentSrc === 'about:blank' || currentSrc === 'about:blank#blocked'
-  
+
   // 如果当前已经加载了相同的 URL，不重复加载
   if (!isBlankPage && currentSrc === normalizedUrl) {
     console.log('✅ URL 未变化，跳过加载:', normalizedUrl)
@@ -1449,6 +1538,7 @@ const navigateToUrlForTab = async (tab, url) => {
   tab.forwardHistory = []
   tab.url = route.url
   tab.isLoading = true
+  tab.webviewReady = true
   
   // 如果是当前标签页，更新 UI
   if (tab.id === activeBrowserTabId.value) {
@@ -1456,28 +1546,38 @@ const navigateToUrlForTab = async (tab, url) => {
     urlInput.value = normalizedUrl
   }
   
-  // 如果 webview 不存在或未准备好，通过 initialUrl 触发加载
-  if (!webview || !tab.webviewReady) {
-    console.log('⏳ 通过 initialUrl 触发加载:', normalizedUrl)
-    tab.initialUrl = normalizedUrl
-    tab.webviewSrc = normalizedUrl
-    // 更新 UI 状态
-    await nextTick()
-    const urlInputElement = document.querySelector('.url-input')
-    if (urlInputElement) {
-      urlInputElement.blur()
+  if (isWebContentsViewTab(tab)) {
+    await ensureWebContentsViewTab(tab, normalizedUrl)
+    if (tab.id === activeBrowserTabId.value) {
+      await activateWebContentsViewTab(tab)
     }
-    return
-  }
-  
-  // webview 已准备好，直接设置 src（避免通过 initialUrl 触发 Vue 响应式更新）
-  console.log('🔄 直接设置 webview.src:', normalizedUrl)
-  try {
-    webview.src = normalizedUrl
+    await window.electronAPI?.webTabNavigate?.({
+      tabId: getWebContentsViewTabId(tab),
+      url: normalizedUrl
+    })
     tab.webviewSrc = normalizedUrl
-    // 不更新 initialUrl，避免 Vue 响应式重复触发
-  } catch (error) {
-    console.error('❌ 设置 webview src 失败:', error)
+    tab.initialUrl = normalizedUrl
+  } else {
+    const webview = getWebviewForTab(tab.id)
+    if (!webview || !tab.webviewReady) {
+      console.log('⏳ 通过 initialUrl 触发加载:', normalizedUrl)
+      tab.initialUrl = normalizedUrl
+      tab.webviewSrc = normalizedUrl
+      await nextTick()
+      const urlInputElement = document.querySelector('.url-input')
+      if (urlInputElement) {
+        urlInputElement.blur()
+      }
+      return
+    }
+
+    console.log('🔄 直接设置 webview.src:', normalizedUrl)
+    try {
+      webview.src = normalizedUrl
+      tab.webviewSrc = normalizedUrl
+    } catch (error) {
+      console.error('❌ 设置 webview src 失败:', error)
+    }
   }
   
   // 更新 UI 状态
@@ -1498,10 +1598,9 @@ const handleUrlInputEnter = async () => {
   if (!inputUrl) {
     // 如果是 webview 标签页，重新加载
     if (currentTab.value.routeType === 'webview') {
-    console.log('🔄 输入框为空，重新加载当前页面')
-    const webview = getCurrentWebview()
-      if (webview) {
-      webview.reload()
+      console.log('🔄 输入框为空，重新加载当前页面')
+      if (browserContentAdapter.reload(currentTab.value)) {
+        return
       }
     } else {
       // 功能性页面，重新加载收藏
@@ -1529,9 +1628,8 @@ const handleUrlInputEnter = async () => {
   // 如果输入框的值和当前 URL 相同（规范化后），则重新加载
   if (normalizedInputUrl && normalizedInputUrl === currentNormalizedUrl) {
     console.log('🔄 地址未变化，重新加载当前页面')
-    const webview = getCurrentWebview()
-    if (webview) {
-      webview.reload()
+    if (browserContentAdapter.reload(currentTab.value)) {
+      return
     }
   } else {
     // 在当前 webview 标签页导航到新 URL
@@ -1567,13 +1665,7 @@ const goBack = async () => {
   }
   
   // 尝试使用 webview 的返回功能
-  const webview = getCurrentWebview()
-  if (webview && canGoBack.value) {
-    try {
-      webview.goBack()
-    } catch (e) {
-      console.warn('goBack 失败:', e)
-    }
+  if (browserContentAdapter.goBack(currentTab.value) && canGoBack.value) {
     return
   }
   
@@ -1602,14 +1694,8 @@ const goBack = async () => {
 const goForward = async () => {
   if (!currentTab.value) return
   clearTabLoadError(currentTab.value)
-  const webview = getCurrentWebview()
-  if (webview && canGoForward.value) {
-    try {
-      webview.goForward()
-      return
-    } catch (e) {
-      console.warn('goForward 失败:', e)
-    }
+  if (browserContentAdapter.goForward(currentTab.value) && canGoForward.value) {
+    return
   }
   if (currentTab.value.forwardHistory && currentTab.value.forwardHistory.length > 0) {
     const nextUrl = currentTab.value.forwardHistory.pop()
@@ -1660,15 +1746,13 @@ const refresh = () => {
     }
   } else if (currentTab.routeType === 'webview') {
     // 普通网页：直接刷新 webview
-  const webview = getCurrentWebview()
-        if (webview && typeof webview.reload === 'function') {
-    webview.reload()
+    if (browserContentAdapter.reload(currentTab)) {
       console.log('✅ 网页刷新完成')
-      } else {
-        console.log('⚠️ 无法获取 webview 实例，尝试重新导航当前 URL')
-        if (currentTab.url) {
-          navigateToUrlForTab(currentTab, currentTab.url)
-        }
+    } else {
+      console.log('⚠️ 无法获取 webview 实例，尝试重新导航当前 URL')
+      if (currentTab.url) {
+        navigateToUrlForTab(currentTab, currentTab.url)
+      }
     }
   } else {
     console.log('⚠️ 未知的标签类型，无法刷新:', currentTab.type)
@@ -1808,14 +1892,22 @@ const onNavigate = (event, tabId) => {
           if (tab.retryCount <= 3) {
             console.log(`⚠️ Webview 被阻止，尝试重新加载 (${tab.retryCount}/3):`, tab.url)
             setTimeout(() => {
-              try {
-                const webview = getWebviewForTab(tabId)
-                if (webview) {
-                  webview.src = tab.url
-                  tab.webviewSrc = tab.url
+              if (isWebContentsViewTab(tab)) {
+                window.electronAPI?.webTabNavigate?.({
+                  tabId: getWebContentsViewTabId(tab),
+                  url: tab.url
+                })
+                tab.webviewSrc = tab.url
+              } else {
+                try {
+                  const webview = getWebviewForTab(tabId)
+                  if (webview) {
+                    webview.src = tab.url
+                    tab.webviewSrc = tab.url
+                  }
+                } catch (e) {
+                  console.warn('重新加载失败:', e)
                 }
-              } catch (e) {
-                console.warn('重新加载失败:', e)
               }
             }, 100)
           } else {
@@ -1968,10 +2060,11 @@ const onDomReady = async (event, tabId) => {
 
 const onLoadFail = (event, tabId) => {
   const tab = browserTabs.value.find(t => t.id === tabId)
+  const errorDesc = String(event?.errorDescription || '')
+  const isAbort = Number(event?.errorCode) === -3 || errorDesc.toUpperCase().includes('ERR_ABORTED')
   if (tab) {
     tab.isLoading = false
     const isMainFrame = event?.isMainFrame !== false
-    const isAbort = Number(event?.errorCode) === -3
     if (isMainFrame && !isAbort) {
       tab.loadError = {
         errorCode: event?.errorCode ?? 'unknown',
@@ -1982,6 +2075,9 @@ const onLoadFail = (event, tabId) => {
   }
   if (tabId === activeBrowserTabId.value) {
     finishLoadingProgress()
+  }
+  if (isAbort) {
+    return
   }
   console.error('❌ 页面加载失败:', {
     tabId,
@@ -2000,15 +2096,8 @@ const onLoadFail = (event, tabId) => {
 }
 
 const updateNavigationState = () => {
-  const webview = getCurrentWebview()
-  if (webview && currentTab.value) {
-    try {
-      currentTab.value.canGoBack = webview.canGoBack()
-      currentTab.value.canGoForward = webview.canGoForward()
-    } catch (e) {
-      console.warn('⚠️ 无法读取 webview 导航状态:', e)
-    }
-  }
+  if (!browserContentAdapter) return
+  browserContentAdapter.syncNavigationState(currentTab.value)
 }
 
 // 收藏功能已移至 useFavorites composable
@@ -2096,6 +2185,159 @@ const getCurrentWebview = () => {
   return getWebviewForTab(currentTab.value.id)
 }
 
+browserContentAdapter = createBrowserContentAdapter({
+  getCurrentTab: () => currentTab.value,
+  getTabById: (tabId) => browserTabs.value.find(t => t.id === tabId) || null,
+  getCurrentWebview,
+  getWebviewForTab,
+  navigateToUrlForTab: (...args) => navigateToUrlForTab(...args)
+})
+
+function getWebContentsViewBounds() {
+  const el = browserContentRef.value
+  if (!el) return null
+
+  const rect = el.getBoundingClientRect()
+  return {
+    x: Math.round(rect.left),
+    y: Math.round(rect.top),
+    width: Math.max(0, Math.round(rect.width)),
+    height: Math.max(0, Math.round(rect.height))
+  }
+}
+
+function syncWebContentsViewBounds() {
+  if (!window.electronAPI?.webTabSetBounds) return
+  const bounds = getWebContentsViewBounds()
+  if (!bounds) return
+  window.electronAPI.webTabSetBounds({ bounds })
+}
+
+function isWebContentsViewTab(tab) {
+  if (!tab) return false
+  return tab.routeType === 'webview' && (tab.contentHost || 'webcontentsview') === 'webcontentsview'
+}
+
+function getWebContentsViewTabId(tab) {
+  if (!tab) return null
+  return `browser-web-${tab.id}`
+}
+
+async function ensureWebContentsViewTab(tab, targetUrl = '') {
+  if (!isWebContentsViewTab(tab) || !window.electronAPI?.webTabCreate) return false
+
+  const tabId = getWebContentsViewTabId(tab)
+  const url = normalizeUrl(targetUrl || tab.url || tab.initialUrl || 'about:blank')
+  if (!tab.__webContentsCreated) {
+    const result = await window.electronAPI.webTabCreate({ tabId, url })
+    if (result?.success) {
+      tab.__webContentsCreated = true
+    }
+    return !!result?.success
+  }
+  return true
+}
+
+async function activateWebContentsViewTab(tab) {
+  if (!isWebContentsViewTab(tab) || !window.electronAPI?.webTabActivate) return
+  await ensureWebContentsViewTab(tab)
+  syncWebContentsViewBounds()
+  const bounds = getWebContentsViewBounds()
+  await window.electronAPI.webTabActivate({
+    tabId: getWebContentsViewTabId(tab),
+    bounds
+  })
+}
+
+async function hideAllWebContentsViewTabs() {
+  if (!window.electronAPI?.webTabHideAll) return
+  await window.electronAPI.webTabHideAll()
+}
+
+async function destroyWebContentsViewTab(tab) {
+  if (!tab || !tab.__webContentsCreated || !window.electronAPI?.webTabDestroy) return
+  await window.electronAPI.webTabDestroy({ tabId: getWebContentsViewTabId(tab) })
+  tab.__webContentsCreated = false
+}
+
+async function syncActiveContentHost() {
+  const tab = currentTab.value
+  if (!tab) return
+  if (isWebContentsViewTab(tab)) {
+    await activateWebContentsViewTab(tab)
+    return
+  }
+  await hideAllWebContentsViewTabs()
+}
+
+function bindWebContentsViewEvents() {
+  if (!window.electronAPI?.onWebTabStateChanged) return
+
+  window.electronAPI.onWebTabStateChanged((payload) => {
+    const tab = browserTabs.value.find(t => getWebContentsViewTabId(t) === payload?.tabId)
+    if (!tab) return
+
+    const prevLoading = !!tab.isLoading
+    if (typeof payload.isLoading === 'boolean') {
+      tab.isLoading = payload.isLoading
+      if (tab.id === activeBrowserTabId.value) {
+        if (payload.isLoading && !prevLoading) startLoadingProgress()
+        if (!payload.isLoading && prevLoading) finishLoadingProgress()
+      }
+    }
+    if (typeof payload.url === 'string' && payload.url) {
+      tab.url = payload.url
+      if (tab.id === activeBrowserTabId.value) {
+        currentUrl.value = payload.url
+        urlInput.value = payload.url
+      }
+      if (!payload.url.startsWith('about:')) {
+        tab.needsSaveHistory = true
+      }
+    }
+    if (typeof payload.canGoBack === 'boolean') tab.canGoBack = payload.canGoBack
+    if (typeof payload.canGoForward === 'boolean') tab.canGoForward = payload.canGoForward
+  })
+
+  window.electronAPI.onWebTabTitleUpdated(({ tabId, title }) => {
+    const tab = browserTabs.value.find(t => getWebContentsViewTabId(t) === tabId)
+    if (!tab) return
+    onTitleUpdatedFromWebView(title, tab.id)
+  })
+
+  window.electronAPI.onWebTabFaviconUpdated(({ tabId, favicon }) => {
+    const tab = browserTabs.value.find(t => getWebContentsViewTabId(t) === tabId)
+    if (!tab) return
+    onFaviconUpdated(favicon, tab.id)
+  })
+
+  window.electronAPI.onWebTabLoadFailed((payload) => {
+    const tab = browserTabs.value.find(t => getWebContentsViewTabId(t) === payload?.tabId)
+    if (!tab) return
+    onLoadFail({
+      errorCode: payload.errorCode,
+      errorDescription: payload.errorDescription,
+      validatedURL: payload.url,
+      isMainFrame: true
+    }, tab.id)
+  })
+
+  window.electronAPI.onWebDownloadStateChanged?.((payload) => {
+    if (!payload?.id) return
+    downloadStates.value[payload.id] = {
+      ...downloadStates.value[payload.id],
+      ...payload,
+      updatedAt: Date.now()
+    }
+
+    if (payload.state === 'completed' || payload.state === 'cancelled' || payload.state === 'interrupted') {
+      setTimeout(() => {
+        delete downloadStates.value[payload.id]
+      }, 5000)
+    }
+  })
+}
+
 // 浏览器标签页管理
 // 获取特殊页面的标题和图标
 // 创建浏览器标签页 - 使用路由系统
@@ -2133,6 +2375,8 @@ const createBrowserTab = (url = '', title = '') => {
     routeType: route.type,
     routeConfig: route.config,
     routeProps: route.props || {},
+    contentKind: route.config.showWebview ? 'web' : 'builtin',
+    contentHost: route.config.showWebview ? 'webcontentsview' : 'builtin',
     history: [], // 历史记录（用于返回功能）
     forwardHistory: [], // 前进栈（用于返回后前进）
     needsSaveHistory: shouldSaveHistory, // 是否需要保存到浏览历史
@@ -2160,6 +2404,7 @@ const createBrowserTab = (url = '', title = '') => {
 const updateTabRoute = (tab, newUrl) => {
   if (!tab) return
   
+  const oldRouteType = tab.routeType
   const route = parseRoute(newUrl)
   
   console.log('🔄 更新标签页路由:', { 
@@ -2173,6 +2418,8 @@ const updateTabRoute = (tab, newUrl) => {
   tab.routeType = route.type
   tab.routeConfig = route.config
   tab.routeProps = route.props || {}
+  tab.contentKind = route.config.showWebview ? 'web' : 'builtin'
+  tab.contentHost = route.config.showWebview ? 'webcontentsview' : 'builtin'
   tab.url = route.url
   clearTabLoadError(tab)
   tab.forwardHistory = []
@@ -2203,6 +2450,9 @@ const updateTabRoute = (tab, newUrl) => {
     tab.initialUrl = 'about:blank'
     tab.pendingUrl = ''
     tab.needsSaveHistory = false
+    if (oldRouteType === 'webview') {
+      destroyWebContentsViewTab(tab)
+    }
   }
   
   // 如果是当前标签页，更新 UI
@@ -2458,24 +2708,14 @@ const onMouseUp = (event) => {
 const switchBrowserTab = async (tabId) => {
   // 保存当前标签页的状态（只保存必要信息，不触发任何加载）
   if (currentTab.value && currentTab.value.routeType === 'webview') {
-    try {
-      const webview = getCurrentWebview()
-      if (webview) {
-        try {
-          // 保存 webview 的实际 src
-          const actualSrc = webview.src
-          if (actualSrc && actualSrc !== 'about:blank' && actualSrc !== 'about:blank#blocked') {
-            currentTab.value.webviewSrc = actualSrc
-            currentTab.value.url = actualSrc
-          }
-          currentTab.value.canGoBack = webview.canGoBack()
-          currentTab.value.canGoForward = webview.canGoForward()
-        } catch (e) {
-          console.warn('无法读取 webview 导航状态:', e)
-        }
+    const state = browserContentAdapter.captureWebTabState(currentTab.value)
+    if (state) {
+      if (state.url && state.url !== 'about:blank') {
+        currentTab.value.webviewSrc = state.url
+        currentTab.value.url = state.url
       }
-    } catch (e) {
-      console.warn('保存标签页状态失败:', e)
+      currentTab.value.canGoBack = !!state.canGoBack
+      currentTab.value.canGoForward = !!state.canGoForward
     }
   }
   
@@ -2484,6 +2724,7 @@ const switchBrowserTab = async (tabId) => {
   // 等待下一个 tick，确保组件更新完成
   await nextTick()
   syncLoadingProgressWithActiveTab()
+  await syncActiveContentHost()
   
   // 状态会通过 watch 自动同步（watch 中也不会触发重新加载）
 }
@@ -2500,6 +2741,10 @@ const closeBrowserTab = async (tabId) => {
   
   const tab = browserTabs.value[index]
   console.log('🗑️ 关闭标签页:', { tabId, index, routeType: tab.routeType, tabsCount: browserTabs.value.length })
+
+  if (isWebContentsViewTab(tab)) {
+    await destroyWebContentsViewTab(tab)
+  }
   
   // 关闭标签时立即隐藏tooltip
   hideTooltip()
@@ -2586,6 +2831,8 @@ const createNewBrowserTab = async () => {
     routeType: 'new-tab', // 特殊类型：新标签页，显示首页内容
     routeConfig: { showWebview: false }, // 新标签页不显示 webview
     routeProps: {},
+    contentKind: 'builtin',
+    contentHost: 'builtin',
     history: [],
     forwardHistory: [],
     loadError: null
@@ -2856,14 +3103,16 @@ const restoreBrowserTabs = async () => {
       const tab = createBrowserTab(savedTab.url, savedTab.title || '')
       // 如果保存的类型与路由解析的类型不一致，需要更新（主要是为了兼容旧数据）
       if (savedTab.type && savedTab.type !== tab.routeType) {
-      if (savedTab.type === 'clone-directory' && savedTab.clonePath) {
+        if (savedTab.type === 'clone-directory' && savedTab.clonePath) {
           tab.routeType = 'clone-directory'
           tab.routeProps = { path: savedTab.clonePath }
           tab.routeConfig = routeConfig['clone-directory']
-      } else if (savedTab.type === 'remote-repo') {
+        } else if (savedTab.type === 'remote-repo') {
           tab.routeType = 'remote-repo'
           tab.routeConfig = routeConfig['remote-repo']
         }
+        tab.contentKind = tab.routeConfig.showWebview ? 'web' : 'builtin'
+        tab.contentHost = tab.routeConfig.showWebview ? 'webcontentsview' : 'builtin'
       }
       console.log('✅ 恢复标签页:', tab.id, 'routeType:', tab.routeType, 'url:', tab.url, 'title:', tab.title)
     }
@@ -2977,12 +3226,28 @@ watch(() => pageTitle.value, (newTitle) => {
   }
 })
 
+watch(() => loadingProgressVisible.value, () => {
+  nextTick(() => {
+    syncWebContentsViewBounds()
+  })
+})
+
 // 初始化
 onMounted(async () => {
   console.log('🚀 Browser 组件已挂载')
   console.log('📋 Props:', { initialUrl: props.initialUrl })
 
   try {
+    bindWebContentsViewEvents()
+    syncWebContentsViewBounds()
+    if (typeof ResizeObserver !== 'undefined' && browserContentRef.value) {
+      const observer = new ResizeObserver(() => {
+        syncWebContentsViewBounds()
+      })
+      observer.observe(browserContentRef.value)
+      browserContentRef.value.__contentBoundsObserver = observer
+    }
+
   await loadFavorites()
   await loadCloneDirectories() // 加载克隆目录列表
   await loadBrowsingHistory() // 加载历史记录
@@ -3037,10 +3302,16 @@ onMounted(async () => {
     }
     
     window.addEventListener('keydown', handleKeyDown)
+    const handleResize = () => {
+      syncWebContentsViewBounds()
+      syncActiveContentHost()
+    }
+    window.addEventListener('resize', handleResize)
     console.log('✅ Command+R 快捷键监听器已注册')
 
     // 保存 handleKeyDown 引用以便卸载时移除
     window.__browserKeyDownHandler = handleKeyDown
+    window.__browserResizeHandler = handleResize
     
   
   // 监听菜单事件
@@ -3119,11 +3390,25 @@ onMounted(async () => {
 // 组件卸载时保存标签页
 onUnmounted(() => {
   clearLoadingProgressTimers()
+  hideAllWebContentsViewTabs()
+  browserContentRef.value?.__contentBoundsObserver?.disconnect()
+
+  if (window.electronAPI) {
+    window.electronAPI.removeWebTabStateChangedListener?.()
+    window.electronAPI.removeWebTabTitleUpdatedListener?.()
+    window.electronAPI.removeWebTabFaviconUpdatedListener?.()
+    window.electronAPI.removeWebTabLoadFailedListener?.()
+    window.electronAPI.removeWebDownloadStateChangedListener?.()
+  }
   // 移除 Command+R 快捷键监听器
   if (window.__browserKeyDownHandler) {
     window.removeEventListener('keydown', window.__browserKeyDownHandler)
     delete window.__browserKeyDownHandler
     console.log('🧹 Command+R 快捷键监听器已移除')
+  }
+  if (window.__browserResizeHandler) {
+    window.removeEventListener('resize', window.__browserResizeHandler)
+    delete window.__browserResizeHandler
   }
   
   saveBrowserTabs()
@@ -3764,6 +4049,82 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   background: rgba(255, 255, 255, 0.2);
 }
 
+.download-status-panel {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100% - 24px));
+}
+
+.download-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(24, 24, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.download-close {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+}
+
+.download-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.download-empty {
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(24, 24, 24, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  text-align: center;
+}
+
+.download-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(24, 24, 24, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+}
+
+.download-name {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.download-state,
+.download-progress {
+  font-size: 11px;
+  opacity: 0.8;
+}
 
 .browser-main {
   flex: 1;

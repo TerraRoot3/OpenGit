@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, dialog, ipcMain, session, protocol, net } = require('electron')
+const { app, BrowserWindow, Menu, shell, dialog, ipcMain, session, protocol, net, screen } = require('electron')
 const path = require('path')
 const { exec, spawn } = require('child_process')
 const { promisify, format } = require('util')
@@ -21,6 +21,7 @@ const { registerWindowUiHandlers } = require('./ipc/window-ui')
 const { registerBranchHandlers } = require('./ipc/branch')
 const { registerExtensionHandlers } = require('./ipc/extensions')
 const { registerScmHandlers } = require('./ipc/scm')
+const { WebTabManager } = require('./tab-manager/web-tab-manager')
 
 // 注册自定义协议（必须在 app ready 之前调用）
 // local-resource:// 用于安全地向渲染进程提供 ~/.gitManager/ 目录下的本地文件
@@ -439,6 +440,22 @@ const store = new Store({
 
 // 开发环境判断
 const isDev = process.env.NODE_ENV === 'development'
+let webTabManager = null
+const floatingMenuResolvers = new Map()
+
+ipcMain.on('browser-floating-menu-action', (event, payload) => {
+  const menuWindow = BrowserWindow.fromWebContents(event.sender)
+  if (!menuWindow) return
+  const resolve = floatingMenuResolvers.get(menuWindow.id)
+  if (resolve) {
+    const action = payload && typeof payload.action === 'string' ? payload.action : null
+    floatingMenuResolvers.delete(menuWindow.id)
+    resolve(action)
+  }
+  if (!menuWindow.isDestroyed()) {
+    menuWindow.close()
+  }
+})
 
 function createWindow() {
   // 防止重复创建窗口
@@ -466,6 +483,10 @@ function createWindow() {
             trafficLightPosition: { x: 8, y: 8 },
             show: false
           })
+
+  if (webTabManager) {
+    webTabManager.attachWindow(mainWindow)
+  }
 
   if (isDev) {
     // 开发模式：加载 Vite 开发服务器
@@ -571,6 +592,276 @@ function createWindow() {
 
   createMenu()
 }
+
+ipcMain.handle('web-tab-create', async (event, { tabId, url }) => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    webTabManager.createWebTab(tabId, url || 'about:blank')
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('web-tab-destroy', async (event, { tabId }) => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    return { success: webTabManager.destroyWebTab(tabId) }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('web-tab-activate', async (event, { tabId, bounds }) => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    return { success: webTabManager.activateWebTab(tabId, bounds || null) }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('web-tab-navigate', async (event, { tabId, url }) => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    return { success: webTabManager.navigateWebTab(tabId, url) }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('web-tab-hide-all', async () => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    return { success: webTabManager.hideAllWebTabs() }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('web-tab-set-bounds', async (event, { bounds }) => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    return { success: webTabManager.setActiveBounds(bounds || null) }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('web-tab-reload', async (event, { tabId }) => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    return { success: webTabManager.reloadWebTab(tabId) }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('web-tab-go-back', async (event, { tabId }) => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    return { success: webTabManager.goBack(tabId) }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('web-tab-go-forward', async (event, { tabId }) => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    return { success: webTabManager.goForward(tabId) }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('browser-show-native-menu', async (event) => {
+  try {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender)
+    if (!targetWindow || targetWindow.isDestroyed()) return null
+
+    let selectedAction = null
+    const menu = Menu.buildFromTemplate([
+      { label: '远端仓库', click: () => { selectedAction = 'remote-repo' } },
+      { label: '仓库管理', click: () => { selectedAction = 'saved-projects' } },
+      { label: '收藏管理', click: () => { selectedAction = 'favorites-manager' } },
+      { label: '历史记录', click: () => { selectedAction = 'browsing-history' } },
+      { label: '密码管理', click: () => { selectedAction = 'password-manager' } },
+      { label: '下载管理', click: () => { selectedAction = 'download-panel' } },
+      { type: 'separator' },
+      { label: '备份管理', click: () => { selectedAction = 'backup-manager' } }
+    ])
+
+    return await new Promise((resolve) => {
+      menu.popup({
+        window: targetWindow,
+        callback: () => resolve(selectedAction)
+      })
+    })
+  } catch (error) {
+    safeError('❌ 打开原生浏览器菜单失败:', error.message)
+    return null
+  }
+})
+
+ipcMain.handle('browser-show-floating-menu', async (event, { x, y } = {}) => {
+  try {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender)
+    if (!targetWindow || targetWindow.isDestroyed()) return null
+
+    const menuWidth = 168
+    const menuHeight = 320
+    const display = screen.getDisplayNearestPoint({ x: Math.round(x || 0), y: Math.round(y || 0) })
+    const workArea = display.workArea
+
+    const targetX = Math.min(
+      Math.max(workArea.x, Math.round((x || (workArea.x + menuWidth)) - menuWidth)),
+      workArea.x + workArea.width - menuWidth
+    )
+    const targetY = Math.min(
+      Math.max(workArea.y, Math.round(y || workArea.y)),
+      workArea.y + workArea.height - menuHeight
+    )
+
+    const menuWindow = new BrowserWindow({
+      width: menuWidth,
+      height: menuHeight,
+      x: targetX,
+      y: targetY,
+      frame: false,
+      show: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      parent: targetWindow,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+        sandbox: false
+      }
+    })
+
+    const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    overflow: hidden;
+  }
+  .menu {
+    width: 100%;
+    box-sizing: border-box;
+    background: #2d2d2d;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    color: rgba(255,255,255,0.9);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    user-select: none;
+    padding: 4px 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .item:hover { background: rgba(255,255,255,0.1); }
+  .icon {
+    width: 16px;
+    text-align: center;
+    opacity: 0.9;
+  }
+  .divider {
+    height: 1px;
+    margin: 4px 0;
+    background: rgba(255,255,255,0.1);
+  }
+</style>
+</head>
+<body>
+  <div class="menu">
+    <div class="item" data-action="remote-repo"><span class="icon">☁</span><span>远端仓库</span></div>
+    <div class="item" data-action="saved-projects"><span class="icon">▦</span><span>仓库管理</span></div>
+    <div class="item" data-action="favorites-manager"><span class="icon">☆</span><span>收藏管理</span></div>
+    <div class="item" data-action="browsing-history"><span class="icon">◷</span><span>历史记录</span></div>
+    <div class="item" data-action="password-manager"><span class="icon">⌘</span><span>密码管理</span></div>
+    <div class="item" data-action="download-panel"><span class="icon">⇩</span><span>下载管理</span></div>
+    <div class="divider"></div>
+    <div class="item" data-action="backup-manager"><span class="icon">⬢</span><span>备份管理</span></div>
+  </div>
+  <script>
+    const { ipcRenderer } = require('electron');
+    const send = (action) => ipcRenderer.send('browser-floating-menu-action', { action });
+    document.querySelectorAll('.item').forEach(el => {
+      el.addEventListener('click', () => send(el.dataset.action || null));
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') send(null);
+    });
+    window.addEventListener('blur', () => send(null));
+  </script>
+</body>
+</html>`
+
+    await menuWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+
+    const measuredHeight = await menuWindow.webContents.executeJavaScript(`
+      (() => {
+        const menu = document.querySelector('.menu')
+        if (!menu) return ${menuHeight}
+        return Math.ceil(menu.getBoundingClientRect().height)
+      })()
+    `)
+
+    const finalHeight = Math.max(1, Number(measuredHeight) || menuHeight)
+    const finalY = Math.min(
+      Math.max(workArea.y, Math.round(y || workArea.y)),
+      workArea.y + workArea.height - finalHeight
+    )
+
+    menuWindow.setBounds({
+      x: targetX,
+      y: finalY,
+      width: menuWidth,
+      height: finalHeight
+    })
+
+    if (!menuWindow.isDestroyed()) {
+      menuWindow.show()
+      menuWindow.focus()
+    }
+
+    return await new Promise((resolve) => {
+      floatingMenuResolvers.set(menuWindow.id, resolve)
+      menuWindow.on('closed', () => {
+        const resolver = floatingMenuResolvers.get(menuWindow.id)
+        if (resolver) {
+          floatingMenuResolvers.delete(menuWindow.id)
+          resolver(null)
+        }
+      })
+    })
+  } catch (error) {
+    safeError('❌ 打开浮层菜单失败:', error.message)
+    return null
+  }
+})
 
 // Git 操作函数
 async function executeGitCommand(command, cwd) {
@@ -1000,6 +1291,7 @@ app.on('web-contents-created', (event, contents) => {
 
 app.whenReady().then(async () => {
   safeLog('Electron app ready, creating window...')
+  webTabManager = new WebTabManager({ safeLog, safeError })
 
   // 注册 local-resource:// 协议：安全地将 ~/.gitManager/ 下的文件提供给渲染进程
   // URL 格式：local-resource://相对路径  例：local-resource://screenshots/screenshot-123.png
@@ -1032,6 +1324,30 @@ app.whenReady().then(async () => {
   // 配置存储访问权限
   webviewSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
     return true
+  })
+
+  webviewSession.on('will-download', (event, item) => {
+    const downloadId = item.getGUID()
+    const sendDownloadState = (state) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('web-download-state-changed', {
+          id: downloadId,
+          state,
+          fileName: item.getFilename(),
+          totalBytes: item.getTotalBytes(),
+          receivedBytes: item.getReceivedBytes(),
+          url: item.getURL()
+        })
+      }
+    }
+
+    sendDownloadState('started')
+    item.on('updated', () => {
+      sendDownloadState(item.isPaused() ? 'paused' : 'progress')
+    })
+    item.once('done', (e, state) => {
+      sendDownloadState(state === 'completed' ? 'completed' : 'interrupted')
+    })
   })
   
   // 设置存储路径（确保使用应用数据目录）
@@ -1122,6 +1438,9 @@ const { cleanup: cleanupTerminalSessions } = registerTerminalHandlers({
 })
 
 app.on('will-quit', () => {
+  if (webTabManager) {
+    webTabManager.cleanup()
+  }
   cleanupTerminalSessions()
 })
 

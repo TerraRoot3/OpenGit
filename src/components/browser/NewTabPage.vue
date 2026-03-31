@@ -10,7 +10,7 @@
     
     <!-- WebView 网页 -->
     <WebView
-      v-else-if="routeType === 'webview'"
+      v-else-if="routeType === 'webview' && contentHost !== 'webcontentsview'"
       :tab-id="tabId"
       :src="src"
       :user-agent="userAgent"
@@ -27,6 +27,8 @@
       @title-updated="(title, id) => emit('title-updated', title, id)"
       @favicon-updated="(favicon, id) => emit('favicon-updated', favicon, id)"
     />
+
+    <div v-else-if="routeType === 'webview'" class="webcontentsview-placeholder"></div>
     
     <!-- 收藏管理 -->
     <FavoritesManager 
@@ -123,6 +125,10 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  contentHost: {
+    type: String,
+    default: 'webcontentsview'
+  },
   userAgent: {
     type: String,
     default: ''
@@ -178,5 +184,9 @@ const handleNavigateCurrent = (url) => {
 .new-tab-page.is-active {
   z-index: 1;
 }
-</style>
 
+.webcontentsview-placeholder {
+  width: 100%;
+  height: 100%;
+}
+</style>
