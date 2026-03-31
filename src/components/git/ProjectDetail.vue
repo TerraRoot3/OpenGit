@@ -513,7 +513,7 @@ const statusLoading = ref(false)
 const hasPendingFiles = ref(false) // 是否有待定文件
 
 // ==================== UI 状态 ====================
-// 从 localStorage 读取项目对应的视图状态，默认为 'file-status'
+// 从 localStorage 读取项目对应的视图状态，默认为 'terminal'
 const getProjectViewKey = (path) => `projectView_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
 const getExpandStateKey = (path) => `expandState_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
 
@@ -524,7 +524,7 @@ const getSavedCurrentView = (path) => {
       return saved
     }
   } catch (e) {}
-  return 'file-status'
+  return 'terminal'
 }
 
 // 保存展开状态到 localStorage
@@ -563,7 +563,7 @@ const restoreExpandState = (path) => {
   }
 }
 
-const currentView = ref('file-status')
+const currentView = ref('terminal')
 const terminalMounted = ref(false)
 const showLocalBranches = ref(true)
 const showRemoteBranches = ref(false)

@@ -3,19 +3,19 @@
     <div class="terminal-header">
       <div class="terminal-tabs">
         <div
-          v-for="term in terminals"
-          :key="term.termId"
+          v-for="tab in tabs"
+          :key="tab.tabId"
           class="terminal-tab"
-          :class="{ active: term.termId === activeTermId }"
-          @click="switchTerminal(term.termId)"
+          :class="{ active: tab.tabId === activeTabId }"
+          @click="switchTab(tab.tabId)"
         >
           <TerminalIcon :size="12" />
-          <span class="tab-label">{{ term.label }}</span>
+          <span class="tab-label">{{ tab.label }}</span>
           <button
-            v-if="terminals.length > 1"
+            v-if="tabs.length > 1"
             class="tab-close-btn"
             @mousedown.prevent.stop
-            @click.stop="closeTerminal(term.termId)"
+            @click.stop="closeTab(tab.tabId)"
           >
             <X :size="10" />
           </button>
@@ -42,6 +42,9 @@
       </div>
       <div class="terminal-actions">
         <span class="terminal-path" :title="currentCwd">{{ pathDisplay }}</span>
+        <button class="terminal-btn" @mousedown.prevent @click="toggleSplitTerminal" :title="isSplitMode ? '退出分屏' : '分屏终端'">
+          <span class="split-btn-icon">▦</span>
+        </button>
         <button class="terminal-btn" @mousedown.prevent @click="clearTerminal" title="清屏">
           <Eraser :size="14" />
         </button>
@@ -50,7 +53,23 @@
         </button>
       </div>
     </div>
-    <div class="terminal-body" ref="terminalBodyRef"></div>
+    <div class="terminal-body" ref="terminalBodyRef">
+      <div v-if="isSplitMode && activeTabTermIds.length === 2" class="terminal-split">
+        <div class="terminal-pane">
+          <button class="pane-close-btn" title="关闭左侧分屏" @mousedown.prevent.stop @click.stop="closeSplitPane(activeTabTermIds[0])">
+            <X :size="11" />
+          </button>
+          <div class="terminal-pane-content" ref="leftPaneRef" @mousedown="focusSplitPane(activeTabTermIds[0])"></div>
+        </div>
+        <div class="terminal-pane">
+          <button class="pane-close-btn" title="关闭右侧分屏" @mousedown.prevent.stop @click.stop="closeSplitPane(activeTabTermIds[1])">
+            <X :size="11" />
+          </button>
+          <div class="terminal-pane-content" ref="rightPaneRef" @mousedown="focusSplitPane(activeTabTermIds[1])"></div>
+        </div>
+      </div>
+      <div v-else class="terminal-single-pane" ref="singlePaneRef"></div>
+    </div>
   </div>
 </template>
 
@@ -73,6 +92,11 @@ const props = defineProps({
 
 const containerRef = ref(null)
 const terminalBodyRef = ref(null)
+const singlePaneRef = ref(null)
+const leftPaneRef = ref(null)
+const rightPaneRef = ref(null)
+const tabs = ref([])
+const activeTabId = ref(null)
 const terminals = ref([])
 const activeTermId = ref(null)
 const terminalCache = new Map()
@@ -119,9 +143,17 @@ watch(
   { immediate: true }
 )
 
-const currentTerminal = computed(() =>
-  terminals.value.find(t => t.termId === activeTermId.value)
-)
+const findTabById = (id) => tabs.value.find(t => t.tabId === id)
+const findTerminalById = (id) => terminals.value.find(t => t.termId === id)
+const activeTab = computed(() => findTabById(activeTabId.value))
+const activeTabTermIds = computed(() => activeTab.value?.termIds || [])
+const isSplitMode = computed(() => !!(activeTab.value && activeTab.value.split && activeTabTermIds.value.length === 2))
+const currentTerminal = computed(() => {
+  const current = findTerminalById(activeTermId.value)
+  if (current) return current
+  const firstId = activeTabTermIds.value[0]
+  return firstId ? findTerminalById(firstId) : null
+})
 
 const currentCwd = computed(() => {
   const cwd = currentTerminal.value?.cwd || props.defaultCwd || ''
@@ -165,7 +197,6 @@ const XTERM_OPTS = {
 const createXterm = () => {
   const el = document.createElement('div')
   el.style.cssText = 'width:100%;height:100%;display:none;overflow:hidden;'
-  terminalBodyRef.value.appendChild(el)
 
   const xterm = new Terminal(XTERM_OPTS)
   const fitAddon = new FitAddon()
@@ -178,6 +209,10 @@ const createXterm = () => {
 
 const nextIndex = () => {
   const used = new Set(terminals.value.map(t => t._termIndex))
+  for (let i = 1; ; i++) { if (!used.has(i)) return i }
+}
+const nextTabIndex = () => {
+  const used = new Set(tabs.value.map(t => t._tabIndex))
   for (let i = 1; ; i++) { if (!used.has(i)) return i }
 }
 
@@ -202,7 +237,57 @@ const normalizeRequestedCwd = (cwdOverride) => {
   return normalizeIncomingPath(cwdOverride)
 }
 
-const addTerminal = async (cwdOverride = null) => {
+const mountTermToPane = (term, paneEl) => {
+  if (!term || !paneEl) return
+  if (term.el.parentNode !== paneEl) {
+    paneEl.appendChild(term.el)
+  }
+  term.el.style.display = ''
+}
+
+const applyLayout = (focusActive = true) => {
+  nextTick(() => {
+    for (const t of terminals.value) {
+      t.el.style.display = 'none'
+    }
+
+    if (isSplitMode.value && activeTabTermIds.value.length === 2 && leftPaneRef.value && rightPaneRef.value) {
+      const left = findTerminalById(activeTabTermIds.value[0])
+      const right = findTerminalById(activeTabTermIds.value[1])
+      if (left && right) {
+        mountTermToPane(left, leftPaneRef.value)
+        mountTermToPane(right, rightPaneRef.value)
+        refreshVisibleTerminal(left, focusActive && activeTermId.value === left.termId)
+        refreshVisibleTerminal(right, focusActive && activeTermId.value === right.termId)
+        return
+      }
+      if (activeTab.value) {
+        activeTab.value.split = false
+      }
+    }
+
+    const term = currentTerminal.value || terminals.value[0]
+    if (!term || !singlePaneRef.value) return
+    mountTermToPane(term, singlePaneRef.value)
+    refreshVisibleTerminal(term, focusActive)
+  })
+}
+
+const addTerminal = async (cwdOverride = null, options = {}) => {
+  const { autoSwitch = true, tabId = null } = options
+  let targetTab = tabId ? findTabById(tabId) : null
+  if (!targetTab) {
+    const tabIndex = nextTabIndex()
+    targetTab = {
+      tabId: `tab-${Date.now()}-${tabIndex}`,
+      label: `终端 ${tabIndex}`,
+      _tabIndex: tabIndex,
+      split: false,
+      termIds: []
+    }
+    tabs.value.push(targetTab)
+  }
+
   const idx = nextIndex()
   const termId = `term-${Date.now()}-${idx}`
   const explicitCwd = normalizeRequestedCwd(cwdOverride)
@@ -219,13 +304,13 @@ const addTerminal = async (cwdOverride = null) => {
     xterm.write('\r\n\x1b[31m无法创建终端：项目目录未就绪，请稍后重试\x1b[0m\r\n')
     try { xterm.dispose() } catch (e) {}
     el.remove()
-    return
+    return null
   }
 
   const term = {
     termId,
-    label: `终端 ${idx}`,
     _termIndex: idx,
+    tabId: targetTab.tabId,
     cwd,
     xterm,
     fitAddon,
@@ -267,7 +352,17 @@ const addTerminal = async (cwdOverride = null) => {
   }
 
   terminals.value.push(term)
-  switchTerminal(termId)
+  if (!targetTab.termIds.includes(termId)) {
+    targetTab.termIds.push(termId)
+  }
+  if (autoSwitch || !activeTermId.value) {
+    activeTabId.value = targetTab.tabId
+    activeTermId.value = termId
+    applyLayout(true)
+  } else {
+    applyLayout(false)
+  }
+  return termId
 }
 
 const handleAddTerminal = async () => {
@@ -305,17 +400,71 @@ const refreshVisibleTerminal = (term, focus = true) => {
   })
 }
 
-const switchTerminal = (termId) => {
-  for (const t of terminals.value) {
-    t.el.style.display = t.termId === termId ? '' : 'none'
-  }
+const switchTab = (tabId) => {
+  const tab = findTabById(tabId)
+  if (!tab) return
+  activeTabId.value = tab.tabId
+  activeTermId.value = tab.termIds.includes(activeTermId.value) ? activeTermId.value : (tab.termIds[0] || null)
+  applyLayout(true)
+}
+
+const focusSplitPane = (termId) => {
+  if (!termId) return
   activeTermId.value = termId
-  const term = terminals.value.find(t => t.termId === termId)
+  const term = findTerminalById(termId)
   refreshVisibleTerminal(term, true)
 }
 
-const closeTerminal = async (termId) => {
-  if (terminals.value.length <= 1) return
+const toggleSplitTerminal = async () => {
+  const tab = activeTab.value
+  const active = currentTerminal.value || terminals.value[0]
+  if (!tab || !active) return
+
+  if (tab.split && tab.termIds.length === 2) {
+    const keepId = active.termId
+    const dropId = tab.termIds.find(id => id !== keepId)
+    if (dropId) {
+      await closeTerminalById(dropId)
+    }
+    tab.termIds = [keepId]
+    tab.split = false
+    activeTermId.value = keepId
+    applyLayout(true)
+    return
+  }
+
+  if (tab.termIds.length >= 2) {
+    tab.split = true
+    applyLayout(true)
+    return
+  }
+
+  const baseCwd = normalizeIncomingPath(active.cwd || getProjectRootCwd() || '')
+  const newTermId = await addTerminal(baseCwd || null, { autoSwitch: false, tabId: tab.tabId })
+  if (!newTermId) return
+
+  tab.termIds = [active.termId, newTermId]
+  tab.split = true
+  activeTabId.value = tab.tabId
+  activeTermId.value = newTermId
+  applyLayout(true)
+}
+
+const closeSplitPane = async (termId) => {
+  const tab = activeTab.value
+  if (!tab || tab.termIds.length < 2 || !tab.termIds.includes(termId)) return
+  const keepId = tab.termIds.find(id => id !== termId)
+  await closeTerminalById(termId)
+  if (!keepId) return
+  tab.termIds = [keepId]
+  tab.split = false
+  if (activeTermId.value === termId || !tab.termIds.includes(activeTermId.value)) {
+    activeTermId.value = keepId
+  }
+  applyLayout(true)
+}
+
+const closeTerminalById = async (termId) => {
   const idx = terminals.value.findIndex(t => t.termId === termId)
   if (idx === -1) return
 
@@ -326,11 +475,33 @@ const closeTerminal = async (termId) => {
   try { term.xterm.dispose() } catch (e) {}
   term.el.remove()
   terminals.value.splice(idx, 1)
+  const tab = findTabById(term.tabId)
+  if (!tab) return
+  tab.termIds = tab.termIds.filter(id => id !== termId)
+  if (tab.termIds.length < 2) tab.split = false
+}
 
-  if (activeTermId.value === termId) {
-    const nextIdx = Math.min(idx, terminals.value.length - 1)
-    switchTerminal(terminals.value[nextIdx].termId)
+const closeTab = async (tabId) => {
+  if (tabs.value.length <= 1) return
+  const tab = findTabById(tabId)
+  if (!tab) return
+
+  for (const termId of [...tab.termIds]) {
+    await closeTerminalById(termId)
   }
+
+  const idx = tabs.value.findIndex(t => t.tabId === tabId)
+  if (idx === -1) return
+  tabs.value.splice(idx, 1)
+
+  if (activeTabId.value === tabId) {
+    const next = tabs.value[Math.min(idx, tabs.value.length - 1)]
+    if (next) {
+      activeTabId.value = next.tabId
+      activeTermId.value = next.termIds[0] || null
+    }
+  }
+  applyLayout(true)
 }
 
 const clearTerminal = () => {
@@ -374,7 +545,7 @@ const restartTerminal = async (cwdOverride = null) => {
       }
       term.connected = true
       term.hasUserInput = false
-      term.xterm.focus()
+      applyLayout(true)
     }
   } catch (e) {
     term.xterm.write('\r\n\x1b[31m重启失败: ' + e.message + '\x1b[0m\r\n')
@@ -393,8 +564,8 @@ const ensureDefaultTerminal = async (cwdOverride = '') => {
       return
     }
 
-    if (!activeTermId.value && terminals.value[0]) {
-      switchTerminal(terminals.value[0].termId)
+    if (!activeTabId.value && tabs.value[0]) {
+      switchTab(tabs.value[0].tabId)
     }
 
     const term = currentTerminal.value || terminals.value[0]
@@ -403,6 +574,8 @@ const ensureDefaultTerminal = async (cwdOverride = '') => {
     const current = normalizeIncomingPath(term.cwd || '')
     if (terminals.value.length === 1 && !term.hasUserInput && current !== targetCwd) {
       await restartTerminal(targetCwd)
+    } else {
+      applyLayout(true)
     }
   })()
 
@@ -422,8 +595,8 @@ const detachTerminalsFromDom = (terms) => {
   for (const t of terms) {
     if (!t?.el) continue
     t.el.style.display = 'none'
-    if (t.el.parentNode === terminalBodyRef.value) {
-      terminalBodyRef.value.removeChild(t.el)
+    if (t.el.parentNode) {
+      t.el.parentNode.removeChild(t.el)
     }
   }
 }
@@ -433,6 +606,8 @@ const saveCurrentState = (path) => {
   if (!cacheKey || terminals.value.length === 0) return
   detachTerminalsFromDom(terminals.value)
   terminalCache.set(cacheKey, {
+    tabs: tabs.value,
+    activeTabId: activeTabId.value,
     terminals: terminals.value,
     activeTermId: activeTermId.value
   })
@@ -443,21 +618,24 @@ const restoreState = (path) => {
   const cached = terminalCache.get(cacheKey)
   if (!cached) return false
 
+  tabs.value = Array.isArray(cached.tabs) ? cached.tabs : []
   terminals.value = cached.terminals
+  activeTabId.value = cached.activeTabId || tabs.value[0]?.tabId || null
   activeTermId.value = cached.activeTermId
-
-  for (const t of cached.terminals) {
-    if (t.el.parentNode !== terminalBodyRef.value) {
-      terminalBodyRef.value.appendChild(t.el)
+  if (!tabs.value.length && terminals.value.length) {
+    const tabIndex = nextTabIndex()
+    const tab = {
+      tabId: `tab-${Date.now()}-${tabIndex}`,
+      label: `终端 ${tabIndex}`,
+      _tabIndex: tabIndex,
+      split: terminals.value.length > 1,
+      termIds: terminals.value.map(t => t.termId)
     }
+    tabs.value = [tab]
+    activeTabId.value = tab.tabId
+    if (!activeTermId.value) activeTermId.value = tab.termIds[0]
   }
-
-  nextTick(() => {
-    for (const t of terminals.value) {
-      t.el.style.display = t.termId === activeTermId.value ? '' : 'none'
-    }
-    refreshVisibleTerminal(currentTerminal.value, true)
-  })
+  applyLayout(true)
   return true
 }
 
@@ -501,21 +679,20 @@ const ipcHandler = {
     }
   },
   onTitleChange(data) {
-    const updateLabel = (t) => {
-      if (t.ptyId === data.id) {
-        const name = data.title.split('/').pop()
-        const idx = t._termIndex || 1
-        t.label = `${name} ${idx}`
-        return true
-      }
-      return false
+    const updateTabLabel = (term) => {
+      if (term.ptyId !== data.id) return false
+      const tab = findTabById(term.tabId)
+      if (!tab) return false
+      const name = data.title.split('/').pop()
+      tab.label = `${name || '终端'} ${tab._tabIndex || 1}`
+      return true
     }
     for (const t of terminals.value) {
-      if (updateLabel(t)) return
+      if (updateTabLabel(t)) return
     }
     for (const [, cached] of terminalCache) {
       for (const t of cached.terminals) {
-        if (updateLabel(t)) return
+        if (updateTabLabel(t)) return
       }
     }
   }
@@ -526,8 +703,8 @@ const ipcHandler = {
 let resizeTimer = null
 
 watch(() => props.isActive, (active) => {
-  if (active && currentTerminal.value) {
-    refreshVisibleTerminal(currentTerminal.value, true)
+  if (active && terminals.value.length > 0) {
+    applyLayout(true)
   }
 })
 
@@ -535,9 +712,13 @@ watch(() => props.defaultCwd, (newCwd, oldCwd) => {
   if (newCwd === oldCwd) return
   saveCurrentState(oldCwd)
   if (!restoreState(newCwd)) {
+    tabs.value = []
+    activeTabId.value = null
     terminals.value = []
     activeTermId.value = null
     addTerminal()
+  } else {
+    applyLayout(true)
   }
 })
 
@@ -561,7 +742,7 @@ onMounted(() => {
   const ro = new ResizeObserver(() => {
     if (resizeTimer) clearTimeout(resizeTimer)
     resizeTimer = setTimeout(() => {
-      refreshVisibleTerminal(currentTerminal.value, false)
+      applyLayout(false)
     }, 100)
   })
   if (containerRef.value) {
@@ -701,11 +882,62 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal })
   background: rgba(255, 255, 255, 0.1);
   color: #d4d4d4;
 }
+.split-btn-icon {
+  font-size: 12px;
+  line-height: 1;
+}
 .terminal-body {
   flex: 1;
   padding: 8px;
   overflow: hidden;
   position: relative;
+}
+.terminal-single-pane {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.terminal-split {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+.terminal-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+.terminal-pane-content {
+  width: 100%;
+  height: 100%;
+}
+.pane-close-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+.terminal-pane:hover .pane-close-btn {
+  opacity: 1;
+}
+.pane-close-btn:hover {
+  background: rgba(220, 80, 80, 0.85);
+}
+.terminal-pane + .terminal-pane {
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
 }
 .terminal-body :deep(.xterm) { height: 100%; }
 .terminal-body :deep(.xterm-viewport) {
