@@ -130,10 +130,6 @@ _gitmanager_apply_cwd() {
   fi
 }
 
-typeset -ga precmd_functions
-if [[ " \${precmd_functions[*]} " != *" _gitmanager_apply_cwd "* ]]; then
-  precmd_functions=(_gitmanager_apply_cwd $precmd_functions)
-fi
 _gitmanager_apply_cwd
 `)
 
@@ -149,17 +145,6 @@ __gitmanager_apply_cwd() {
     builtin cd -- "$GIT_MANAGER_INITIAL_CWD" 2>/dev/null || cd -- "$GIT_MANAGER_INITIAL_CWD"
   fi
 }
-
-case ";$PROMPT_COMMAND;" in
-  *";__gitmanager_apply_cwd;"*) ;;
-  *)
-    if [ -n "$PROMPT_COMMAND" ]; then
-      PROMPT_COMMAND="__gitmanager_apply_cwd;$PROMPT_COMMAND"
-    else
-      PROMPT_COMMAND="__gitmanager_apply_cwd"
-    fi
-    ;;
-esac
 
 __gitmanager_apply_cwd
 `)

@@ -45,7 +45,7 @@
         <button class="terminal-btn" @mousedown.prevent @click="clearTerminal" title="清屏">
           <Eraser :size="14" />
         </button>
-        <button class="terminal-btn" @mousedown.prevent @click="restartTerminal" title="重启终端">
+        <button class="terminal-btn" @mousedown.prevent @click="restartTerminal(getProjectRootCwd() || null)" title="重启终端">
           <RefreshCw :size="14" />
         </button>
       </div>
@@ -355,11 +355,13 @@ const restartTerminal = async (cwdOverride = null) => {
   term.xterm.reset()
   term.xterm.write('\x1b[33m正在重启终端...\x1b[0m\r\n')
   try {
-    let restartCwd = (cwdOverride != null && String(cwdOverride).trim() !== '')
+    const projectRootFromProps = normalizeIncomingPath(props.defaultCwd || '')
+    const explicitRestartCwd = (cwdOverride != null && String(cwdOverride).trim() !== '')
       ? String(cwdOverride).trim()
-      : ((term.cwd && String(term.cwd).trim()) || getBaseCwd())
+      : ''
+    let restartCwd = explicitRestartCwd || projectRootFromProps || getProjectRootCwd() || ((term.cwd && String(term.cwd).trim()) || getBaseCwd())
     if (!props.allowFirstTerminalWithoutCwd && !restartCwd.trim()) {
-      restartCwd = getProjectRootCwd() || ''
+      restartCwd = projectRootFromProps || getProjectRootCwd() || ''
     }
     const res = await window.electronAPI.terminal.create({
       id: `term-${Date.now()}`,
