@@ -41,7 +41,28 @@
         </div>
       </div>
       <div class="terminal-actions">
-        <span class="terminal-path" :title="currentCwd">{{ pathDisplay }}</span>
+        <div v-if="showSearchBar" class="terminal-search" :class="{ 'is-not-found': !searchHasMatch }">
+          <SearchIcon :size="13" class="terminal-search-icon" />
+          <input
+            ref="searchInputRef"
+            v-model="searchQuery"
+            class="terminal-search-input"
+            type="text"
+            placeholder="搜索终端内容"
+            @input="handleSearchInput"
+            @keydown="handleSearchKeydown"
+          />
+          <button class="terminal-search-btn" @mousedown.prevent.stop @click="findPreviousMatch" title="上一条">
+            <ChevronUp :size="12" />
+          </button>
+          <button class="terminal-search-btn" @mousedown.prevent.stop @click="findNextMatch" title="下一条">
+            <ChevronDown :size="12" />
+          </button>
+          <button class="terminal-search-btn close" @mousedown.prevent.stop @click="closeSearchBar" title="关闭搜索">
+            <X :size="12" />
+          </button>
+        </div>
+        <span v-else class="terminal-path" :title="currentCwd">{{ pathDisplay }}</span>
         <button class="terminal-btn" @mousedown.prevent @click="toggleSplitTerminal" :title="isSplitMode ? '退出分屏' : '分屏终端'">
           <span class="split-btn-icon">▦</span>
         </button>
@@ -75,9 +96,10 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
-import { Terminal as TerminalIcon, Eraser, RefreshCw, Plus, X, FolderOpen } from 'lucide-vue-next'
+import { Terminal as TerminalIcon, Eraser, RefreshCw, Plus, X, FolderOpen, Search as SearchIcon, ChevronUp, ChevronDown } from 'lucide-vue-next'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useTerminalRouter } from '../../composables/useTerminalRouter'
 import '@xterm/xterm/css/xterm.css'
@@ -102,6 +124,10 @@ const activeTermId = ref(null)
 const terminalCache = new Map()
 const showCwdMenu = ref(false)
 const cwdMenuRef = ref(null)
+const showSearchBar = ref(false)
+const searchQuery = ref('')
+const searchHasMatch = ref(true)
+const searchInputRef = ref(null)
 let ensureDefaultPromise = null
 const handleDocumentClick = (event) => {
   if (cwdMenuRef.value && !cwdMenuRef.value.contains(event.target)) {
@@ -192,6 +218,17 @@ const XTERM_OPTS = {
   scrollback: 10000
 }
 
+const SEARCH_OPTIONS = {
+  decorations: {
+    matchBackground: '#334155',
+    matchBorder: '#475569',
+    matchOverviewRuler: '#475569',
+    activeMatchBackground: '#0e7490',
+    activeMatchBorder: '#67e8f9',
+    activeMatchColorOverviewRuler: '#22d3ee'
+  }
+}
+
 // ---- 终端实例管理 ----
 
 const createXterm = () => {
@@ -200,11 +237,13 @@ const createXterm = () => {
 
   const xterm = new Terminal(XTERM_OPTS)
   const fitAddon = new FitAddon()
+  const searchAddon = new SearchAddon()
   xterm.loadAddon(fitAddon)
+  xterm.loadAddon(searchAddon)
   xterm.loadAddon(new WebLinksAddon())
   xterm.open(el)
 
-  return { xterm, fitAddon, el }
+  return { xterm, fitAddon, searchAddon, el }
 }
 
 const nextIndex = () => {
@@ -298,7 +337,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     rawCwd = getProjectRootCwd()
   }
   const cwd = typeof rawCwd === 'string' ? String(rawCwd).trim() : ''
-  const { xterm, fitAddon, el } = createXterm()
+  const { xterm, fitAddon, searchAddon, el } = createXterm()
 
   if (!props.allowFirstTerminalWithoutCwd && !cwd) {
     xterm.write('\r\n\x1b[31m无法创建终端：项目目录未就绪，请稍后重试\x1b[0m\r\n')
@@ -314,6 +353,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     cwd,
     xterm,
     fitAddon,
+    searchAddon,
     el,
     connected: false,
     ptyId: null,
@@ -525,6 +565,120 @@ const clearTerminal = () => {
   term.xterm.focus()
 }
 
+const clearSearchDecorations = (term) => {
+  try {
+    term?.searchAddon?.clearDecorations()
+  } catch (error) {}
+}
+
+const clearAllSearchDecorations = () => {
+  for (const term of terminals.value) {
+    clearSearchDecorations(term)
+  }
+  for (const [, cached] of terminalCache) {
+    for (const term of cached.terminals || []) {
+      clearSearchDecorations(term)
+    }
+  }
+}
+
+const getSearchTargetTerminal = () => currentTerminal.value || terminals.value[0] || null
+
+const focusSearchInput = () => {
+  nextTick(() => {
+    searchInputRef.value?.focus()
+    searchInputRef.value?.select()
+  })
+}
+
+const runTerminalSearch = (direction = 'next', incremental = false) => {
+  const term = getSearchTargetTerminal()
+  const query = searchQuery.value.trim()
+  if (!term?.searchAddon) return false
+
+  if (!query) {
+    clearAllSearchDecorations()
+    searchHasMatch.value = true
+    return false
+  }
+
+  const matched = direction === 'previous'
+    ? term.searchAddon.findPrevious(query, SEARCH_OPTIONS)
+    : term.searchAddon.findNext(query, {
+        ...SEARCH_OPTIONS,
+        incremental
+      })
+
+  searchHasMatch.value = !!matched
+  return !!matched
+}
+
+const findNextMatch = () => {
+  runTerminalSearch('next', false)
+}
+
+const findPreviousMatch = () => {
+  runTerminalSearch('previous', false)
+}
+
+const openSearchBar = () => {
+  showSearchBar.value = true
+  searchHasMatch.value = true
+  focusSearchInput()
+  if (searchQuery.value.trim()) {
+    nextTick(() => {
+      runTerminalSearch('next', true)
+    })
+  }
+}
+
+const closeSearchBar = (restoreFocus = true) => {
+  showSearchBar.value = false
+  searchHasMatch.value = true
+  clearAllSearchDecorations()
+  if (restoreFocus) {
+    refreshVisibleTerminal(getSearchTargetTerminal(), true)
+  }
+}
+
+const handleSearchInput = () => {
+  runTerminalSearch('next', true)
+}
+
+const handleSearchKeydown = (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    if (event.shiftKey) {
+      findPreviousMatch()
+    } else {
+      findNextMatch()
+    }
+    return
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    closeSearchBar()
+  }
+}
+
+const handleTerminalKeydown = (event) => {
+  const isFindShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f'
+  if (isFindShortcut && props.isActive) {
+    event.preventDefault()
+    event.stopPropagation()
+    openSearchBar()
+    return
+  }
+
+  if (event.key === 'Escape' && showSearchBar.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    closeSearchBar()
+  }
+}
+
 const restartTerminal = async (cwdOverride = null) => {
   const term = currentTerminal.value
   if (!term) return
@@ -714,7 +868,26 @@ let resizeTimer = null
 watch(() => props.isActive, (active) => {
   if (active && terminals.value.length > 0) {
     applyLayout(true)
+    return
   }
+
+  if (!active && showSearchBar.value) {
+    closeSearchBar(false)
+  }
+})
+
+watch(() => currentTerminal.value?.termId, (termId, prevTermId) => {
+  if (termId === prevTermId || !showSearchBar.value) return
+  if (prevTermId) {
+    clearSearchDecorations(findTerminalById(prevTermId))
+  }
+  if (!searchQuery.value.trim()) {
+    searchHasMatch.value = true
+    return
+  }
+  nextTick(() => {
+    runTerminalSearch('next', true)
+  })
 })
 
 watch(() => props.defaultCwd, (newCwd, oldCwd) => {
@@ -760,11 +933,13 @@ onMounted(() => {
   }
 
   document.addEventListener('click', handleDocumentClick)
+  document.addEventListener('keydown', handleTerminalKeydown, true)
 })
 
 onUnmounted(() => {
   if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null }
   document.removeEventListener('click', handleDocumentClick)
+  document.removeEventListener('keydown', handleTerminalKeydown, true)
   containerRef.value?._ro?.disconnect()
   destroyTerminals(terminals.value)
   terminals.value = []
@@ -864,7 +1039,63 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal })
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  min-width: 0;
   margin-left: 8px;
+}
+.terminal-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(30, 30, 30, 0.92);
+}
+.terminal-search.is-not-found {
+  border-color: rgba(239, 68, 68, 0.85);
+}
+.terminal-search-icon {
+  flex-shrink: 0;
+  color: #7dd3fc;
+}
+.terminal-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #d4d4d4;
+  font-size: 12px;
+}
+.terminal-search-input::placeholder {
+  color: #6b7280;
+}
+.terminal-search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.terminal-search-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f3f4f6;
+}
+.terminal-search-btn.close:hover {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
 }
 .terminal-path {
   color: #888;
