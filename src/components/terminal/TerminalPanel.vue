@@ -905,6 +905,8 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal })
   width: 100%;
   height: 100%;
   min-height: 0;
+  box-sizing: border-box;
+  padding-right: 8px;
 }
 .terminal-split {
   display: flex;
@@ -920,6 +922,8 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal })
 .terminal-pane-content {
   width: 100%;
   height: 100%;
+  box-sizing: border-box;
+  padding-right: 8px;
 }
 .pane-close-btn {
   position: absolute;
@@ -953,7 +957,6 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal })
   overflow-y: scroll !important;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-  scrollbar-gutter: stable;
 }
 .terminal-body :deep(.xterm-viewport)::-webkit-scrollbar { width: 4px; }
 .terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-track { background: transparent; }
