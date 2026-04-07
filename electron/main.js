@@ -505,6 +505,7 @@ function resolvePendingPermissionRequest({ requestId, decision = 'deny', remembe
 function getPermissionOrigin(webContents, details = {}, requestingOrigin = '') {
   const rawOrigin = requestingOrigin
     || details.requestingOrigin
+    || details.requestingUrl
     || details.securityOrigin
     || details.embeddingOrigin
     || webContents?.getURL?.()
@@ -747,6 +748,10 @@ ipcMain.handle('web-tab-go-forward', async (event, { tabId }) => {
 
 ipcMain.handle('browser-permission-respond', async (event, payload = {}) => {
   try {
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || event.sender.id !== mainWindow.webContents.id) {
+      return { success: false, error: 'invalid permission response sender' }
+    }
+
     const requestId = typeof payload.requestId === 'string' ? payload.requestId : ''
     const decision = payload.decision === 'allow' ? 'allow' : 'deny'
     const remember = Boolean(payload.remember)
@@ -1436,7 +1441,7 @@ app.whenReady().then(async () => {
     }
 
     const tabId = webTabManager?.getTabIdByWebContentsId(webContents?.id) || ''
-    if (!tabId) {
+    if (!sitePermissionManager.shouldPromptRenderer({ tabId, defaultDecision })) {
       safeLog(`[Permission] deny ${permission}: unable to map tab for ${origin}`)
       callback(false)
       return
@@ -1481,10 +1486,28 @@ app.whenReady().then(async () => {
     }
 
     pendingPermissionTimeouts.set(requestId, timeout)
-    mainWindow.webContents.send(
-      'browser-permission-requested',
-      sitePermissionManager.buildPromptPayload(pendingRequest)
-    )
+
+    const promptPayload = sitePermissionManager.buildPromptPayload(pendingRequest)
+    if (!promptPayload) {
+      safeLog(`[Permission] deny ${permission}: invalid prompt payload for ${origin}`)
+      resolvePendingPermissionRequest({
+        requestId,
+        decision: 'deny',
+        reason: 'invalid-prompt-payload'
+      })
+      return
+    }
+
+    try {
+      mainWindow.webContents.send('browser-permission-requested', promptPayload)
+    } catch (error) {
+      safeError(`[Permission] send prompt failed for ${requestId}:`, error)
+      resolvePendingPermissionRequest({
+        requestId,
+        decision: 'deny',
+        reason: 'renderer-send-failed'
+      })
+    }
   })
   
   webviewSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details = {}) => {

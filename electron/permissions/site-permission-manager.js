@@ -139,13 +139,29 @@ function createSitePermissionManager({ store }) {
       return null
     }
 
+    let host = ''
+    try {
+      host = new URL(normalizedOrigin).host
+    } catch {
+      host = ''
+    }
+
     return {
       requestId,
       partition,
       origin: normalizedOrigin,
+      host,
       permission,
       tabId
     }
+  }
+
+  const shouldPromptRenderer = ({ tabId = '', defaultDecision = '' } = {}) => {
+    if (defaultDecision !== 'ask') {
+      return false
+    }
+
+    return Boolean(tabId)
   }
 
   return {
@@ -157,7 +173,8 @@ function createSitePermissionManager({ store }) {
     getPendingRequest,
     resolvePendingRequest,
     expireRequests,
-    buildPromptPayload
+    buildPromptPayload,
+    shouldPromptRenderer
   }
 }
 

@@ -75,8 +75,25 @@ assert.deepEqual(promptPayload, {
   requestId: 'req_3',
   partition: 'persist:main',
   origin: 'https://maps.example.com',
+  host: 'maps.example.com',
   permission: 'geolocation',
   tabId: 'browser-web-3'
 })
+
+assert.equal(
+  manager.shouldPromptRenderer({
+    tabId: '',
+    defaultDecision: 'ask'
+  }),
+  false
+)
+
+assert.equal(
+  manager.shouldPromptRenderer({
+    tabId: 'browser-web-9',
+    defaultDecision: 'ask'
+  }),
+  true
+)
 
 console.log('site permission manager core tests passed')

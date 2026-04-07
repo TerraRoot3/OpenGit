@@ -230,12 +230,32 @@
                     
     <!-- 主内容区域 -->
     <div ref="browserContentRef" class="browser-content">
-      <div v-if="activeTabLoadError" class="browser-error-banner">
+      <div
+        v-if="activeTabLoadError"
+        class="browser-error-banner"
+        :class="{ 'with-permission-banner': hasPermissionPrompt && currentPermissionPrompt }"
+      >
         <div class="error-main">
           <span class="error-title">页面加载失败</span>
           <span class="error-detail">{{ activeTabLoadError.errorDescription || '未知错误' }} ({{ activeTabLoadError.errorCode }})</span>
         </div>
         <button class="error-retry-btn" @click="retryActiveTabLoad">重试</button>
+      </div>
+      <div v-if="hasPermissionPrompt && currentPermissionPrompt" class="browser-permission-banner">
+        <div class="permission-main">
+          <span class="permission-title">站点权限请求</span>
+          <span class="permission-detail">
+            {{ currentPermissionPrompt.host }} 想要访问{{ currentPermissionLabel }}
+          </span>
+          <span v-if="queuedPermissionPromptCount > 0" class="permission-meta">
+            还有 {{ queuedPermissionPromptCount }} 个待处理请求
+          </span>
+        </div>
+        <div class="permission-actions">
+          <button class="permission-btn" @click="respondToPermissionPrompt('allow', false)">允许一次</button>
+          <button class="permission-btn primary" @click="respondToPermissionPrompt('allow', true)">总是允许此站点</button>
+          <button class="permission-btn danger" @click="respondToPermissionPrompt('deny', false)">拒绝</button>
+        </div>
       </div>
       <!-- 网页内容 -->
       <div class="browser-main" v-if="isBrowserReady">
@@ -299,6 +319,7 @@ import NewTabPage from './NewTabPage.vue'
 import { useFavorites } from '../../composables/useFavorites'
 import { usePasswords } from '../../composables/usePasswords'
 import { useBrowsingHistory } from '../../composables/useBrowsingHistory'
+import { useSitePermissionPrompt } from '../../composables/useSitePermissionPrompt.js'
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -590,6 +611,29 @@ const downloadItems = computed(() =>
   Object.values(downloadStates.value).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
 )
 
+const {
+  currentPermissionPrompt,
+  hasPermissionPrompt,
+  queuedPermissionPromptCount,
+  enqueuePermissionPrompt,
+  resolvePermissionPrompt,
+  syncPermissionPromptActiveTab,
+  clearPermissionPrompts
+} = useSitePermissionPrompt()
+
+const permissionLabels = {
+  media: '摄像头或麦克风',
+  geolocation: '位置信息',
+  notifications: '通知权限',
+  'clipboard-read': '剪贴板内容',
+  pointerLock: '指针锁定'
+}
+
+const currentPermissionLabel = computed(() => {
+  const permission = currentPermissionPrompt.value?.permission || ''
+  return permissionLabels[permission] || permission || '敏感权限'
+})
+
 const retryActiveTabLoad = () => {
   if (!currentTab.value) return
   clearTabLoadError(currentTab.value)
@@ -601,10 +645,67 @@ const retryActiveTabLoad = () => {
   refresh()
 }
 
+const getActiveWebContentsViewTabId = () => {
+  if (!currentTab.value || !isWebContentsViewTab(currentTab.value)) {
+    return ''
+  }
+
+  return getWebContentsViewTabId(currentTab.value)
+}
+
+const denyPermissionRequests = (prompts = []) => {
+  if (!Array.isArray(prompts) || prompts.length === 0) {
+    return
+  }
+
+  for (const prompt of prompts) {
+    const requestId = prompt?.requestId
+    if (!requestId || !window.electronAPI?.browserRespondToPermissionRequest) {
+      continue
+    }
+
+    window.electronAPI.browserRespondToPermissionRequest({
+      requestId,
+      decision: 'deny',
+      remember: false
+    }).catch((error) => {
+      console.warn('拒绝过期权限请求失败:', requestId, error)
+    })
+  }
+}
+
+const syncPermissionPromptForActiveTab = () => {
+  const removedPrompts = syncPermissionPromptActiveTab(getActiveWebContentsViewTabId())
+  denyPermissionRequests(removedPrompts)
+}
+
+const respondToPermissionPrompt = async (decision, remember = false) => {
+  const prompt = currentPermissionPrompt.value
+  if (!prompt?.requestId) {
+    return
+  }
+
+  try {
+    await window.electronAPI?.browserRespondToPermissionRequest?.({
+      requestId: prompt.requestId,
+      decision,
+      remember
+    })
+  } catch (error) {
+    console.error('响应站点权限请求失败:', error)
+  } finally {
+    resolvePermissionPrompt(prompt.requestId)
+    syncPermissionPromptForActiveTab()
+  }
+}
+
 // 监听标签页切换，同步状态（不重新加载 webview）
 watch(() => activeBrowserTabId.value, (newTabId, oldTabId) => {
   const tab = browserTabs.value.find(t => t.id === newTabId)
-  if (!tab) return
+  if (!tab) {
+    syncPermissionPromptForActiveTab()
+    return
+  }
   
   // 如果标签页 ID 没有变化，不更新 urlInput（避免覆盖刚设置的值）
   if (newTabId === oldTabId) {
@@ -647,6 +748,7 @@ watch(() => activeBrowserTabId.value, (newTabId, oldTabId) => {
   updateNavigationState()
   syncLoadingProgressWithActiveTab()
   syncActiveContentHost()
+  syncPermissionPromptForActiveTab()
 }, { immediate: true })
 // 当前活动标签页的状态（从 currentTab 同步）
 const canGoBack = computed(() => {
@@ -2336,6 +2438,18 @@ function bindWebContentsViewEvents() {
       }, 5000)
     }
   })
+
+  window.electronAPI.onBrowserPermissionRequested?.((payload) => {
+    if (!payload?.requestId) return
+
+    const activeTabId = getActiveWebContentsViewTabId()
+    if (!payload.tabId || payload.tabId !== activeTabId) {
+      denyPermissionRequests([payload])
+      return
+    }
+
+    enqueuePermissionPrompt(payload)
+  })
 }
 
 // 浏览器标签页管理
@@ -3392,6 +3506,7 @@ onUnmounted(() => {
   clearLoadingProgressTimers()
   hideAllWebContentsViewTabs()
   browserContentRef.value?.__contentBoundsObserver?.disconnect()
+  denyPermissionRequests(clearPermissionPrompts())
 
   if (window.electronAPI) {
     window.electronAPI.removeWebTabStateChangedListener?.()
@@ -3399,6 +3514,7 @@ onUnmounted(() => {
     window.electronAPI.removeWebTabFaviconUpdatedListener?.()
     window.electronAPI.removeWebTabLoadFailedListener?.()
     window.electronAPI.removeWebDownloadStateChangedListener?.()
+    window.electronAPI.removeBrowserPermissionRequestedListener?.()
   }
   // 移除 Command+R 快捷键监听器
   if (window.__browserKeyDownHandler) {
@@ -3997,6 +4113,83 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   position: relative;
 }
 
+.browser-permission-banner {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(94, 68, 22, 0.95), rgba(61, 46, 19, 0.95));
+  border: 1px solid rgba(234, 197, 117, 0.28);
+  color: #f5e7c5;
+}
+
+.permission-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.permission-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.permission-detail,
+.permission-meta {
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.permission-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.permission-btn {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: inherit;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.permission-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.permission-btn.primary {
+  background: rgba(234, 197, 117, 0.18);
+  border-color: rgba(234, 197, 117, 0.3);
+}
+
+.permission-btn.primary:hover {
+  background: rgba(234, 197, 117, 0.28);
+}
+
+.permission-btn.danger {
+  background: rgba(128, 34, 34, 0.22);
+  border-color: rgba(198, 106, 106, 0.28);
+}
+
+.permission-btn.danger:hover {
+  background: rgba(128, 34, 34, 0.3);
+}
+
 .browser-error-banner {
   position: absolute;
   top: 10px;
@@ -4012,6 +4205,10 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   background: rgba(111, 29, 29, 0.92);
   border: 1px solid rgba(255, 130, 130, 0.35);
   color: #ffd7d7;
+}
+
+.browser-error-banner.with-permission-banner {
+  top: 72px;
 }
 
 .error-main {
