@@ -16,6 +16,8 @@ function createSitePermissionManager({ store }) {
     throw new Error('createSitePermissionManager requires a store with get/set methods')
   }
 
+  const pendingRequests = new Map()
+
   const getRules = () => store.get(STORAGE_KEY, {})
 
   const setRules = (rules) => {
@@ -76,11 +78,64 @@ function createSitePermissionManager({ store }) {
     setRules(nextRules)
   }
 
+  const createPendingRequest = (request = {}) => {
+    if (!request.requestId) {
+      throw new Error('createPendingRequest requires requestId')
+    }
+
+    const payload = {
+      ...request,
+      status: 'pending'
+    }
+
+    pendingRequests.set(request.requestId, payload)
+    return payload
+  }
+
+  const getPendingRequest = (requestId) => {
+    return pendingRequests.get(requestId) || null
+  }
+
+  const resolvePendingRequest = ({ requestId, decision = 'deny' } = {}) => {
+    if (!requestId) {
+      return null
+    }
+
+    const request = pendingRequests.get(requestId)
+    if (!request) {
+      return null
+    }
+
+    pendingRequests.delete(requestId)
+    return {
+      ...request,
+      decision,
+      status: 'resolved'
+    }
+  }
+
+  const expireRequests = (now = Date.now()) => {
+    const expiredRequestIds = []
+
+    for (const [requestId, request] of pendingRequests.entries()) {
+      if ((request.expiresAt || 0) <= now) {
+        pendingRequests.delete(requestId)
+        expiredRequestIds.push(requestId)
+      }
+    }
+
+    return expiredRequestIds
+  }
+
   return {
     normalizeOrigin,
     getDefaultDecision,
     getRememberedDecision,
-    rememberDecision
+    rememberDecision,
+    createPendingRequest,
+    getPendingRequest,
+    resolvePendingRequest,
+    expireRequests
   }
 }
 

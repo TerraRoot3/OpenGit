@@ -37,4 +37,30 @@ assert.equal(
   'allow'
 )
 
+const pending = manager.createPendingRequest({
+  requestId: 'req_1',
+  partition: 'persist:main',
+  origin: 'https://example.com',
+  permission: 'media',
+  tabId: 'browser-web-1'
+})
+
+assert.equal(pending.status, 'pending')
+assert.equal(manager.getPendingRequest('req_1').origin, 'https://example.com')
+
+manager.resolvePendingRequest({ requestId: 'req_1', decision: 'deny' })
+assert.equal(manager.getPendingRequest('req_1'), null)
+
+const expiring = manager.createPendingRequest({
+  requestId: 'req_2',
+  partition: 'persist:main',
+  origin: 'https://stale.example.com',
+  permission: 'notifications',
+  tabId: 'browser-web-2',
+  expiresAt: 100
+})
+
+assert.equal(expiring.status, 'pending')
+assert.deepEqual(manager.expireRequests(101), ['req_2'])
+
 console.log('site permission manager core tests passed')
