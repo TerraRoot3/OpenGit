@@ -446,9 +446,20 @@ const getBranchStatus = async (projectPath, branch) => {
 }
 
 const refreshProjectSummary = async (projectPath, fallbackBranch = null) => {
+  const statusPromise = getBranchStatus(projectPath, fallbackBranch)
+  const branchListPromise = getBranchList(projectPath)
+
+  branchListPromise.then(branchList => {
+    if (branchList?.current) {
+      updateProjectBranchInfo(projectPath, branchList.current)
+    }
+  }).catch(error => {
+    console.error('❌ [refreshProjectSummary] 获取分支列表失败:', error)
+  })
+
   const [statusData, branchList] = await Promise.all([
-    getBranchStatus(projectPath, fallbackBranch),
-    getBranchList(projectPath)
+    statusPromise,
+    branchListPromise
   ])
 
   if (statusData.allBranchStatus) {
@@ -463,6 +474,8 @@ const refreshProjectSummary = async (projectPath, fallbackBranch = null) => {
   }
   if (branchList?.current) {
     updateProjectBranchInfo(projectPath, branchList.current)
+  } else if (statusData?.currentBranch) {
+    updateProjectBranchInfo(projectPath, statusData.currentBranch)
   }
 
   return { statusData, branchList }
@@ -716,41 +729,47 @@ const RefreshManager = {
       // 🔧 然后异步刷新最新数据（不阻塞）
       // 使用 getBranchStatus 而不是 getBranchInfo，因为 getBranchStatus 的计算逻辑是正确的
       // 切换项目时使用的是 getBranchStatus，返回的是正确的值（1973），而 getBranchInfo 返回的是错误的值（3307）
-      getBranchStatus(projectPath, null).then(statusData => {
-        // 获取当前分支名
-        return getBranchList(projectPath).then(branchList => {
-          const currentBranch = branchList.current
+      const statusPromise = getBranchStatus(projectPath, null)
+      const branchListPromise = getBranchList(projectPath)
+
+      branchListPromise.then(branchList => {
+        if (branchList?.current) {
+          updateProjectBranchInfo(projectPath, branchList.current)
+        }
+      }).catch(error => {
+        console.error(`❌ [RefreshManager.refreshBranchInfo] 获取分支列表失败:`, error)
+      })
+
+      Promise.all([statusPromise, branchListPromise]).then(([statusData, branchList]) => {
+        const currentBranch = branchList?.current || statusData?.currentBranch
+        
+        // 更新分支状态（包含push/pull数量）
+        if (currentBranch && statusData.allBranchStatus && statusData.allBranchStatus[currentBranch]) {
+          const currentBranchStatus = statusData.allBranchStatus[currentBranch]
+          debugLog(`✅ [RefreshManager.refreshBranchInfo] 刷新完成，更新分支状态:`, {
+            projectPath,
+            currentBranch,
+            remoteAhead: currentBranchStatus.remoteAhead,
+            localAhead: currentBranchStatus.localAhead
+          })
           
-          // 更新分支状态（包含push/pull数量）
-          if (statusData.allBranchStatus && statusData.allBranchStatus[currentBranch]) {
-            const currentBranchStatus = statusData.allBranchStatus[currentBranch]
-            debugLog(`✅ [RefreshManager.refreshBranchInfo] 刷新完成，更新分支状态:`, {
-              projectPath,
-              currentBranch,
-              remoteAhead: currentBranchStatus.remoteAhead,
-              localAhead: currentBranchStatus.localAhead
+          branchStatus.value[projectPath] = currentBranchStatus
+          
+          // 🔧 更新项目列表中的 push/pull 数量显示
+          const projectIndex = projects.value.findIndex(p => p.path === projectPath)
+          if (projectIndex !== -1) {
+            projects.value[projectIndex].localAhead = currentBranchStatus.localAhead || 0
+            // remoteAhead 已经在 branchStatus 中，UI 会从那里读取
+            debugLog(`✅ [RefreshManager.refreshBranchInfo] 更新项目列表:`, {
+              projectName: projects.value[projectIndex].name,
+              localAhead: projects.value[projectIndex].localAhead,
+              branchStatusRemoteAhead: branchStatus.value[projectPath]?.remoteAhead
             })
-            
-            branchStatus.value[projectPath] = currentBranchStatus
-            
-            // 🔧 更新项目列表中的 push/pull 数量显示
-            const projectIndex = projects.value.findIndex(p => p.path === projectPath)
-            if (projectIndex !== -1) {
-              projects.value[projectIndex].localAhead = currentBranchStatus.localAhead || 0
-              // remoteAhead 已经在 branchStatus 中，UI 会从那里读取
-              debugLog(`✅ [RefreshManager.refreshBranchInfo] 更新项目列表:`, {
-                projectName: projects.value[projectIndex].name,
-                localAhead: projects.value[projectIndex].localAhead,
-                branchStatusRemoteAhead: branchStatus.value[projectPath]?.remoteAhead
-              })
-            }
-            
-            // 更新分支信息（这会更新 allBranchStatus，但不会覆盖 branchStatus）
-            if (currentBranch) {
-              updateProjectBranchInfo(projectPath, currentBranch)
-            }
           }
-        })
+          
+          // 更新分支信息（这会更新 allBranchStatus，但不会覆盖 branchStatus）
+          updateProjectBranchInfo(projectPath, currentBranch)
+        }
       }).catch(error => {
         console.error(`❌ [RefreshManager.refreshBranchInfo] 刷新失败:`, error)
       })

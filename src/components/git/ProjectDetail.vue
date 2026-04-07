@@ -162,6 +162,15 @@
               <div class="branch-section-header" @click="toggleTags">
                 <Tag :size="14" />
                 <span>标签</span>
+                <button
+                  class="refresh-btn"
+                  @click.stop="refreshTags"
+                  :class="{ refreshing: tagsRefreshing, success: tagsRefreshSuccess }"
+                  title="刷新标签"
+                >
+                  <RefreshCw v-if="!tagsRefreshSuccess" :size="12" />
+                  <Check v-else :size="12" />
+                </button>
                 <ChevronRight :size="14" class="expand-arrow" :class="{ expanded: showTags }" />
               </div>
               <div v-if="showTags" class="branch-list">
@@ -417,6 +426,10 @@ import TerminalPanel from '../terminal/TerminalPanel.vue'
 import CustomSelect from '../common/CustomSelect.vue'
 import { useGitCommand } from '../../composables/useGitCommand'
 import {
+  buildProjectRefreshPlan,
+  deriveBranchStatusState
+} from './projectDetailRefresh.mjs'
+import {
   useProjectStore,
   updateProjectDetail,
   updateBranchStatus as storeBranchStatus,
@@ -569,6 +582,8 @@ const showLocalBranches = ref(true)
 const showRemoteBranches = ref(false)
 const showTags = ref(false)
 const tagsLoading = ref(false)
+const tagsRefreshing = ref(false)
+const tagsRefreshSuccess = ref(false)
 const refreshing = ref(false)
 const refreshSuccess = ref(false)
 
@@ -669,6 +684,13 @@ const emitPendingStatusChanged = (projectPath, hasPending = hasPendingFiles.valu
   })
 }
 
+const markRefreshSuccess = (target) => {
+  target.value = true
+  window.setTimeout(() => {
+    target.value = false
+  }, 1500)
+}
+
 const clearProjectBranchStatusCache = async (projectPath) => {
   if (!projectPath || !window.electronAPI?.clearBranchStatusCache) return
   try {
@@ -699,22 +721,49 @@ const queueProjectRefresh = ({
   reloadBranches = false,
   reloadBranchStatus = false,
   reloadFileStatus = false,
-  preserveFileStatus = false
+  preserveFileStatus = false,
+  reloadTags = false
 } = {}) => {
   const projectPath = props.path
   if (!projectPath) return
 
+  const refreshPlan = buildProjectRefreshPlan({
+    reloadBranches,
+    reloadBranchStatus,
+    reloadFileStatus,
+    preserveFileStatus,
+    reloadTags
+  }, {
+    showTags: showTags.value
+  })
+
   ;(async () => {
     try {
       await clearProjectBranchStatusCache(projectPath)
-      if (reloadBranches) {
-        await loadBranches()
+
+      const tasks = []
+
+      if (refreshPlan.reloadBranches) {
+        tasks.push(loadBranches())
+      } else if (refreshPlan.reloadBranchStatus) {
+        tasks.push(loadBranchStatus())
       }
-      if (reloadBranchStatus) {
-        await loadBranchStatus()
+
+      if (refreshPlan.reloadTags) {
+        tasks.push(loadTags())
       }
-      if (reloadFileStatus) {
-        fileStatusRef.value?.loadFileStatus?.(preserveFileStatus)
+
+      if (tasks.length > 0) {
+        const results = await Promise.allSettled(tasks)
+        results
+          .filter(result => result.status === 'rejected')
+          .forEach(result => {
+            console.error('刷新子任务失败:', result.reason)
+          })
+      }
+
+      if (refreshPlan.reloadFileStatus) {
+        fileStatusRef.value?.loadFileStatus?.(refreshPlan.preserveFileStatus)
       }
     } catch (error) {
       console.error('刷新状态失败:', error)
@@ -723,7 +772,66 @@ const queueProjectRefresh = ({
 }
 
 // ==================== 项目加载 ====================
-const loadProjectInfo = () => {
+const loadCurrentBranchQuick = async () => {
+  if (!props.path) return
+
+  const currentPath = props.path
+
+  try {
+    const branchResult = await executeCommand(
+      `cd "${currentPath}" && git branch --show-current 2>/dev/null`
+    )
+
+    if (!isCurrentProjectPath(currentPath)) {
+      debugLog('⚠️ [loadCurrentBranchQuick] 项目已切换，丢弃旧数据')
+      return
+    }
+
+    let nextBranch = branchResult.success ? branchResult.output?.trim() || '' : ''
+
+    if (!nextBranch) {
+      const tagResult = await executeCommand(
+        `cd "${currentPath}" && git describe --tags --exact-match HEAD 2>/dev/null`
+      )
+
+      if (!isCurrentProjectPath(currentPath)) {
+        debugLog('⚠️ [loadCurrentBranchQuick] 项目已切换，丢弃旧数据')
+        return
+      }
+
+      if (tagResult.success && tagResult.output?.trim()) {
+        nextBranch = `HEAD detached at ${tagResult.output.trim()}`
+      } else {
+        const commitResult = await executeCommand(
+          `cd "${currentPath}" && git rev-parse --short HEAD 2>/dev/null`
+        )
+
+        if (!isCurrentProjectPath(currentPath)) {
+          debugLog('⚠️ [loadCurrentBranchQuick] 项目已切换，丢弃旧数据')
+          return
+        }
+
+        nextBranch = commitResult.success && commitResult.output?.trim()
+          ? `HEAD detached at ${commitResult.output.trim()}`
+          : 'HEAD detached'
+      }
+    }
+
+    if (nextBranch && currentBranch.value !== nextBranch) {
+      currentBranch.value = nextBranch
+      updateProjectDetail(currentPath, { currentBranch: nextBranch })
+      emitBranchChanged(currentPath, nextBranch)
+    }
+  } catch (error) {
+    console.error('快速加载当前分支失败:', error)
+  }
+}
+
+const loadProjectInfo = ({
+  forceRefreshRemoteBranches = false,
+  forceRefreshTags = false,
+  refreshBranchStatus = true
+} = {}) => {
   if (!props.path) {
     projectInfo.value = null
     return
@@ -737,25 +845,31 @@ const loadProjectInfo = () => {
     path: props.path,
     name: name
   }
-  
-  // 异步加载本地分支列表和分支状态（不阻塞 UI）
+
   setTimeout(() => {
+    loadCurrentBranchQuick().catch(err => console.error('快速加载当前分支失败:', err))
     loadLocalBranches().catch(err => console.error('加载本地分支失败:', err))
-  }, 0)
-  
-  // 如果远程分支已展开且没有缓存数据，立即加载远程分支
-  if (showRemoteBranches.value && remoteBranches.value.length === 0 && !refreshing.value) {
-    setTimeout(() => {
+
+    if (refreshBranchStatus) {
+      loadBranchStatus().catch(err => console.error('加载分支状态失败:', err))
+    }
+
+    if (
+      showRemoteBranches.value &&
+      (forceRefreshRemoteBranches || remoteBranches.value.length === 0) &&
+      !refreshing.value
+    ) {
       loadRemoteBranches().catch(err => console.error('加载远程分支失败:', err))
-    }, 0)
-  }
-  
-  // 如果标签已展开且没有缓存数据，立即加载标签
-  if (showTags.value && tags.value.length === 0 && !tagsLoading.value) {
-    setTimeout(() => {
+    }
+
+    if (
+      showTags.value &&
+      (forceRefreshTags || tags.value.length === 0) &&
+      !tagsLoading.value
+    ) {
       loadTags().catch(err => console.error('加载标签失败:', err))
-    }, 0)
-  }
+    }
+  }, 0)
 }
 
 const isCurrentProjectPath = (path) => !!path && props.path === path
@@ -850,8 +964,7 @@ const loadLocalBranches = async () => {
 
     applyBranchListData(snapshot.currentPath, snapshot.data, {
       includeLocal: true,
-      triggerPendingCheck: true,
-      triggerBranchStatusRefresh: true
+      triggerPendingCheck: true
     })
   } catch (error) {
     console.error('加载本地分支列表失败:', error)
@@ -907,15 +1020,26 @@ const loadBranchStatus = async () => {
     }
 
     if (result.success && result.data) {
-      branchStatus.value = result.data.currentBranchStatus
-      allBranchStatus.value = result.data.allBranchStatus || {}
+      const nextState = deriveBranchStatusState({
+        existingCurrentBranch: currentBranch.value,
+        statusPayload: result.data
+      })
+
+      branchStatus.value = nextState.branchStatus
+      allBranchStatus.value = nextState.allBranchStatus
+
+      if (nextState.currentBranch && currentBranch.value !== nextState.currentBranch) {
+        currentBranch.value = nextState.currentBranch
+        updateProjectDetail(currentPath, { currentBranch: nextState.currentBranch })
+        emitBranchChanged(currentPath, nextState.currentBranch)
+      }
       
       // 同步到 store
       if (branchStatus.value) {
         storeBranchStatus(currentPath, branchStatus.value)
       }
-      if (result.data.allBranchStatus) {
-        storeAllBranchStatus(currentPath, result.data.allBranchStatus)
+      if (Object.keys(nextState.allBranchStatus).length > 0) {
+        storeAllBranchStatus(currentPath, nextState.allBranchStatus)
       }
       
       // 通知父组件状态更新
@@ -931,20 +1055,27 @@ const loadBranchStatus = async () => {
 }
 
 const loadTags = async () => {
-  if (!props.path) return
+  if (!props.path || tagsLoading.value) return
+
+  const currentPath = props.path
   
   tagsLoading.value = true
   
   try {
-    const localResult = await executeCommand(`cd "${props.path}" && git tag -l`)
+    const localResult = await executeCommand(`cd "${currentPath}" && git tag -l`)
     const localTags = localResult.success && localResult.output?.trim() 
       ? localResult.output.trim().split('\n').filter(t => t)
       : []
     
-    const remoteResult = await executeCommand(`cd "${props.path}" && git ls-remote --tags origin 2>/dev/null | awk '{print $2}' | sed 's|refs/tags/||' | sed 's/\\^{}//' | sort -u`)
+    const remoteResult = await executeCommand(`cd "${currentPath}" && git ls-remote --tags origin 2>/dev/null | awk '{print $2}' | sed 's|refs/tags/||' | sed 's/\\^{}//' | sort -u`)
     const remoteTags = remoteResult.success && remoteResult.output?.trim()
       ? remoteResult.output.trim().split('\n').filter(t => t)
       : []
+
+    if (!isCurrentProjectPath(currentPath)) {
+      debugLog('⚠️ [loadTags] 项目已切换，丢弃旧数据')
+      return
+    }
     
     tags.value = [...new Set([...localTags, ...remoteTags])].map(name => ({
       name,
@@ -953,12 +1084,33 @@ const loadTags = async () => {
     })).sort((a, b) => a.name.localeCompare(b.name))
     
     // 同步到 store
-    updateProjectDetail(props.path, { tags: tags.value })
+    updateProjectDetail(currentPath, { tags: tags.value })
   } catch (error) {
     console.error('加载标签失败:', error)
-    tags.value = []
+    if (isCurrentProjectPath(currentPath)) {
+      tags.value = []
+    }
+    throw error
   } finally {
-    tagsLoading.value = false
+    if (isCurrentProjectPath(currentPath)) {
+      tagsLoading.value = false
+    }
+  }
+}
+
+const refreshTags = async () => {
+  if (!props.path || tagsRefreshing.value || tagsLoading.value) return
+
+  tagsRefreshing.value = true
+  tagsRefreshSuccess.value = false
+
+  try {
+    await loadTags()
+    markRefreshSuccess(tagsRefreshSuccess)
+  } catch (error) {
+    console.error('刷新标签失败:', error)
+  } finally {
+    tagsRefreshing.value = false
   }
 }
 
@@ -1291,16 +1443,18 @@ const refreshRemoteBranches = async () => {
     if (result.success) {
       if (result.data?.remote) {
         remoteBranches.value = result.data.remote
+        updateProjectDetail(props.path, { remoteBranches: result.data.remote })
       }
       if (result.data?.currentBranchStatus) {
         branchStatus.value = result.data.currentBranchStatus
+        storeBranchStatus(props.path, result.data.currentBranchStatus)
         emitStatusUpdated(props.path, branchStatus.value)
       }
       if (result.data?.allBranchStatus) {
         allBranchStatus.value = result.data.allBranchStatus
+        storeAllBranchStatus(props.path, result.data.allBranchStatus)
       }
-      refreshSuccess.value = true
-      setTimeout(() => { refreshSuccess.value = false }, 1500)
+      markRefreshSuccess(refreshSuccess)
     }
   } catch (error) {
     console.error('刷新远程分支失败:', error)
@@ -1817,6 +1971,12 @@ watch(() => props.path, (newPath, oldPath) => {
     tags.value = []
     currentBranch.value = ''
     hasPendingFiles.value = false
+    tagsLoading.value = false
+    tagsRefreshing.value = false
+    tagsRefreshSuccess.value = false
+    refreshing.value = false
+    refreshSuccess.value = false
+    statusLoading.value = false
 
     // 再从 store 读取缓存数据立即显示
     const cachedDetail = getProjectDetail(newPath)
@@ -1855,6 +2015,12 @@ watch(() => props.path, (newPath, oldPath) => {
     allBranches.value = []
     remoteBranches.value = []
     tags.value = []
+    tagsLoading.value = false
+    tagsRefreshing.value = false
+    tagsRefreshSuccess.value = false
+    refreshing.value = false
+    refreshSuccess.value = false
+    statusLoading.value = false
   }
 }, { immediate: true })
 
@@ -1889,8 +2055,12 @@ const refreshCurrentProject = async () => {
     fileStatusRef.value.loadFileStatus(true)
   }
 
-  // 重新读取当前分支、分支列表和 ahead/behind，避免只刷新计数不刷新分支名
-  loadProjectInfo()
+  // 重新读取当前分支、分支列表和 ahead/behind，并在展开标签区时一并刷新标签
+  loadProjectInfo({
+    forceRefreshRemoteBranches: showRemoteBranches.value,
+    forceRefreshTags: showTags.value,
+    refreshBranchStatus: true
+  })
 }
 
 // 窗口获得焦点时刷新状态（只有当前标签激活时才刷新）
