@@ -22,6 +22,7 @@ const { registerBranchHandlers } = require('./ipc/branch')
 const { registerExtensionHandlers } = require('./ipc/extensions')
 const { registerScmHandlers } = require('./ipc/scm')
 const { WebTabManager } = require('./tab-manager/web-tab-manager')
+const { createSitePermissionManager } = require('./permissions/site-permission-manager')
 
 // 注册自定义协议（必须在 app ready 之前调用）
 // local-resource:// 用于安全地向渲染进程提供 ~/.gitManager/ 目录下的本地文件
@@ -441,7 +442,76 @@ const store = new Store({
 // 开发环境判断
 const isDev = process.env.NODE_ENV === 'development'
 let webTabManager = null
+let sitePermissionManager = null
 const floatingMenuResolvers = new Map()
+const pendingPermissionCallbacks = new Map()
+const pendingPermissionTimeouts = new Map()
+const SITE_PERMISSION_PARTITION = 'persist:main'
+const SITE_PERMISSION_REQUEST_TIMEOUT_MS = 30_000
+let nextPermissionRequestId = 0
+
+function createPermissionRequestId() {
+  nextPermissionRequestId += 1
+  return `site-permission-${Date.now()}-${nextPermissionRequestId}`
+}
+
+function clearPendingPermissionTimeout(requestId) {
+  const timeout = pendingPermissionTimeouts.get(requestId)
+  if (timeout) {
+    clearTimeout(timeout)
+    pendingPermissionTimeouts.delete(requestId)
+  }
+}
+
+function resolvePendingPermissionRequest({ requestId, decision = 'deny', remember = false, reason = '' } = {}) {
+  if (!sitePermissionManager || !requestId) {
+    return { success: false, error: 'invalid permission request resolution' }
+  }
+
+  const pendingRequest = sitePermissionManager.getPendingRequest(requestId)
+  if (!pendingRequest) {
+    if (reason) {
+      safeLog(`[Permission] ignore missing request ${requestId}: ${reason}`)
+    }
+    return { success: false, error: 'request not found' }
+  }
+
+  if (remember && decision === 'allow') {
+    sitePermissionManager.rememberDecision({
+      partition: pendingRequest.partition,
+      origin: pendingRequest.origin,
+      permission: pendingRequest.permission,
+      decision
+    })
+  }
+
+  const resolvedRequest = sitePermissionManager.resolvePendingRequest({ requestId, decision })
+  clearPendingPermissionTimeout(requestId)
+
+  const callback = pendingPermissionCallbacks.get(requestId)
+  pendingPermissionCallbacks.delete(requestId)
+
+  if (callback) {
+    try {
+      callback(decision === 'allow')
+    } catch (error) {
+      safeError(`[Permission] callback failed for ${requestId}:`, error)
+    }
+  }
+
+  return { success: Boolean(resolvedRequest), request: resolvedRequest }
+}
+
+function getPermissionOrigin(webContents, details = {}, requestingOrigin = '') {
+  const rawOrigin = requestingOrigin
+    || details.requestingOrigin
+    || details.securityOrigin
+    || details.embeddingOrigin
+    || webContents?.getURL?.()
+    || ''
+
+  return sitePermissionManager ? sitePermissionManager.normalizeOrigin(rawOrigin) : ''
+}
 
 ipcMain.on('browser-floating-menu-action', (event, payload) => {
   const menuWindow = BrowserWindow.fromWebContents(event.sender)
@@ -671,6 +741,23 @@ ipcMain.handle('web-tab-go-forward', async (event, { tabId }) => {
     if (!webTabManager) throw new Error('webTabManager not initialized')
     return { success: webTabManager.goForward(tabId) }
   } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('browser-permission-respond', async (event, payload = {}) => {
+  try {
+    const requestId = typeof payload.requestId === 'string' ? payload.requestId : ''
+    const decision = payload.decision === 'allow' ? 'allow' : 'deny'
+    const remember = Boolean(payload.remember)
+    return resolvePendingPermissionRequest({
+      requestId,
+      decision,
+      remember,
+      reason: 'renderer-response'
+    })
+  } catch (error) {
+    safeError('[Permission] browser-permission-respond failed:', error)
     return { success: false, error: error.message }
   }
 })
@@ -1292,6 +1379,7 @@ app.on('web-contents-created', (event, contents) => {
 app.whenReady().then(async () => {
   safeLog('Electron app ready, creating window...')
   webTabManager = new WebTabManager({ safeLog, safeError })
+  sitePermissionManager = createSitePermissionManager({ store })
 
   // 注册 local-resource:// 协议：安全地将 ~/.gitManager/ 下的文件提供给渲染进程
   // URL 格式：local-resource://相对路径  例：local-resource://screenshots/screenshot-123.png
@@ -1314,16 +1402,104 @@ app.whenReady().then(async () => {
 
   // 配置 webview 使用的持久化 session
   // persist: 前缀会自动持久化 cookies, localStorage, IndexedDB 等
-  const webviewSession = session.fromPartition('persist:main')
+  const webviewSession = session.fromPartition(SITE_PERMISSION_PARTITION)
   
-  // 允许所有权限请求（包括存储权限）
-  webviewSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    callback(true)
+  webviewSession.setPermissionRequestHandler((webContents, permission, callback, details = {}) => {
+    const origin = getPermissionOrigin(webContents, details)
+    if (!origin) {
+      safeLog(`[Permission] deny ${permission}: missing origin`)
+      callback(false)
+      return
+    }
+
+    const rememberedDecision = sitePermissionManager.getRememberedDecision({
+      partition: SITE_PERMISSION_PARTITION,
+      origin,
+      permission
+    })
+
+    if (rememberedDecision === 'allow') {
+      callback(true)
+      return
+    }
+
+    if (rememberedDecision === 'deny') {
+      callback(false)
+      return
+    }
+
+    const defaultDecision = sitePermissionManager.getDefaultDecision(permission)
+    if (defaultDecision !== 'ask') {
+      safeLog(`[Permission] deny ${permission}: default policy`)
+      callback(false)
+      return
+    }
+
+    const tabId = webTabManager?.getTabIdByWebContentsId(webContents?.id) || ''
+    if (!tabId) {
+      safeLog(`[Permission] deny ${permission}: unable to map tab for ${origin}`)
+      callback(false)
+      return
+    }
+
+    if (!webTabManager?.isActiveTab(tabId)) {
+      safeLog(`[Permission] deny ${permission}: tab not active for ${origin}`)
+      callback(false)
+      return
+    }
+
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
+      safeLog(`[Permission] deny ${permission}: renderer unavailable for ${origin}`)
+      callback(false)
+      return
+    }
+
+    const requestId = createPermissionRequestId()
+    const pendingRequest = sitePermissionManager.createPendingRequest({
+      requestId,
+      partition: SITE_PERMISSION_PARTITION,
+      origin,
+      permission,
+      tabId,
+      expiresAt: Date.now() + SITE_PERMISSION_REQUEST_TIMEOUT_MS
+    })
+
+    pendingPermissionCallbacks.set(requestId, callback)
+    clearPendingPermissionTimeout(requestId)
+
+    const timeout = setTimeout(() => {
+      safeLog(`[Permission] deny ${permission}: renderer response timeout for ${origin}`)
+      resolvePendingPermissionRequest({
+        requestId,
+        decision: 'deny',
+        reason: 'timeout'
+      })
+    }, SITE_PERMISSION_REQUEST_TIMEOUT_MS)
+
+    if (typeof timeout.unref === 'function') {
+      timeout.unref()
+    }
+
+    pendingPermissionTimeouts.set(requestId, timeout)
+    mainWindow.webContents.send(
+      'browser-permission-requested',
+      sitePermissionManager.buildPromptPayload(pendingRequest)
+    )
   })
   
-  // 配置存储访问权限
-  webviewSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
-    return true
+  webviewSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details = {}) => {
+    const origin = getPermissionOrigin(webContents, details, requestingOrigin)
+    if (!origin) {
+      return false
+    }
+
+    const rememberedDecision = sitePermissionManager.getRememberedDecision({
+      partition: SITE_PERMISSION_PARTITION,
+      origin,
+      permission
+    })
+
+    return rememberedDecision === 'allow'
   })
 
   webviewSession.on('will-download', (event, item) => {

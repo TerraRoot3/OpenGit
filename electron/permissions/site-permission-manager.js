@@ -127,6 +127,27 @@ function createSitePermissionManager({ store }) {
     return expiredRequestIds
   }
 
+  const buildPromptPayload = ({
+    requestId = '',
+    partition = '',
+    origin = '',
+    permission = '',
+    tabId = ''
+  } = {}) => {
+    const normalizedOrigin = normalizeOrigin(origin)
+    if (!requestId || !partition || !normalizedOrigin || !permission || !tabId) {
+      return null
+    }
+
+    return {
+      requestId,
+      partition,
+      origin: normalizedOrigin,
+      permission,
+      tabId
+    }
+  }
+
   return {
     normalizeOrigin,
     getDefaultDecision,
@@ -135,7 +156,8 @@ function createSitePermissionManager({ store }) {
     createPendingRequest,
     getPendingRequest,
     resolvePendingRequest,
-    expireRequests
+    expireRequests,
+    buildPromptPayload
   }
 }
 

@@ -7,6 +7,7 @@ class WebTabManager {
     this.mainWindow = null
     this.renderer = null
     this.views = new Map()
+    this.contentsToTab = new Map()
     this.activeTabId = null
     this.activeBounds = null
   }
@@ -91,7 +92,13 @@ class WebTabManager {
 
   createWebTab(tabId, url = 'about:blank') {
     if (!tabId) throw new Error('tabId is required')
-    if (this.views.has(tabId)) return this.views.get(tabId)
+    if (this.views.has(tabId)) {
+      const existingView = this.views.get(tabId)
+      if (existingView?.webContents?.id) {
+        this.contentsToTab.set(existingView.webContents.id, tabId)
+      }
+      return existingView
+    }
 
     const view = new WebContentsView({
       webPreferences: {
@@ -102,6 +109,7 @@ class WebTabManager {
     })
 
     this.views.set(tabId, view)
+    this.contentsToTab.set(view.webContents.id, tabId)
     this._bindViewEvents(tabId, view)
 
     view.webContents.loadURL(url).catch((error) => {
@@ -121,6 +129,7 @@ class WebTabManager {
   destroyWebTab(tabId) {
     const view = this._getView(tabId)
     if (!view) return false
+    const webContentsId = view.webContents?.id
 
     try {
       this.mainWindow?.contentView?.removeChildView(view)
@@ -131,6 +140,9 @@ class WebTabManager {
     } catch {}
 
     this.views.delete(tabId)
+    if (webContentsId) {
+      this.contentsToTab.delete(webContentsId)
+    }
     if (this.activeTabId === tabId) {
       this.activeTabId = null
     }
@@ -241,11 +253,21 @@ class WebTabManager {
     return true
   }
 
+  getTabIdByWebContentsId(webContentsId) {
+    if (!webContentsId) return ''
+    return this.contentsToTab.get(webContentsId) || ''
+  }
+
+  isActiveTab(tabId) {
+    return Boolean(tabId) && this.activeTabId === tabId
+  }
+
   cleanup() {
     for (const tabId of this.views.keys()) {
       this.destroyWebTab(tabId)
     }
     this.views.clear()
+    this.contentsToTab.clear()
     this.activeTabId = null
     this.activeBounds = null
   }

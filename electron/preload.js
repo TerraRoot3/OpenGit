@@ -256,6 +256,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeWebDownloadStateChangedListener: () => {
     ipcRenderer.removeAllListeners('web-download-state-changed')
   },
+  onBrowserPermissionRequested: (callback) => {
+    ipcRenderer.on('browser-permission-requested', (event, data) => callback(data))
+  },
+  removeBrowserPermissionRequestedListener: () => {
+    ipcRenderer.removeAllListeners('browser-permission-requested')
+  },
+  browserRespondToPermissionRequest: (data) => ipcRenderer.invoke('browser-permission-respond', data),
   
   // ==================== 终端 ====================
   terminal: {

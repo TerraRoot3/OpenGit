@@ -63,4 +63,20 @@ const expiring = manager.createPendingRequest({
 assert.equal(expiring.status, 'pending')
 assert.deepEqual(manager.expireRequests(101), ['req_2'])
 
+const promptPayload = manager.buildPromptPayload({
+  requestId: 'req_3',
+  partition: 'persist:main',
+  origin: 'https://maps.example.com/location?q=1',
+  permission: 'geolocation',
+  tabId: 'browser-web-3'
+})
+
+assert.deepEqual(promptPayload, {
+  requestId: 'req_3',
+  partition: 'persist:main',
+  origin: 'https://maps.example.com',
+  permission: 'geolocation',
+  tabId: 'browser-web-3'
+})
+
 console.log('site permission manager core tests passed')
