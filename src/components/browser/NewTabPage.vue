@@ -13,6 +13,7 @@
       v-else-if="routeType === 'webview' && contentHost !== 'webcontentsview'"
       :tab-id="tabId"
       :src="src"
+      :partition="routeProps?.sessionPartition || 'persist:main'"
       :user-agent="userAgent"
       :is-active="isActive"
       @did-start-loading="(e, id) => emit('did-start-loading', e, id)"

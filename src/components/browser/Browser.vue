@@ -154,15 +154,35 @@
             <span class="suggestion-title">{{ item.title }}</span>
           </div>
         </div>
-        <button
-              class="url-input-favorite-btn"
-          @click="toggleFavorite"
-          :class="{ active: isCurrentUrlFavorited, disabled: !canFavorite }"
-          :disabled="!canFavorite"
-          :title="!canFavorite ? '此页面不支持收藏' : (isCurrentUrlFavorited ? '取消收藏' : '收藏')"
-        >
-              <Star :size="16" :fill="isCurrentUrlFavorited ? 'currentColor' : 'none'" />
-        </button>
+        <div class="url-input-actions">
+          <button
+            class="url-input-favorite-btn"
+            @click="toggleFavorite"
+            :class="{ active: isCurrentUrlFavorited, disabled: !canFavorite }"
+            :disabled="!canFavorite"
+            :title="!canFavorite ? '此页面不支持收藏' : (isCurrentUrlFavorited ? '取消收藏' : '收藏')"
+          >
+            <Star :size="16" :fill="isCurrentUrlFavorited ? 'currentColor' : 'none'" />
+          </button>
+          <button
+            class="url-input-favorite-btn"
+            @click="openSitePermissionPanel"
+            :class="{ disabled: !currentTab || currentTab.routeType !== 'webview' }"
+            :disabled="!currentTab || currentTab.routeType !== 'webview'"
+            :title="(!currentTab || currentTab.routeType !== 'webview') ? '仅网页标签可用' : '站点信息与权限'"
+          >
+            <Globe :size="16" />
+          </button>
+          <button
+            class="url-input-favorite-btn"
+            @click="toggleWebAuthnDiagnostics"
+            :class="{ disabled: !currentTab || currentTab.routeType !== 'webview' }"
+            :disabled="!currentTab || currentTab.routeType !== 'webview'"
+            :title="(!currentTab || currentTab.routeType !== 'webview') ? '仅网页标签可用' : 'WebAuthn 诊断'"
+          >
+            <Key :size="16" />
+          </button>
+        </div>
           </div>
       </div>
       
@@ -209,6 +229,10 @@
                 <Download :size="16" />
                 <span>下载管理</span>
               </div>
+              <div class="menu-item" @click="createNewPrivateBrowserTab">
+                <Globe :size="16" />
+                <span>新建隐私标签页</span>
+              </div>
               <div class="menu-divider"></div>
               <div class="menu-item" @click="openBackupManager">
                 <HardDrive :size="16" />
@@ -231,7 +255,18 @@
     <!-- 主内容区域 -->
     <div ref="browserContentRef" class="browser-content">
       <div
-        v-if="activeTabLoadError"
+        v-if="activeTabCrashed"
+        class="browser-error-banner"
+        :class="{ 'with-permission-banner': hasPermissionPrompt && currentPermissionPrompt }"
+      >
+        <div class="error-main">
+          <span class="error-title">标签页渲染进程异常</span>
+          <span class="error-detail">当前网页进程已退出，可尝试恢复标签页</span>
+        </div>
+        <button class="error-retry-btn" @click="restoreActiveWebTab">恢复标签页</button>
+      </div>
+      <div
+        v-else-if="activeTabLoadError"
         class="browser-error-banner"
         :class="{ 'with-permission-banner': hasPermissionPrompt && currentPermissionPrompt }"
       >
@@ -255,6 +290,19 @@
           <button class="permission-btn" @click="respondToPermissionPrompt('allow', false)">允许一次</button>
           <button class="permission-btn primary" @click="respondToPermissionPrompt('allow', true)">总是允许此站点</button>
           <button class="permission-btn danger" @click="respondToPermissionPrompt('deny', false)">拒绝</button>
+        </div>
+      </div>
+      <div v-if="webAuthnDiagnosticsVisible" class="browser-error-banner">
+        <div class="error-main">
+          <span class="error-title">WebAuthn 诊断</span>
+          <span v-if="webAuthnDiagnostics" class="error-detail">
+            credentials={{ webAuthnDiagnostics.hasCredentials ? 'yes' : 'no' }},
+            publicKey={{ webAuthnDiagnostics.hasPublicKeyCredential ? 'yes' : 'no' }},
+            create={{ webAuthnDiagnostics.hasCreate ? 'yes' : 'no' }},
+            get={{ webAuthnDiagnostics.hasGet ? 'yes' : 'no' }},
+            conditional={{ webAuthnDiagnostics.conditionalMediation ? 'yes' : 'no' }}
+          </span>
+          <span v-else class="error-detail">{{ webAuthnDiagnosticsMessage }}</span>
         </div>
       </div>
       <!-- 网页内容 -->
@@ -287,28 +335,26 @@
               @favicon-updated="(favicon, tabId) => onFaviconUpdated(favicon, tabId)"
             />
       </div>
-      <div v-if="showDownloadPanel || downloadItems.length > 0" class="download-status-panel">
-        <div class="download-header">
-          <span>下载管理</span>
-          <button class="download-close" @click="showDownloadPanel = false">
-            <X :size="12" />
-          </button>
-        </div>
-        <div v-if="downloadItems.length === 0" class="download-empty">
-          暂无下载任务
-        </div>
-        <div
-          v-for="item in downloadItems.slice(0, 3)"
-          :key="item.id"
-          class="download-item"
-        >
-          <span class="download-name">{{ item.fileName || '下载任务' }}</span>
-          <span class="download-state">{{ item.state }}</span>
-          <span v-if="item.totalBytes > 0" class="download-progress">
-            {{ Math.round((item.receivedBytes / item.totalBytes) * 100) }}%
-          </span>
-        </div>
-      </div>
+      <DownloadPanel
+        :visible="showDownloadPanel"
+        :items="downloadItems"
+        @close="showDownloadPanel = false"
+        @open-folder="openDownloadFolder"
+        @retry="retryDownload"
+        @clear-completed="clearCompletedDownloads"
+      />
+      <SitePermissionPanel
+        :panel="sitePermissionPanelView"
+        @close="closeSitePermissionPanel"
+        @reset="resetSitePermission"
+        @reset-all="resetAllSitePermissions"
+      />
+      <PasswordSaveDialog
+        :visible="showPasswordSaveDialog"
+        :data="passwordSaveData"
+        @confirm="handleConfirmSavePassword"
+        @cancel="cancelSavePassword"
+      />
     </div>
   </div>
 </template>
@@ -316,10 +362,19 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import NewTabPage from './NewTabPage.vue'
+import DownloadPanel from './DownloadPanel.vue'
+import SitePermissionPanel from './SitePermissionPanel.vue'
+import PasswordSaveDialog from '../dialog/PasswordSaveDialog.vue'
 import { useFavorites } from '../../composables/useFavorites'
 import { usePasswords } from '../../composables/usePasswords'
 import { useBrowsingHistory } from '../../composables/useBrowsingHistory'
 import { useSitePermissionPrompt } from '../../composables/useSitePermissionPrompt.js'
+import { useDownloadManager } from '../../composables/useDownloadManager.js'
+import { useSitePermissionPanel } from '../../composables/useSitePermissionPanel.js'
+import { useBrowserShortcuts } from '../../composables/useBrowserShortcuts.js'
+import { useBrowserNavigationState } from '../../composables/useBrowserNavigationState.js'
+import { useBrowserPersistence } from '../../composables/useBrowserPersistence.js'
+import { useBrowserTabs } from '../../composables/useBrowserTabs.js'
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -346,6 +401,10 @@ import HistoryManager from './HistoryManager.vue'
 import BackupManager from '../BackupManager.vue'
 import ExtensionManager from '../ExtensionManager.vue'
 import { createBrowserContentAdapter } from './browserContentAdapter'
+import {
+  findBestMatchingPassword,
+  buildPasswordSaveDecision
+} from '../../composables/webPasswordUtils.mjs'
 
 const props = defineProps({
   initialUrl: {
@@ -523,10 +582,9 @@ const parseRoute = (url) => {
 // 浏览器标签页管理
 const browserTabs = ref([])
 const activeBrowserTabId = ref(null)
-const downloadStates = ref({})
 const isBrowserReady = ref(false) // 标记浏览器组件是否已准备好
 let nextBrowserTabId = 1
-let isRestoringTabs = false // 标记是否正在恢复标签页
+const isRestoringTabs = ref(false) // 标记是否正在恢复标签页
 
 // 标签拖拽相关
 const draggingTabId = ref(null) // 正在拖拽的标签 ID
@@ -547,49 +605,22 @@ const getTabRouteType = (tab) => {
 }
 
 
+const { pushClosedTab, popClosedTab } = useBrowserTabs()
+
 // 状态（当前活动标签页的）
-const currentUrl = ref('')
-const urlInput = ref('') // 输入框的值，与 currentUrl 分离
+const {
+  currentUrl,
+  urlInput,
+  loadingProgress,
+  loadingProgressVisible,
+  clearLoadingProgressTimers,
+  startLoadingProgress,
+  finishLoadingProgress
+} = useBrowserNavigationState()
 const urlInputRef = ref(null)
-const loadingProgress = ref(0)
-const loadingProgressVisible = ref(false)
-let loadingProgressTimer = null
-let loadingProgressHideTimer = null
-
-const clearLoadingProgressTimers = () => {
-  if (loadingProgressTimer) {
-    clearInterval(loadingProgressTimer)
-    loadingProgressTimer = null
-  }
-  if (loadingProgressHideTimer) {
-    clearTimeout(loadingProgressHideTimer)
-    loadingProgressHideTimer = null
-  }
-}
-
-const startLoadingProgress = () => {
-  clearLoadingProgressTimers()
-  loadingProgressVisible.value = true
-  loadingProgress.value = Math.max(loadingProgress.value, 8)
-
-  loadingProgressTimer = setInterval(() => {
-    if (loadingProgress.value >= 85) return
-    const remain = 85 - loadingProgress.value
-    const step = Math.max(1, Math.round(remain * 0.18))
-    loadingProgress.value = Math.min(85, loadingProgress.value + step)
-  }, 120)
-}
-
-const finishLoadingProgress = () => {
-  clearLoadingProgressTimers()
-  loadingProgressVisible.value = true
-  loadingProgress.value = 100
-  loadingProgressHideTimer = setTimeout(() => {
-    loadingProgressVisible.value = false
-    loadingProgress.value = 0
-    loadingProgressHideTimer = null
-  }, 220)
-}
+const webAuthnDiagnostics = ref(null)
+const webAuthnDiagnosticsVisible = ref(false)
+const webAuthnDiagnosticsMessage = ref('当前页面未返回 WebAuthn 诊断数据')
 
 const syncLoadingProgressWithActiveTab = () => {
   if (currentTab.value?.routeType === 'webview' && currentTab.value.isLoading) {
@@ -606,10 +637,20 @@ const clearTabLoadError = (tab) => {
   tab.loadError = null
 }
 
-const activeTabLoadError = computed(() => currentTab.value?.loadError || null)
-const downloadItems = computed(() =>
-  Object.values(downloadStates.value).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-)
+const activeTabCrashed = computed(() => Boolean(currentTab.value?.isCrashed))
+const activeTabLoadError = computed(() => {
+  if (currentTab.value?.isCrashed) {
+    return null
+  }
+  return currentTab.value?.loadError || null
+})
+const {
+  items: downloadItems,
+  upsert: upsertDownloadItem,
+  remove: removeDownloadItem,
+  clearCompleted: clearCompletedDownloadItems,
+  markRetryable: markDownloadRetryable
+} = useDownloadManager()
 
 const {
   currentPermissionPrompt,
@@ -621,11 +662,21 @@ const {
   clearPermissionPrompts
 } = useSitePermissionPrompt()
 
+const {
+  snapshot: sitePermissionPanelSnapshot,
+  open: openSitePermissionPanelState,
+  close: closeSitePermissionPanelState,
+  resetPermission: resetSitePermissionState,
+  setPermissions: setSitePermissionPanelPermissions
+} = useSitePermissionPanel()
+
 const permissionLabels = {
   media: '摄像头或麦克风',
   geolocation: '位置信息',
   notifications: '通知权限',
   'clipboard-read': '剪贴板内容',
+  'publickey-credentials-create': 'Passkey 创建',
+  'publickey-credentials-get': 'Passkey 登录',
   pointerLock: '指针锁定'
 }
 
@@ -634,8 +685,82 @@ const currentPermissionLabel = computed(() => {
   return permissionLabels[permission] || permission || '敏感权限'
 })
 
+const sitePermissionPanelView = computed(() => {
+  const panel = sitePermissionPanelSnapshot.value
+  const permissions = panel.permissions || {}
+  return {
+    isOpen: Boolean(panel.isOpen),
+    origin: panel.origin || '',
+    partition: panel.partition || 'persist:main',
+    partitionType: String(panel.partition || '').startsWith('temp:') ? '隐私' : '默认',
+    items: Object.entries(permissions).map(([permission, value]) => ({
+      permission,
+      label: permissionLabels[permission] || permission,
+      value
+    }))
+  }
+})
+
+const closeSitePermissionPanel = () => {
+  closeSitePermissionPanelState()
+}
+
+const openSitePermissionPanel = async () => {
+  const tabId = getActiveWebContentsViewTabId()
+  if (!tabId || !window.electronAPI?.browserGetSitePermissions) {
+    return
+  }
+  try {
+    const result = await window.electronAPI.browserGetSitePermissions({ tabId })
+    if (!result?.success) return
+    openSitePermissionPanelState({
+      origin: result.origin || '',
+      partition: result.partition || 'persist:main',
+      permissions: result.permissions || {}
+    })
+  } catch (error) {
+    console.error('获取站点权限失败:', error)
+  }
+}
+
+const resetSitePermission = async (permission) => {
+  if (!permission) return
+  const tabId = getActiveWebContentsViewTabId()
+  if (!tabId || !window.electronAPI?.browserResetSitePermission) return
+  try {
+    const result = await window.electronAPI.browserResetSitePermission({ tabId, permission })
+    if (result?.success) {
+      resetSitePermissionState(permission)
+    }
+  } catch (error) {
+    console.error('重置站点权限失败:', error)
+  }
+}
+
+const resetAllSitePermissions = async () => {
+  const tabId = getActiveWebContentsViewTabId()
+  if (!tabId || !window.electronAPI?.browserResetAllSitePermissions) return
+  try {
+    const result = await window.electronAPI.browserResetAllSitePermissions({ tabId })
+    if (result?.success) {
+      const current = sitePermissionPanelSnapshot.value.permissions || {}
+      const resetValues = {}
+      for (const permission of Object.keys(current)) {
+        resetValues[permission] = 'unset'
+      }
+      setSitePermissionPanelPermissions(resetValues)
+    }
+  } catch (error) {
+    console.error('重置全部站点权限失败:', error)
+  }
+}
+
 const retryActiveTabLoad = () => {
   if (!currentTab.value) return
+  if (currentTab.value.isCrashed) {
+    restoreActiveWebTab()
+    return
+  }
   clearTabLoadError(currentTab.value)
   if (currentTab.value.routeType === 'webview') {
     if (browserContentAdapter.reload(currentTab.value)) {
@@ -645,12 +770,227 @@ const retryActiveTabLoad = () => {
   refresh()
 }
 
+const runWebAuthnDiagnostics = async () => {
+  if (!currentTab.value || currentTab.value.routeType !== 'webview' || !browserContentAdapter?.getWebAuthnDiagnostics) {
+    webAuthnDiagnostics.value = null
+    webAuthnDiagnosticsMessage.value = '当前标签页不是网页内容，无法诊断'
+    return
+  }
+  try {
+    webAuthnDiagnostics.value = await browserContentAdapter.getWebAuthnDiagnostics(currentTab.value)
+    if (!webAuthnDiagnostics.value) {
+      webAuthnDiagnosticsMessage.value = '当前页面禁止脚本读取或未暴露 WebAuthn 接口'
+    }
+  } catch (error) {
+    console.error('WebAuthn 诊断失败:', error)
+    webAuthnDiagnostics.value = null
+    webAuthnDiagnosticsMessage.value = 'WebAuthn 诊断执行失败'
+  }
+}
+
+const toggleWebAuthnDiagnostics = async () => {
+  if (webAuthnDiagnosticsVisible.value) {
+    webAuthnDiagnosticsVisible.value = false
+    return
+  }
+  await runWebAuthnDiagnostics()
+  webAuthnDiagnosticsVisible.value = true
+}
+
+const restoringWebTabIds = new Set()
+
+const restoreWebContentsViewTab = async (tab, { activate = true } = {}) => {
+  if (!tab || !isWebContentsViewTab(tab) || !window.electronAPI?.webTabRestore) {
+    return false
+  }
+
+  const webTabId = getWebContentsViewTabId(tab)
+  if (!webTabId || restoringWebTabIds.has(webTabId)) {
+    return false
+  }
+
+  restoringWebTabIds.add(webTabId)
+  try {
+    const restoreUrl = normalizeUrl(tab.url || tab.initialUrl || 'about:blank')
+    const result = await window.electronAPI.webTabRestore({
+      tabId: webTabId,
+      url: restoreUrl
+    })
+    if (!result?.success) {
+      return false
+    }
+
+    tab.__webContentsCreated = true
+    tab.isCrashed = false
+    tab.lifecyclePhase = 'warm'
+    clearTabLoadError(tab)
+    if (activate && tab.id === activeBrowserTabId.value) {
+      await activateWebContentsViewTab(tab)
+    }
+    return true
+  } catch (error) {
+    console.error('恢复 WebContentsView 标签页失败:', error)
+    return false
+  } finally {
+    restoringWebTabIds.delete(webTabId)
+  }
+}
+
+const restoreActiveWebTab = async () => {
+  if (!currentTab.value) {
+    return
+  }
+  await restoreWebContentsViewTab(currentTab.value, { activate: true })
+}
+
 const getActiveWebContentsViewTabId = () => {
   if (!currentTab.value || !isWebContentsViewTab(currentTab.value)) {
     return ''
   }
 
   return getWebContentsViewTabId(currentTab.value)
+}
+
+const evaluateWebContentsTab = async (tab, script) => {
+  if (!tab || !isWebContentsViewTab(tab) || !window.electronAPI?.webTabEvaluate || !script) {
+    return null
+  }
+  const result = await window.electronAPI.webTabEvaluate({
+    tabId: getWebContentsViewTabId(tab),
+    script
+  })
+  if (!result?.success) {
+    return null
+  }
+  return result.result
+}
+
+const maybeShowPasswordSaveDialog = async (tab, captured) => {
+  if (!captured?.username || !captured?.password || !captured?.domain || showPasswordSaveDialog.value) {
+    return
+  }
+
+  const webTabId = getWebContentsViewTabId(tab)
+  const signature = `${captured.domain}::${captured.username}::${captured.password}`
+  if (passwordCapturedSignatures.get(webTabId) === signature) {
+    return
+  }
+  passwordCapturedSignatures.set(webTabId, signature)
+
+  const existing = findPassword(captured.domain, captured.username)
+  const decision = buildPasswordSaveDecision({
+    captured,
+    existing,
+    filled: filledPasswordByTabId.get(webTabId) || null
+  })
+
+  if (!decision.shouldPrompt) {
+    return
+  }
+
+  passwordSaveData.value = {
+    username: captured.username,
+    password: captured.password,
+    domain: captured.domain,
+    isUpdate: Boolean(decision.isUpdate),
+    id: decision.existingId || existing?.id || null
+  }
+  showPasswordSaveDialog.value = true
+}
+
+const handleWebTabPasswordCaptured = async (payload = {}) => {
+  const tab = browserTabs.value.find(t => getWebContentsViewTabId(t) === payload?.tabId)
+  if (!tab || tab.isPrivate) {
+    return
+  }
+  if (tab.id !== activeBrowserTabId.value) {
+    return
+  }
+  await maybeShowPasswordSaveDialog(tab, payload)
+}
+
+const tryAutofillPasswordForTab = async (tab) => {
+  if (!tab || tab.isPrivate) return
+  const webTabId = getWebContentsViewTabId(tab)
+  const currentUrl = tab.url || ''
+  if (!currentUrl || !currentUrl.startsWith('http')) return
+  if (lastFilledUrlByTabId.get(webTabId) === currentUrl) return
+
+  const matched = findBestMatchingPassword(savedPasswords.value, currentUrl)
+  if (!matched?.username || !matched?.password) return
+
+  const fillScript = `(() => {
+    const username = ${JSON.stringify(matched.username)}
+    const password = ${JSON.stringify(matched.password)}
+    const usernameInput = document.querySelector('input[type="email"],input[name*="user" i],input[name*="login" i],input[id*="user" i],input[id*="login" i],input[type="text"]')
+    const passwordInput = document.querySelector('input[type="password"]')
+    if (!passwordInput) return { filled: false }
+
+    const setInputValue = (input, value) => {
+      if (!input) return
+      input.focus()
+      input.value = value
+      input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }))
+    }
+
+    if (usernameInput && !usernameInput.value) {
+      setInputValue(usernameInput, username)
+    }
+    if (!passwordInput.value) {
+      setInputValue(passwordInput, password)
+    }
+
+    return {
+      filled: true,
+      usernameFilled: Boolean(usernameInput),
+      passwordFilled: true
+    }
+  })()`
+
+  const result = await evaluateWebContentsTab(tab, fillScript)
+  if (!result?.filled) return
+
+  filledPasswordByTabId.set(webTabId, {
+    username: matched.username,
+    password: matched.password,
+    domain: (() => {
+      try {
+        return new URL(currentUrl).hostname
+      } catch {
+        return ''
+      }
+    })()
+  })
+  lastFilledUrlByTabId.set(webTabId, currentUrl)
+}
+
+const runPasswordAutomationForTab = async (tab) => {
+  if (!tab || !isWebContentsViewTab(tab) || tab.routeType !== 'webview') return
+  if (tab.isPrivate) return
+
+  if (!tab.isLoading) {
+    await tryAutofillPasswordForTab(tab)
+  }
+}
+
+const handleConfirmSavePassword = async (data) => {
+  const { username, password, domain, isUpdate, id } = data || {}
+  if (!username || !password || !domain) {
+    return
+  }
+  if (isUpdate && id) {
+    await updatePassword(id, username, password, domain)
+  } else {
+    await savePassword(username, password, domain)
+  }
+  showPasswordSaveDialog.value = false
+  passwordSaveData.value = { username: '', password: '', domain: '', isUpdate: false, id: null }
+}
+
+const cancelSavePassword = () => {
+  showPasswordSaveDialog.value = false
+  passwordSaveData.value = { username: '', password: '', domain: '', isUpdate: false, id: null }
 }
 
 const denyPermissionRequests = (prompts = []) => {
@@ -701,6 +1041,9 @@ const respondToPermissionPrompt = async (decision, remember = false) => {
 
 // 监听标签页切换，同步状态（不重新加载 webview）
 watch(() => activeBrowserTabId.value, (newTabId, oldTabId) => {
+  closeSitePermissionPanel()
+  webAuthnDiagnosticsVisible.value = false
+  webAuthnDiagnostics.value = null
   const tab = browserTabs.value.find(t => t.id === newTabId)
   if (!tab) {
     syncPermissionPromptForActiveTab()
@@ -749,6 +1092,11 @@ watch(() => activeBrowserTabId.value, (newTabId, oldTabId) => {
   syncLoadingProgressWithActiveTab()
   syncActiveContentHost()
   syncPermissionPromptForActiveTab()
+  if (isWebContentsViewTab(tab)) {
+    runPasswordAutomationForTab(tab).catch((error) => {
+      console.warn('密码自动化执行失败:', error)
+    })
+  }
 }, { immediate: true })
 // 当前活动标签页的状态（从 currentTab 同步）
 const canGoBack = computed(() => {
@@ -774,12 +1122,19 @@ const {
 const {
   savedPasswords,
   loadSavedPasswords,
+  savePassword,
   updatePassword,
   deletePassword,
   findPassword,
   clearAllPasswords,
   deletePasswordByDomain
 } = usePasswords()
+
+const showPasswordSaveDialog = ref(false)
+const passwordSaveData = ref({ username: '', password: '', domain: '', isUpdate: false, id: null })
+const filledPasswordByTabId = new Map()
+const lastFilledUrlByTabId = new Map()
+const passwordCapturedSignatures = new Map()
 
 
 // 菜单相关
@@ -828,6 +1183,36 @@ const toggleMenu = () => {
 const openDownloadPanel = () => {
   showMenu.value = false
   showDownloadPanel.value = true
+}
+
+const openDownloadFolder = async (downloadId) => {
+  if (!downloadId) return
+  try {
+    await window.electronAPI?.browserOpenDownloadFolder?.({ id: downloadId })
+  } catch (error) {
+    console.error('打开下载目录失败:', error)
+  }
+}
+
+const retryDownload = async (downloadId) => {
+  if (!downloadId) return
+  try {
+    const result = await window.electronAPI?.browserRetryDownload?.({ id: downloadId })
+    if (result?.success) {
+      markDownloadRetryable(downloadId, false)
+    }
+  } catch (error) {
+    console.error('重试下载失败:', error)
+  }
+}
+
+const clearCompletedDownloads = async () => {
+  clearCompletedDownloadItems()
+  try {
+    await window.electronAPI?.browserClearDownloadHistory?.()
+  } catch (error) {
+    console.error('清理下载历史失败:', error)
+  }
 }
 
 const handleNativeMenuAction = (action) => {
@@ -1870,6 +2255,10 @@ const stopRefreshing = (tabId) => {
   }
 }
 
+const handleRefreshCurrentTabMessage = () => {
+  refresh()
+}
+
 const goHome = async () => {
   // 将当前标签页恢复为新标签页状态
   if (!currentTab.value) {
@@ -1941,6 +2330,7 @@ const onLoadStart = (event, tabId) => {
   const tab = browserTabs.value.find(t => t.id === tabId)
   if (tab) {
     tab.isLoading = true
+    tab.isCrashed = false
     clearTabLoadError(tab)
   }
   // 如果是当前标签页，更新 UI
@@ -1964,6 +2354,7 @@ const onLoadStop = async (event, tabId) => {
 const onNavigate = (event, tabId) => {
   const tab = browserTabs.value.find(t => t.id === tabId)
   if (!tab) return
+  tab.isCrashed = false
   clearTabLoadError(tab)
   
   // 检查是否是重复的导航事件（同一个 URL）
@@ -2033,6 +2424,7 @@ const onNavigate = (event, tabId) => {
 const onNavigateInPage = (event, tabId) => {
   const tab = browserTabs.value.find(t => t.id === tabId)
   if (!tab) return
+  tab.isCrashed = false
   clearTabLoadError(tab)
   
   // 更新标签页的 URL（不更新 webviewSrc，避免触发 Vue 响应式更新导致重新加载）
@@ -2149,6 +2541,7 @@ const onDomReady = async (event, tabId) => {
   
   // 标记 webview 已准备好
     tab.webviewReady = true
+  tab.isCrashed = false
   tab.initialLoadDone = true
     
   // DOM ready 时就结束 loading（不等待所有资源加载完成）
@@ -2325,15 +2718,30 @@ function getWebContentsViewTabId(tab) {
   return `browser-web-${tab.id}`
 }
 
+function resolveSessionPartition({ tabId, isPrivate = false } = {}) {
+  if (isPrivate && tabId) {
+    return `temp:browser-web-${tabId}`
+  }
+  return 'persist:main'
+}
+
 async function ensureWebContentsViewTab(tab, targetUrl = '') {
   if (!isWebContentsViewTab(tab) || !window.electronAPI?.webTabCreate) return false
 
   const tabId = getWebContentsViewTabId(tab)
   const url = normalizeUrl(targetUrl || tab.url || tab.initialUrl || 'about:blank')
+  const partition = tab.sessionPartition || resolveSessionPartition({ tabId: tab.id, isPrivate: tab.isPrivate })
+  tab.sessionPartition = partition
   if (!tab.__webContentsCreated) {
-    const result = await window.electronAPI.webTabCreate({ tabId, url })
+    const result = await window.electronAPI.webTabCreate({
+      tabId,
+      url,
+      isPrivate: Boolean(tab.isPrivate),
+      partition
+    })
     if (result?.success) {
       tab.__webContentsCreated = true
+      tab.sessionPartition = result.partition || partition
     }
     return !!result?.success
   }
@@ -2366,6 +2774,10 @@ async function syncActiveContentHost() {
   const tab = currentTab.value
   if (!tab) return
   if (isWebContentsViewTab(tab)) {
+    if (tab.lifecyclePhase === 'discarded') {
+      await restoreWebContentsViewTab(tab, { activate: true })
+      return
+    }
     await activateWebContentsViewTab(tab)
     return
   }
@@ -2380,6 +2792,7 @@ function bindWebContentsViewEvents() {
     if (!tab) return
 
     const prevLoading = !!tab.isLoading
+    let urlChanged = false
     if (typeof payload.isLoading === 'boolean') {
       tab.isLoading = payload.isLoading
       if (tab.id === activeBrowserTabId.value) {
@@ -2387,7 +2800,11 @@ function bindWebContentsViewEvents() {
         if (!payload.isLoading && prevLoading) finishLoadingProgress()
       }
     }
+    if (typeof payload.isCrashed === 'boolean') {
+      tab.isCrashed = payload.isCrashed
+    }
     if (typeof payload.url === 'string' && payload.url) {
+      urlChanged = tab.url !== payload.url
       tab.url = payload.url
       if (tab.id === activeBrowserTabId.value) {
         currentUrl.value = payload.url
@@ -2399,6 +2816,12 @@ function bindWebContentsViewEvents() {
     }
     if (typeof payload.canGoBack === 'boolean') tab.canGoBack = payload.canGoBack
     if (typeof payload.canGoForward === 'boolean') tab.canGoForward = payload.canGoForward
+
+    if (tab.id === activeBrowserTabId.value && (urlChanged || (!tab.isLoading && prevLoading))) {
+      runPasswordAutomationForTab(tab).catch((error) => {
+        console.warn('密码自动化执行失败:', error)
+      })
+    }
   })
 
   window.electronAPI.onWebTabTitleUpdated(({ tabId, title }) => {
@@ -2424,18 +2847,35 @@ function bindWebContentsViewEvents() {
     }, tab.id)
   })
 
+  window.electronAPI.onWebTabLifecycleChanged?.((payload) => {
+    const tab = browserTabs.value.find(t => getWebContentsViewTabId(t) === payload?.tabId)
+    if (!tab) return
+    if (typeof payload.phase === 'string' && payload.phase) {
+      tab.lifecyclePhase = payload.phase
+      if (payload.phase === 'discarded') {
+        const webTabId = getWebContentsViewTabId(tab)
+        lastFilledUrlByTabId.delete(webTabId)
+        filledPasswordByTabId.delete(webTabId)
+        passwordCapturedSignatures.delete(webTabId)
+        tab.__webContentsCreated = false
+      }
+      if (payload.phase !== 'discarded' && tab.id === activeBrowserTabId.value) {
+        syncPermissionPromptForActiveTab()
+      }
+    }
+  })
+
   window.electronAPI.onWebDownloadStateChanged?.((payload) => {
     if (!payload?.id) return
-    downloadStates.value[payload.id] = {
-      ...downloadStates.value[payload.id],
+    const mappedState = payload.state === 'progress' ? 'progressing' : payload.state
+    upsertDownloadItem({
       ...payload,
-      updatedAt: Date.now()
-    }
+      state: mappedState,
+      retryable: mappedState === 'interrupted'
+    })
 
-    if (payload.state === 'completed' || payload.state === 'cancelled' || payload.state === 'interrupted') {
-      setTimeout(() => {
-        delete downloadStates.value[payload.id]
-      }, 5000)
+    if (mappedState === 'interrupted') {
+      markDownloadRetryable(payload.id, true)
     }
   })
 
@@ -2450,14 +2890,22 @@ function bindWebContentsViewEvents() {
 
     enqueuePermissionPrompt(payload)
   })
+
+  window.electronAPI.onWebTabPasswordCaptured?.((payload) => {
+    handleWebTabPasswordCaptured(payload).catch((error) => {
+      console.warn('处理密码捕获事件失败:', error)
+    })
+  })
 }
 
 // 浏览器标签页管理
 // 获取特殊页面的标题和图标
 // 创建浏览器标签页 - 使用路由系统
-const createBrowserTab = (url = '', title = '') => {
+const createBrowserTab = (url = '', title = '', options = {}) => {
   // 如果 URL 为空，创建新标签页
   const finalUrl = url || ''
+  const isPrivate = Boolean(options.isPrivate)
+  const tabId = nextBrowserTabId++
   
   // 解析路由（使用最终 URL）
   const route = parseRoute(finalUrl)
@@ -2473,7 +2921,7 @@ const createBrowserTab = (url = '', title = '') => {
   console.log('🆕 创建标签页, shouldSaveHistory:', shouldSaveHistory, 'routeType:', route.type, 'url:', route.url)
   
   const tab = {
-    id: nextBrowserTabId++,
+    id: tabId,
     url: route.url,
     initialUrl: route.url, // 初始 URL，用于 webview src 绑定，创建后不变
     title: finalTitle,
@@ -2485,12 +2933,16 @@ const createBrowserTab = (url = '', title = '') => {
     canGoBack: false,
     canGoForward: false,
     isLoading: false,
+    isCrashed: false,
     // 路由信息
     routeType: route.type,
     routeConfig: route.config,
     routeProps: route.props || {},
     contentKind: route.config.showWebview ? 'web' : 'builtin',
     contentHost: route.config.showWebview ? 'webcontentsview' : 'builtin',
+    isPrivate,
+    sessionPartition: resolveSessionPartition({ tabId, isPrivate }),
+    lifecyclePhase: route.config.showWebview ? 'warm' : '',
     history: [], // 历史记录（用于返回功能）
     forwardHistory: [], // 前进栈（用于返回后前进）
     needsSaveHistory: shouldSaveHistory, // 是否需要保存到浏览历史
@@ -2843,6 +3295,40 @@ const switchBrowserTab = async (tabId) => {
   // 状态会通过 watch 自动同步（watch 中也不会触发重新加载）
 }
 
+const snapshotClosableTab = (tab) => {
+  if (!tab) return null
+  return {
+    url: tab.url || '',
+    title: tab.title || '',
+    routeType: tab.routeType || 'new-tab',
+    routeProps: { ...(tab.routeProps || {}) },
+    isPrivate: Boolean(tab.isPrivate),
+    sessionPartition: tab.sessionPartition || ''
+  }
+}
+
+const restoreClosedBrowserTab = async () => {
+  const snapshot = popClosedTab()
+  if (!snapshot) return
+
+  if (snapshot.routeType === 'new-tab' && !snapshot.url) {
+    if (snapshot.isPrivate) {
+      await createNewPrivateBrowserTab()
+    } else {
+      await createNewBrowserTab()
+    }
+    return
+  }
+
+  const tab = createBrowserTab(snapshot.url, snapshot.title, { isPrivate: snapshot.isPrivate })
+  tab.sessionPartition = snapshot.sessionPartition || resolveSessionPartition({ tabId: tab.id, isPrivate: snapshot.isPrivate })
+  if (snapshot.routeType && snapshot.routeType !== tab.routeType) {
+    tab.routeType = snapshot.routeType
+    tab.routeProps = { ...(snapshot.routeProps || {}) }
+  }
+  await switchBrowserTab(tab.id)
+}
+
 
 const closeBrowserTab = async (tabId) => {
   // 使用字符串比较避免类型不一致问题
@@ -2854,6 +3340,16 @@ const closeBrowserTab = async (tabId) => {
   }
   
   const tab = browserTabs.value[index]
+  if (isWebContentsViewTab(tab)) {
+    const webTabId = getWebContentsViewTabId(tab)
+    lastFilledUrlByTabId.delete(webTabId)
+    filledPasswordByTabId.delete(webTabId)
+    passwordCapturedSignatures.delete(webTabId)
+  }
+  const snapshot = snapshotClosableTab(tab)
+  if (snapshot) {
+    pushClosedTab(snapshot)
+  }
   console.log('🗑️ 关闭标签页:', { tabId, index, routeType: tab.routeType, tabsCount: browserTabs.value.length })
 
   if (isWebContentsViewTab(tab)) {
@@ -2947,6 +3443,8 @@ const createNewBrowserTab = async () => {
     routeProps: {},
     contentKind: 'builtin',
     contentHost: 'builtin',
+    isPrivate: false,
+    sessionPartition: resolveSessionPartition({ tabId, isPrivate: false }),
     history: [],
     forwardHistory: [],
     loadError: null
@@ -2963,6 +3461,39 @@ const createNewBrowserTab = async () => {
   await nextTick()
   
   // 切换到新标签页
+  await switchBrowserTab(newTab.id)
+}
+
+const createNewPrivateBrowserTab = async () => {
+  const tabId = nextBrowserTabId++
+  const newTab = {
+    id: tabId,
+    url: '',
+    title: '新建隐私标签页',
+    favicon: null,
+    faviconError: false,
+    canGoBack: false,
+    canGoForward: false,
+    isLoading: false,
+    webviewReady: false,
+    webviewSrc: '',
+    pendingUrl: '',
+    routeType: 'new-tab',
+    routeConfig: { showWebview: false },
+    routeProps: {},
+    contentKind: 'builtin',
+    contentHost: 'builtin',
+    isPrivate: true,
+    sessionPartition: resolveSessionPartition({ tabId, isPrivate: true }),
+    history: [],
+    forwardHistory: [],
+    loadError: null
+  }
+
+  browserTabs.value.push(newTab)
+  const maxOrder = Math.max(...Object.values(tabOrder.value), browserTabs.value.length - 1)
+  tabOrder.value[newTab.id] = maxOrder + 1
+  await nextTick()
   await switchBrowserTab(newTab.id)
 }
 
@@ -3105,176 +3636,20 @@ const onTabsBarMouseLeave = () => {
   hideTooltip()
 }
 
-// 保存浏览器标签页状态
-const saveBrowserTabs = async () => {
-  try {
-    // 如果正在恢复标签页，不保存
-    if (isRestoringTabs) {
-      return
-    }
-    
-    if (!window.electronAPI || !window.electronAPI.setConfig) {
-      console.warn('⚠️ electronAPI 不可用，无法保存标签页')
-      return
-    }
-    
-    // 过滤掉空标签页
-    const tabsToSave = browserTabs.value
-      .filter(tab => tab.url && tab.url !== '' && tab.url !== 'about:blank')
-      .map(tab => {
-        const savedTab = {
-          url: tab.url,
-          title: tab.title || ''
-        }
-        // 保存特殊标签页的类型和属性
-        if (tab.routeType && tab.routeType !== 'webview') {
-          savedTab.type = tab.routeType
-        }
-        // 保存克隆目录的路径
-        if (tab.routeType === 'clone-directory' && tab.routeProps.path) {
-          savedTab.clonePath = tab.routeProps.path
-        }
-        return savedTab
-      })
-    
-    // 如果没有任何有效标签页，不保存
-    if (tabsToSave.length === 0) {
-      // 清除保存的标签页
-      await window.electronAPI.setConfig('browserTabs', [])
-      await window.electronAPI.setConfig('browserActiveTabIndex', -1)
-      return
-    }
-    
-    // 找到当前活动标签页在有效标签页中的索引
-    const currentTab = browserTabs.value.find(tab => tab.id === activeBrowserTabId.value)
-    let activeTabIndex = -1
-    if (currentTab && currentTab.url && currentTab.url !== '' && currentTab.url !== 'about:blank') {
-      // 对于克隆目录标签页，需要匹配 URL 和 clonePath
-      if (currentTab.routeType === 'clone-directory' && currentTab.routeProps.path) {
-        activeTabIndex = tabsToSave.findIndex(savedTab => 
-          savedTab.url === currentTab.url && savedTab.type === 'clone-directory' && savedTab.clonePath === currentTab.routeProps.path
-        )
-      } else if (currentTab.routeType === 'remote-repo') {
-        activeTabIndex = tabsToSave.findIndex(savedTab => 
-          savedTab.url === currentTab.url && savedTab.type === 'remote-repo'
-        )
-      } else {
-        activeTabIndex = tabsToSave.findIndex(savedTab => savedTab.url === currentTab.url && !savedTab.type)
-      }
-    } else {
-      // 如果当前标签页是空标签页，使用最后一个有效标签页
-      activeTabIndex = tabsToSave.length - 1
-    }
-    
-    // 保存标签页数据
-    await window.electronAPI.setConfig('browserTabs', tabsToSave)
-    await window.electronAPI.setConfig('browserActiveTabIndex', activeTabIndex)
-    
-    // 保存标签顺序（使用 URL 作为 key，因为 tab.id 会在重启后改变）
-    const orderToSave = {}
-    browserTabs.value.forEach(tab => {
-      if (tab.url && tabOrder.value[tab.id] !== undefined) {
-        orderToSave[tab.url] = tabOrder.value[tab.id]
-      }
-    })
-    await window.electronAPI.setConfig('browserTabOrder', orderToSave)
-    
-    console.log('💾 浏览器标签页已保存:', { tabsCount: tabsToSave.length, activeTabIndex })
-  } catch (error) {
-    console.error('❌ 保存浏览器标签页失败:', error)
-  }
-}
-
-// 恢复浏览器标签页
-const restoreBrowserTabs = async () => {
-  try {
-    if (!window.electronAPI || !window.electronAPI.getConfig) {
-      console.warn('⚠️ electronAPI 不可用，无法恢复标签页')
-      return false
-    }
-    
-    isRestoringTabs = true // 标记正在恢复
-    
-    const savedTabs = await window.electronAPI.getConfig('browserTabs') || []
-    const savedActiveTabIndex = await window.electronAPI.getConfig('browserActiveTabIndex') ?? -1
-    
-    if (savedTabs.length === 0) {
-      console.log('📋 没有保存的浏览器标签页')
-      isRestoringTabs = false
-      return false
-    }
-    
-    console.log('🔄 恢复浏览器标签页:', { tabsCount: savedTabs.length, activeTabIndex: savedActiveTabIndex })
-    
-    // 恢复所有标签页
-    for (const savedTab of savedTabs) {
-      // 跳过空标签页
-      if (!savedTab.url || savedTab.url === 'about:blank') {
-        continue
-      }
-      
-      // 根据保存的类型创建对应的标签页
-      const tab = createBrowserTab(savedTab.url, savedTab.title || '')
-      // 如果保存的类型与路由解析的类型不一致，需要更新（主要是为了兼容旧数据）
-      if (savedTab.type && savedTab.type !== tab.routeType) {
-        if (savedTab.type === 'clone-directory' && savedTab.clonePath) {
-          tab.routeType = 'clone-directory'
-          tab.routeProps = { path: savedTab.clonePath }
-          tab.routeConfig = routeConfig['clone-directory']
-        } else if (savedTab.type === 'remote-repo') {
-          tab.routeType = 'remote-repo'
-          tab.routeConfig = routeConfig['remote-repo']
-        }
-        tab.contentKind = tab.routeConfig.showWebview ? 'web' : 'builtin'
-        tab.contentHost = tab.routeConfig.showWebview ? 'webcontentsview' : 'builtin'
-      }
-      console.log('✅ 恢复标签页:', tab.id, 'routeType:', tab.routeType, 'url:', tab.url, 'title:', tab.title)
-    }
-    
-    // 恢复活动标签页
-    if (browserTabs.value.length > 0) {
-      let activeIndex = savedActiveTabIndex
-      
-      if (activeIndex >= 0 && activeIndex < browserTabs.value.length) {
-        await switchBrowserTab(browserTabs.value[activeIndex].id)
-      } else if (browserTabs.value.length > 0) {
-        // 如果索引无效，使用最后一个
-        await switchBrowserTab(browserTabs.value[browserTabs.value.length - 1].id)
-      }
-    }
-    
-    // 恢复标签顺序
-    const savedOrder = await window.electronAPI.getConfig('browserTabOrder') || {}
-    if (Object.keys(savedOrder).length > 0) {
-      const newOrder = {}
-      browserTabs.value.forEach((tab, index) => {
-        if (tab.url && savedOrder[tab.url] !== undefined) {
-          newOrder[tab.id] = savedOrder[tab.url]
-        } else {
-          newOrder[tab.id] = index
-        }
-      })
-      tabOrder.value = newOrder
-      console.log('✅ 标签顺序已恢复:', newOrder)
-    } else {
-      // 如果没有保存的顺序，初始化默认顺序
-      updateAllTabOrders()
-    }
-    
-    console.log('✅ 浏览器标签页已恢复')
-    
-    // 延迟重置标志，确保所有 watch 都完成
-    setTimeout(() => {
-      isRestoringTabs = false
-    }, 2000)
-    
-    return true
-  } catch (error) {
-    console.error('❌ 恢复浏览器标签页失败:', error)
-    isRestoringTabs = false
-    return false
-  }
-}
+const {
+  saveBrowserTabs,
+  restoreBrowserTabs
+} = useBrowserPersistence({
+  browserTabs,
+  activeBrowserTabId,
+  tabOrder,
+  isRestoringTabs,
+  electronAPI: window.electronAPI,
+  createBrowserTab,
+  switchBrowserTab,
+  routeConfig,
+  resolveSessionPartition
+})
 
 // 监听标签页变化，自动保存
 watch(() => browserTabs.value.length, () => {
@@ -3367,11 +3742,13 @@ onMounted(async () => {
   await loadBrowsingHistory() // 加载历史记录
   await loadSavedPasswords()
     
-    // 监听 Command+R 快捷键
-    const handleKeyDown = (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'l') {
-        event.preventDefault()
-        event.stopPropagation()
+    const shortcutController = useBrowserShortcuts({
+      'new-tab': () => createNewBrowserTab(),
+      'close-tab': () => {
+        if (activeBrowserTabId.value) closeBrowserTab(activeBrowserTabId.value)
+      },
+      'restore-closed-tab': () => restoreClosedBrowserTab(),
+      'focus-address-bar': () => {
         nextTick(() => {
           const input = urlInputRef.value || document.querySelector('.url-input')
           if (input) {
@@ -3379,57 +3756,30 @@ onMounted(async () => {
             input.select()
           }
         })
-        return
-      }
-      // 检查是否是 Command+R (Mac) 或 Ctrl+R (Windows/Linux)
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
-        event.preventDefault() // 阻止默认刷新行为
-        event.stopPropagation() // 阻止事件冒泡
-        
-        // 只有当前活动标签页处理刷新
-        if (activeBrowserTabId.value) {
-          console.log('⌨️ Command+R 被按下，刷新当前标签页')
-          refresh()
-        } else {
-          console.log('⚠️ 没有活动标签页，忽略 Command+R')
-        }
-      }
-      if ((event.metaKey && event.key === '[') || (event.altKey && event.key === 'ArrowLeft')) {
-        event.preventDefault()
-        goBack()
-        return
-      }
-      if ((event.metaKey && event.key === ']') || (event.altKey && event.key === 'ArrowRight')) {
-        event.preventDefault()
-        goForward()
-        return
-      }
-      if (event.key === 'F5') {
-        event.preventDefault()
-        refresh()
-        return
-      }
-      if (event.altKey && event.key === 'Home') {
-        event.preventDefault()
-        goHome()
-      }
-    }
-    
-    window.addEventListener('keydown', handleKeyDown)
+      },
+      'reload-tab': () => refresh(),
+      'force-reload-tab': () => refresh(),
+      'go-back': () => goBack(),
+      'go-forward': () => goForward()
+    })
+    shortcutController.mount()
     const handleResize = () => {
       syncWebContentsViewBounds()
       syncActiveContentHost()
     }
     window.addEventListener('resize', handleResize)
-    console.log('✅ Command+R 快捷键监听器已注册')
+    console.log('✅ 浏览器快捷键监听器已注册')
 
-    // 保存 handleKeyDown 引用以便卸载时移除
-    window.__browserKeyDownHandler = handleKeyDown
+    // 保存引用以便卸载时移除
+    window.__browserShortcutController = shortcutController
     window.__browserResizeHandler = handleResize
     
   
   // 监听菜单事件
   if (window.electronAPI) {
+    if (window.electronAPI.onRefreshCurrentTab) {
+      window.electronAPI.onRefreshCurrentTab(handleRefreshCurrentTabMessage)
+    }
     if (window.electronAPI.onExportFavorites) {
       window.electronAPI.onExportFavorites(() => {
         exportFavorites()
@@ -3504,23 +3854,28 @@ onMounted(async () => {
 // 组件卸载时保存标签页
 onUnmounted(() => {
   clearLoadingProgressTimers()
+  filledPasswordByTabId.clear()
+  lastFilledUrlByTabId.clear()
+  passwordCapturedSignatures.clear()
   hideAllWebContentsViewTabs()
   browserContentRef.value?.__contentBoundsObserver?.disconnect()
   denyPermissionRequests(clearPermissionPrompts())
 
   if (window.electronAPI) {
+    window.electronAPI.removeRefreshCurrentTabListener?.(handleRefreshCurrentTabMessage)
     window.electronAPI.removeWebTabStateChangedListener?.()
     window.electronAPI.removeWebTabTitleUpdatedListener?.()
     window.electronAPI.removeWebTabFaviconUpdatedListener?.()
     window.electronAPI.removeWebTabLoadFailedListener?.()
+    window.electronAPI.removeWebTabLifecycleChangedListener?.()
     window.electronAPI.removeWebDownloadStateChangedListener?.()
     window.electronAPI.removeBrowserPermissionRequestedListener?.()
+    window.electronAPI.removeWebTabPasswordCapturedListener?.()
   }
-  // 移除 Command+R 快捷键监听器
-  if (window.__browserKeyDownHandler) {
-    window.removeEventListener('keydown', window.__browserKeyDownHandler)
-    delete window.__browserKeyDownHandler
-    console.log('🧹 Command+R 快捷键监听器已移除')
+  if (window.__browserShortcutController) {
+    window.__browserShortcutController.unmount?.()
+    delete window.__browserShortcutController
+    console.log('🧹 浏览器快捷键监听器已移除')
   }
   if (window.__browserResizeHandler) {
     window.removeEventListener('resize', window.__browserResizeHandler)
@@ -3963,7 +4318,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 .url-input {
   flex: 1;
   width: 100%;
-  padding: 6px 36px 6px 12px; /* 右侧留出空间给收藏按钮 */
+  padding: 6px 104px 6px 12px; /* 右侧留出空间给地址栏动作按钮组 */
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 4px;
   font-size: 14px;
@@ -3978,7 +4333,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   position: absolute;
   top: 100%;
   left: 0;
-  right: 40px;
+  right: 0;
   margin-top: 4px;
   background: #2d2d2d;
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -4031,9 +4386,15 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   margin-left: auto;
 }
 
-.url-input-favorite-btn {
+.url-input-actions {
   position: absolute;
   right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.url-input-favorite-btn {
   display: flex;
   align-items: center;
   justify-content: center;

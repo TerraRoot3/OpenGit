@@ -1,15 +1,40 @@
 const { WebContentsView } = require('electron')
+const { createWebTabLifecycleController } = require('./web-tab-lifecycle')
+
+function createRecoverySnapshot(input = {}) {
+  return {
+    tabId: input.tabId || '',
+    url: input.url || 'about:blank',
+    title: input.title || '',
+    favicon: input.favicon || '',
+    partition: input.partition || 'persist:main',
+    lifecyclePhase: input.lifecyclePhase || 'warm',
+    isCrashed: Boolean(input.isCrashed)
+  }
+}
+
+function shouldAutoRestoreDiscardedTab({ isActive = false, lifecyclePhase = '' } = {}) {
+  return Boolean(isActive) && lifecyclePhase === 'discarded'
+}
 
 class WebTabManager {
-  constructor({ safeLog = () => {}, safeError = () => {} } = {}) {
+  constructor({
+    safeLog = () => {},
+    safeError = () => {},
+    lifecycleOptions = {},
+    webTabPreloadPath = ''
+  } = {}) {
     this.safeLog = safeLog
     this.safeError = safeError
     this.mainWindow = null
     this.renderer = null
     this.views = new Map()
+    this.recoveryMeta = new Map()
     this.contentsToTab = new Map()
     this.activeTabId = null
     this.activeBounds = null
+    this.lifecycle = createWebTabLifecycleController(lifecycleOptions)
+    this.webTabPreloadPath = webTabPreloadPath || ''
   }
 
   attachWindow(mainWindow) {
@@ -31,6 +56,52 @@ class WebTabManager {
     return this.views.get(tabId) || null
   }
 
+  _ensureRecoveryMeta(tabId) {
+    if (!tabId) return null
+    if (!this.recoveryMeta.has(tabId)) {
+      this.recoveryMeta.set(tabId, createRecoverySnapshot({ tabId }))
+    }
+    return this.recoveryMeta.get(tabId)
+  }
+
+  _setRecoveryMeta(tabId, patch = {}) {
+    const current = this._ensureRecoveryMeta(tabId)
+    if (!current) return null
+    const next = createRecoverySnapshot({
+      ...current,
+      ...patch,
+      tabId
+    })
+    this.recoveryMeta.set(tabId, next)
+    return next
+  }
+
+  _emitLifecycleChanged(tabId) {
+    if (!tabId) return
+    const state = this.lifecycle.getState(tabId)
+    if (!state) return
+    this._setRecoveryMeta(tabId, { lifecyclePhase: state.phase })
+    this._emit('web-tab-lifecycle-changed', {
+      tabId,
+      ...state
+    })
+  }
+
+  _registerLifecycle(tabId, now = Date.now()) {
+    this.lifecycle.registerTab(tabId, now)
+    this._emitLifecycleChanged(tabId)
+  }
+
+  _activateLifecycle(tabId, now = Date.now()) {
+    this.lifecycle.activateTab(tabId, now)
+    this._emitLifecycleChanged(tabId)
+  }
+
+  _deactivateLifecycle(tabId, now = Date.now()) {
+    this.lifecycle.deactivateTab(tabId, now)
+    this._emitLifecycleChanged(tabId)
+  }
+
   _bindViewEvents(tabId, view) {
     const wc = view.webContents
     const isAbortError = (errorCode, errorDescription = '') => {
@@ -39,20 +110,28 @@ class WebTabManager {
     }
 
     wc.on('page-title-updated', (event, title) => {
+      this._setRecoveryMeta(tabId, { title: title || '' })
       this._emit('web-tab-title-updated', { tabId, title: title || '' })
     })
 
     wc.on('page-favicon-updated', (event, favicons = []) => {
+      this._setRecoveryMeta(tabId, { favicon: favicons[0] || '' })
       this._emit('web-tab-favicon-updated', { tabId, favicon: favicons[0] || '' })
     })
 
     const emitState = () => {
+      const url = wc.getURL()
+      this._setRecoveryMeta(tabId, {
+        url: url || 'about:blank',
+        isCrashed: false
+      })
       this._emit('web-tab-state-changed', {
         tabId,
-        url: wc.getURL(),
+        url,
         isLoading: wc.isLoading(),
         canGoBack: wc.canGoBack(),
-        canGoForward: wc.canGoForward()
+        canGoForward: wc.canGoForward(),
+        isCrashed: false
       })
     }
 
@@ -64,6 +143,9 @@ class WebTabManager {
     wc.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       if (!isMainFrame) return
       if (isAbortError(errorCode, errorDescription)) return
+      if (validatedURL) {
+        this._setRecoveryMeta(tabId, { url: validatedURL })
+      }
       this._emit('web-tab-load-failed', {
         tabId,
         errorCode,
@@ -73,6 +155,11 @@ class WebTabManager {
     })
 
     wc.on('render-process-gone', (event, details) => {
+      this.markTabCrashed(tabId)
+      this._setRecoveryMeta(tabId, {
+        url: wc.getURL() || 'about:blank',
+        isCrashed: true
+      })
       this._emit('web-tab-load-failed', {
         tabId,
         errorCode: -32001,
@@ -90,8 +177,16 @@ class WebTabManager {
     })
   }
 
-  createWebTab(tabId, url = 'about:blank') {
+  createWebTab(tabId, url = 'about:blank', options = {}) {
     if (!tabId) throw new Error('tabId is required')
+    const partition = options.partition || 'persist:main'
+    this._registerLifecycle(tabId)
+    this._setRecoveryMeta(tabId, {
+      url: url || 'about:blank',
+      partition,
+      isCrashed: false
+    })
+
     if (this.views.has(tabId)) {
       const existingView = this.views.get(tabId)
       if (existingView?.webContents?.id) {
@@ -102,9 +197,10 @@ class WebTabManager {
 
     const view = new WebContentsView({
       webPreferences: {
-        partition: 'persist:main',
+        partition,
         contextIsolation: true,
-        nodeIntegration: false
+        nodeIntegration: false,
+        preload: this.webTabPreloadPath || undefined
       }
     })
 
@@ -128,7 +224,15 @@ class WebTabManager {
 
   destroyWebTab(tabId) {
     const view = this._getView(tabId)
-    if (!view) return false
+    if (!view) {
+      const hadLifecycleState = Boolean(this.lifecycle.getState(tabId))
+      if (this.activeTabId === tabId) {
+        this.activeTabId = null
+      }
+      this.lifecycle.unregisterTab(tabId)
+      this.recoveryMeta.delete(tabId)
+      return hadLifecycleState
+    }
     const webContentsId = view.webContents?.id
 
     try {
@@ -146,6 +250,8 @@ class WebTabManager {
     if (this.activeTabId === tabId) {
       this.activeTabId = null
     }
+    this.lifecycle.unregisterTab(tabId)
+    this.recoveryMeta.delete(tabId)
     return true
   }
 
@@ -176,6 +282,7 @@ class WebTabManager {
 
   hideAllWebTabs() {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return false
+    const previousActiveTabId = this.activeTabId
 
     for (const [, view] of this.views) {
       try {
@@ -184,6 +291,9 @@ class WebTabManager {
     }
 
     this.activeTabId = null
+    if (previousActiveTabId) {
+      this._deactivateLifecycle(previousActiveTabId)
+    }
     return true
   }
 
@@ -191,6 +301,7 @@ class WebTabManager {
     const view = this._getView(tabId)
     if (!view || !this.mainWindow || this.mainWindow.isDestroyed()) return false
 
+    const previousActiveTabId = this.activeTabId
     this.hideAllWebTabs()
 
     try {
@@ -203,6 +314,8 @@ class WebTabManager {
         view.setAutoResize({ width: true, height: true })
       }
       this.activeTabId = tabId
+      this._setRecoveryMeta(tabId, { isCrashed: false })
+      this._activateLifecycle(tabId)
       return true
     } catch (error) {
       this.safeError(`[WebTabManager] activateWebTab failed for ${tabId}:`, error)
@@ -213,6 +326,10 @@ class WebTabManager {
   navigateWebTab(tabId, url) {
     const view = this._getView(tabId)
     if (!view) return false
+    this._setRecoveryMeta(tabId, {
+      url: url || 'about:blank',
+      isCrashed: false
+    })
 
     view.webContents.loadURL(url).catch((error) => {
       if (String(error?.message || '').toUpperCase().includes('ERR_ABORTED')) return
@@ -262,15 +379,106 @@ class WebTabManager {
     return Boolean(tabId) && this.activeTabId === tabId
   }
 
+  advanceLifecycle(now = Date.now()) {
+    const transitions = this.lifecycle.advance(now)
+    for (const transition of transitions) {
+      const [tabId] = String(transition).split(':')
+      this._emitLifecycleChanged(tabId)
+    }
+    return transitions
+  }
+
+  discardWebTab(tabId) {
+    if (!tabId) return false
+    const view = this._getView(tabId)
+    if (!view) return false
+    const webContentsId = view.webContents?.id
+
+    try {
+      this.mainWindow?.contentView?.removeChildView(view)
+    } catch {}
+
+    try {
+      view.webContents.close()
+    } catch {}
+
+    this.views.delete(tabId)
+    if (webContentsId) {
+      this.contentsToTab.delete(webContentsId)
+    }
+    if (this.activeTabId === tabId) {
+      this.activeTabId = null
+    }
+    this._setRecoveryMeta(tabId, { lifecyclePhase: 'discarded' })
+    return true
+  }
+
+  getLifecycleState(tabId) {
+    return this.lifecycle.getState(tabId)
+  }
+
+  createRecoverySnapshot(tabId) {
+    if (!tabId) return createRecoverySnapshot({})
+    return createRecoverySnapshot(this.recoveryMeta.get(tabId) || { tabId })
+  }
+
+  markTabCrashed(tabId) {
+    if (!tabId) return null
+    return this._setRecoveryMeta(tabId, { isCrashed: true })
+  }
+
+  restoreWebTab(tabId, url = '') {
+    if (!tabId) return { success: false, error: 'tabId is required' }
+    if (this._getView(tabId)) {
+      if (url) {
+        this.navigateWebTab(tabId, url)
+      }
+      this._setRecoveryMeta(tabId, { isCrashed: false })
+      return { success: true, restored: false }
+    }
+
+    const snapshot = this.createRecoverySnapshot(tabId)
+    const restoreUrl = url || snapshot.url || 'about:blank'
+    this.createWebTab(tabId, restoreUrl, { partition: snapshot.partition || 'persist:main' })
+    this._setRecoveryMeta(tabId, {
+      url: restoreUrl,
+      isCrashed: false
+    })
+    this._deactivateLifecycle(tabId)
+    return { success: true, restored: true }
+  }
+
   cleanup() {
     for (const tabId of this.views.keys()) {
       this.destroyWebTab(tabId)
     }
     this.views.clear()
+    this.recoveryMeta.clear()
     this.contentsToTab.clear()
     this.activeTabId = null
     this.activeBounds = null
   }
+
+  getTabPartition(tabId) {
+    return this.createRecoverySnapshot(tabId).partition || 'persist:main'
+  }
+
+  async evaluateWebTab(tabId, script = '') {
+    const view = this._getView(tabId)
+    if (!view || !script) {
+      return { success: false, error: 'tab or script is missing' }
+    }
+    try {
+      const result = await view.webContents.executeJavaScript(script, true)
+      return { success: true, result }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
 }
 
-module.exports = { WebTabManager }
+module.exports = {
+  WebTabManager,
+  createRecoverySnapshot,
+  shouldAutoRestoreDiscardedTab
+}

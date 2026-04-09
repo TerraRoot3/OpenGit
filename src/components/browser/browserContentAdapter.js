@@ -140,6 +140,33 @@ export function createBrowserContentAdapter({
     return false
   }
 
+  const getWebAuthnDiagnostics = async (tab = getCurrentTab()) => {
+    if (!tab || getTabContentKind(tab) !== 'web') return null
+    const script = `(() => ({
+      hasCredentials: typeof navigator.credentials !== 'undefined',
+      hasPublicKeyCredential: typeof window.PublicKeyCredential !== 'undefined',
+      hasCreate: typeof navigator.credentials?.create === 'function',
+      hasGet: typeof navigator.credentials?.get === 'function',
+      conditionalMediation: typeof PublicKeyCredential?.isConditionalMediationAvailable === 'function'
+    }))()`
+
+    if (getTabContentHost(tab) === 'webcontentsview' && window.electronAPI?.webTabEvaluate) {
+      const result = await window.electronAPI.webTabEvaluate({
+        tabId: toWebContentsViewTabId(tab),
+        script
+      })
+      return result?.success ? result.result : null
+    }
+
+    if (getTabContentHost(tab) === 'webview') {
+      const webview = getWebviewForTab(tab.id)
+      if (!webview || typeof webview.executeJavaScript !== 'function') return null
+      return webview.executeJavaScript(script)
+    }
+
+    return null
+  }
+
   return {
     getTabContentKind,
     getTabContentHost,
@@ -148,6 +175,7 @@ export function createBrowserContentAdapter({
     goBack,
     goForward,
     syncNavigationState,
+    getWebAuthnDiagnostics,
     getTabById
   }
 }

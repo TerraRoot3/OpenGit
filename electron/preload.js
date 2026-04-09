@@ -224,6 +224,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   webTabReload: (data) => ipcRenderer.invoke('web-tab-reload', data),
   webTabGoBack: (data) => ipcRenderer.invoke('web-tab-go-back', data),
   webTabGoForward: (data) => ipcRenderer.invoke('web-tab-go-forward', data),
+  webTabEvaluate: (data) => ipcRenderer.invoke('web-tab-evaluate', data),
+  webTabRestore: (data) => ipcRenderer.invoke('web-tab-restore', data),
   showBrowserFloatingMenu: (data) => ipcRenderer.invoke('browser-show-floating-menu', data),
   showBrowserNativeMenu: () => ipcRenderer.invoke('browser-show-native-menu'),
   onWebTabStateChanged: (callback) => {
@@ -250,12 +252,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeWebTabLoadFailedListener: () => {
     ipcRenderer.removeAllListeners('web-tab-load-failed')
   },
+  onWebTabPasswordCaptured: (callback) => {
+    ipcRenderer.on('web-tab-password-captured', (event, data) => callback(data))
+  },
+  removeWebTabPasswordCapturedListener: () => {
+    ipcRenderer.removeAllListeners('web-tab-password-captured')
+  },
+  onWebTabLifecycleChanged: (callback) => {
+    ipcRenderer.on('web-tab-lifecycle-changed', (event, data) => callback(data))
+  },
+  removeWebTabLifecycleChangedListener: () => {
+    ipcRenderer.removeAllListeners('web-tab-lifecycle-changed')
+  },
   onWebDownloadStateChanged: (callback) => {
     ipcRenderer.on('web-download-state-changed', (event, data) => callback(data))
   },
   removeWebDownloadStateChangedListener: () => {
     ipcRenderer.removeAllListeners('web-download-state-changed')
   },
+  browserOpenDownloadFolder: (data) => ipcRenderer.invoke('browser-open-download-folder', data),
+  browserRetryDownload: (data) => ipcRenderer.invoke('browser-retry-download', data),
+  browserClearDownloadHistory: () => ipcRenderer.invoke('browser-clear-download-history'),
+  browserGetSitePermissions: (data) => ipcRenderer.invoke('browser-get-site-permissions', data),
+  browserResetSitePermission: (data) => ipcRenderer.invoke('browser-reset-site-permission', data),
+  browserResetAllSitePermissions: (data) => ipcRenderer.invoke('browser-reset-all-site-permissions', data),
   onBrowserPermissionRequested: (callback) => {
     ipcRenderer.on('browser-permission-requested', (event, data) => callback(data))
   },

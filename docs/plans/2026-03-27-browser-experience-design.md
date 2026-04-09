@@ -92,10 +92,11 @@
 - [x] Phase 1 - Step 3：失败页 + 重试
 - [x] Phase 2 - Step 1：密码监听降轮询（登录场景短时监听）
 - [x] Phase 2 - Step 2：密码监听注入去重（单入口注入）
-- [ ] Phase 2 - Step 3：标签生命周期（冻结后台任务）
-- [ ] Phase 3：会话策略 / 崩溃恢复 / 快捷键矩阵
-- [ ] Phase 4：下载管理 / Passkey / 站点权限
-- [ ] Phase 5：Browser / WebView 深层拆分
+- [x] Phase 2 - Step 3：标签生命周期（`warm/frozen/discarded` + 恢复链路）
+- [x] Phase 3：会话策略 / 崩溃恢复 / 快捷键矩阵
+- [x] Phase 4（基础能力）：下载管理 / 站点权限 / 新窗口策略
+- [ ] Phase 4（剩余项）：Passkey / WebAuthn 兼容性修复（已完成诊断与记录）
+- [x] Phase 5（阶段性）：`Browser.vue` 导航/持久化/标签状态已拆分 composables；`WebView.vue` 仅保留兼容路径
 
 ## 推荐优先级
 - P0：`<webview>` 到 `WebContentsView` 的统一 Tab 架构迁移 Spike

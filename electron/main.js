@@ -22,6 +22,8 @@ const { registerBranchHandlers } = require('./ipc/branch')
 const { registerExtensionHandlers } = require('./ipc/extensions')
 const { registerScmHandlers } = require('./ipc/scm')
 const { WebTabManager } = require('./tab-manager/web-tab-manager')
+const { createSessionPartitionManager } = require('./tab-manager/session-partition-manager')
+const { decideWindowOpenAction } = require('./tab-manager/window-open-policy')
 const { createSitePermissionManager } = require('./permissions/site-permission-manager')
 
 // 注册自定义协议（必须在 app ready 之前调用）
@@ -443,9 +445,13 @@ const store = new Store({
 const isDev = process.env.NODE_ENV === 'development'
 let webTabManager = null
 let sitePermissionManager = null
+let sessionPartitionManager = null
+let webTabLifecycleInterval = null
 const floatingMenuResolvers = new Map()
 const pendingPermissionCallbacks = new Map()
 const pendingPermissionTimeouts = new Map()
+const downloadHistory = new Map()
+const configuredBrowserPartitions = new Set()
 const SITE_PERMISSION_PARTITION = 'persist:main'
 const SITE_PERMISSION_REQUEST_TIMEOUT_MS = 30_000
 let nextPermissionRequestId = 0
@@ -512,6 +518,189 @@ function getPermissionOrigin(webContents, details = {}, requestingOrigin = '') {
     || ''
 
   return sitePermissionManager ? sitePermissionManager.normalizeOrigin(rawOrigin) : ''
+}
+
+function emitDownloadState(payload = {}) {
+  if (!payload?.id) return
+  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
+    return
+  }
+  mainWindow.webContents.send('web-download-state-changed', payload)
+}
+
+function getTabPermissionContext({ tabId = '', origin = '', partition = '' } = {}) {
+  const snapshot = tabId && webTabManager?.createRecoverySnapshot ? webTabManager.createRecoverySnapshot(tabId) : null
+  const resolvedPartition = partition || snapshot?.partition || SITE_PERMISSION_PARTITION
+  const rawOrigin = origin || snapshot?.url || ''
+  const resolvedOrigin = sitePermissionManager?.normalizeOrigin(rawOrigin) || ''
+  return {
+    partition: resolvedPartition,
+    origin: resolvedOrigin
+  }
+}
+
+function configureBrowserSessionPartition(partition = SITE_PERMISSION_PARTITION) {
+  if (!partition || configuredBrowserPartitions.has(partition)) {
+    return
+  }
+
+  const webviewSession = session.fromPartition(partition)
+
+  webviewSession.setPermissionRequestHandler((webContents, permission, callback, details = {}) => {
+    const origin = getPermissionOrigin(webContents, details)
+    if (!origin) {
+      safeLog(`[Permission] deny ${permission}: missing origin`)
+      callback(false)
+      return
+    }
+
+    const rememberedDecision = sitePermissionManager.getRememberedDecision({
+      partition,
+      origin,
+      permission
+    })
+
+    if (rememberedDecision === 'allow') {
+      callback(true)
+      return
+    }
+
+    if (rememberedDecision === 'deny') {
+      callback(false)
+      return
+    }
+
+    const defaultDecision = sitePermissionManager.getDefaultDecision(permission)
+    if (defaultDecision !== 'ask') {
+      safeLog(`[Permission] deny ${permission}: default policy`)
+      callback(false)
+      return
+    }
+
+    const tabId = webTabManager?.getTabIdByWebContentsId(webContents?.id) || ''
+    if (!sitePermissionManager.shouldPromptRenderer({ tabId, defaultDecision })) {
+      safeLog(`[Permission] deny ${permission}: unable to map tab for ${origin}`)
+      callback(false)
+      return
+    }
+
+    if (!webTabManager?.isActiveTab(tabId)) {
+      safeLog(`[Permission] deny ${permission}: tab not active for ${origin}`)
+      callback(false)
+      return
+    }
+
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
+      safeLog(`[Permission] deny ${permission}: renderer unavailable for ${origin}`)
+      callback(false)
+      return
+    }
+
+    const requestId = createPermissionRequestId()
+    const pendingRequest = sitePermissionManager.createPendingRequest({
+      requestId,
+      partition,
+      origin,
+      permission,
+      tabId,
+      expiresAt: Date.now() + SITE_PERMISSION_REQUEST_TIMEOUT_MS
+    })
+
+    pendingPermissionCallbacks.set(requestId, callback)
+    clearPendingPermissionTimeout(requestId)
+
+    const timeout = setTimeout(() => {
+      safeLog(`[Permission] deny ${permission}: renderer response timeout for ${origin}`)
+      resolvePendingPermissionRequest({
+        requestId,
+        decision: 'deny',
+        reason: 'timeout'
+      })
+    }, SITE_PERMISSION_REQUEST_TIMEOUT_MS)
+
+    if (typeof timeout.unref === 'function') {
+      timeout.unref()
+    }
+
+    pendingPermissionTimeouts.set(requestId, timeout)
+
+    const promptPayload = sitePermissionManager.buildPromptPayload(pendingRequest)
+    if (!promptPayload) {
+      safeLog(`[Permission] deny ${permission}: invalid prompt payload for ${origin}`)
+      resolvePendingPermissionRequest({
+        requestId,
+        decision: 'deny',
+        reason: 'invalid-prompt-payload'
+      })
+      return
+    }
+
+    try {
+      mainWindow.webContents.send('browser-permission-requested', promptPayload)
+    } catch (error) {
+      safeError(`[Permission] send prompt failed for ${requestId}:`, error)
+      resolvePendingPermissionRequest({
+        requestId,
+        decision: 'deny',
+        reason: 'renderer-send-failed'
+      })
+    }
+  })
+
+  webviewSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details = {}) => {
+    const origin = getPermissionOrigin(webContents, details, requestingOrigin)
+    if (!origin) {
+      return false
+    }
+
+    const rememberedDecision = sitePermissionManager.getRememberedDecision({
+      partition,
+      origin,
+      permission
+    })
+
+    return sitePermissionManager.getCheckDecision({
+      permission,
+      rememberedDecision
+    })
+  })
+
+  webviewSession.on('will-download', (event, item) => {
+    const downloadId = item.getGUID()
+    const sendDownloadState = (state) => {
+      const payload = {
+        id: downloadId,
+        state,
+        fileName: item.getFilename(),
+        totalBytes: item.getTotalBytes(),
+        receivedBytes: item.getReceivedBytes(),
+        url: item.getURL(),
+        savePath: item.getSavePath() || '',
+        partition
+      }
+      downloadHistory.set(downloadId, {
+        ...(downloadHistory.get(downloadId) || {}),
+        ...payload
+      })
+      emitDownloadState(payload)
+    }
+
+    sendDownloadState('started')
+    item.on('updated', () => {
+      sendDownloadState(item.isPaused() ? 'paused' : 'progress')
+    })
+    item.once('done', (e, state) => {
+      const finalPath = item.getSavePath() || ''
+      const current = downloadHistory.get(downloadId) || {}
+      downloadHistory.set(downloadId, {
+        ...current,
+        savePath: finalPath
+      })
+      sendDownloadState(state === 'completed' ? 'completed' : 'interrupted')
+    })
+  })
+
+  configuredBrowserPartitions.add(partition)
 }
 
 ipcMain.on('browser-floating-menu-action', (event, payload) => {
@@ -622,53 +811,100 @@ function createWindow() {
     }
   })
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // 在应用内打开新窗口而不是外部浏览器
-             const newWindow = new BrowserWindow({
-               width: 1400,
-               height: 900,
-               minWidth: 1200,
-               minHeight: 800,
-               webPreferences: {
-                 nodeIntegration: false,
-                 contextIsolation: true,
-                 enableRemoteModule: false,
-                 preload: path.join(__dirname, 'preload.js')
-               },
-               titleBarStyle: 'hidden',
-               trafficLightPosition: { x: 8, y: 8 },
-               show: false
-             })
-
-    newWindow.loadURL(url)
-    newWindow.once('ready-to-show', () => {
-      newWindow.show()
-    })
-
-    // 为新窗口也添加隐藏行为
-    newWindow.on('close', (event) => {
-      if (!app.isQuiting) {
-        event.preventDefault()
-        newWindow.hide()
-        safeLog('📱 新窗口已隐藏到应用图标')
-      }
-    })
-
-    newWindow.on('closed', () => {
-      // 窗口关闭时清理引用
-    })
-
-    return { action: 'allow' }
+  mainWindow.webContents.setWindowOpenHandler((details) => {
+    return handleWindowOpen(details)
   })
 
   createMenu()
 }
 
-ipcMain.handle('web-tab-create', async (event, { tabId, url }) => {
+function createPopupWindow(url) {
+  const newWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1200,
+    minHeight: 800,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      enableRemoteModule: false,
+      preload: path.join(__dirname, 'preload.js')
+    },
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 8, y: 8 },
+    show: false
+  })
+
+  newWindow.loadURL(url)
+  newWindow.once('ready-to-show', () => {
+    newWindow.show()
+  })
+
+  newWindow.on('close', (event) => {
+    if (!app.isQuiting) {
+      event.preventDefault()
+      newWindow.hide()
+      safeLog('📱 新窗口已隐藏到应用图标')
+    }
+  })
+}
+
+function handleWindowOpen({ url = '', disposition = '', frameName = '' } = {}) {
+  const decision = decideWindowOpenAction({ url, disposition, frameName })
+  safeLog('🔗 [主进程] 窗口打开策略:', { url, disposition, frameName, decision: decision.action })
+
+  if (decision.action === 'tab') {
+    if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('open-url-in-new-tab', url)
+    }
+    return { action: 'deny' }
+  }
+
+  if (decision.action === 'window') {
+    createPopupWindow(url)
+    return { action: 'deny' }
+  }
+
+  if (url) {
+    shell.openExternal(url).catch((error) => {
+      safeError('openExternal failed:', error)
+    })
+  }
+  return { action: 'deny' }
+}
+
+ipcMain.on('web-tab-password-captured', (event, payload = {}) => {
+  try {
+    if (!webTabManager || !mainWindow || mainWindow.isDestroyed()) {
+      return
+    }
+    const senderId = event?.sender?.id
+    const tabId = webTabManager.getTabIdByWebContentsId(senderId)
+    if (!tabId) {
+      return
+    }
+    mainWindow.webContents.send('web-tab-password-captured', {
+      tabId,
+      username: payload.username || '',
+      password: payload.password || '',
+      domain: payload.domain || '',
+      url: payload.url || '',
+      capturedAt: payload.capturedAt || Date.now()
+    })
+  } catch (error) {
+    safeError('[PasswordCapture] forward failed:', error)
+  }
+})
+
+ipcMain.handle('web-tab-create', async (event, { tabId, url, isPrivate = false, partition = '' } = {}) => {
   try {
     if (!webTabManager) throw new Error('webTabManager not initialized')
-    webTabManager.createWebTab(tabId, url || 'about:blank')
-    return { success: true }
+    const resolvedPartition = partition
+      || sessionPartitionManager?.getPartition({ isPrivate, tabId })
+      || SITE_PERMISSION_PARTITION
+    configureBrowserSessionPartition(resolvedPartition)
+    webTabManager.createWebTab(tabId, url || 'about:blank', { partition: resolvedPartition })
+    return { success: true, partition: resolvedPartition }
   } catch (error) {
     return { success: false, error: error.message }
   }
@@ -677,7 +913,17 @@ ipcMain.handle('web-tab-create', async (event, { tabId, url }) => {
 ipcMain.handle('web-tab-destroy', async (event, { tabId }) => {
   try {
     if (!webTabManager) throw new Error('webTabManager not initialized')
-    return { success: webTabManager.destroyWebTab(tabId) }
+    const partition = webTabManager.getTabPartition(tabId)
+    const success = webTabManager.destroyWebTab(tabId)
+    if (success && sessionPartitionManager?.isPrivatePartition(partition)) {
+      try {
+        const targetSession = session.fromPartition(partition)
+        await targetSession.clearStorageData()
+      } catch (error) {
+        safeError(`[Session] clear private partition failed: ${partition}`, error)
+      }
+    }
+    return { success }
   } catch (error) {
     return { success: false, error: error.message }
   }
@@ -741,6 +987,116 @@ ipcMain.handle('web-tab-go-forward', async (event, { tabId }) => {
   try {
     if (!webTabManager) throw new Error('webTabManager not initialized')
     return { success: webTabManager.goForward(tabId) }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('web-tab-evaluate', async (event, { tabId, script } = {}) => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    return await webTabManager.evaluateWebTab(tabId, script || '')
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('web-tab-restore', async (event, { tabId, url } = {}) => {
+  try {
+    if (!webTabManager) throw new Error('webTabManager not initialized')
+    return webTabManager.restoreWebTab(tabId, url || '')
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('browser-open-download-folder', async (event, { id } = {}) => {
+  const record = downloadHistory.get(id)
+  if (!record?.savePath) {
+    return { success: false, error: 'download save path not found' }
+  }
+  try {
+    shell.showItemInFolder(record.savePath)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('browser-retry-download', async (event, { id } = {}) => {
+  const record = downloadHistory.get(id)
+  if (!record?.url) {
+    return { success: false, error: 'download url not found' }
+  }
+  try {
+    const webviewSession = session.fromPartition(record.partition || SITE_PERMISSION_PARTITION)
+    webviewSession.downloadURL(record.url)
+    downloadHistory.set(id, {
+      ...record,
+      retryCount: (record.retryCount || 0) + 1
+    })
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('browser-clear-download-history', async () => {
+  downloadHistory.clear()
+  return { success: true }
+})
+
+ipcMain.handle('browser-get-site-permissions', async (event, payload = {}) => {
+  try {
+    if (!sitePermissionManager) throw new Error('sitePermissionManager not initialized')
+    const { partition, origin } = getTabPermissionContext({
+      tabId: payload.tabId || '',
+      origin: payload.origin || '',
+      partition: payload.partition || ''
+    })
+    return {
+      success: true,
+      origin,
+      partition,
+      permissions: sitePermissionManager.listPermissionsForOrigin({ partition, origin })
+    }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('browser-reset-site-permission', async (event, payload = {}) => {
+  try {
+    if (!sitePermissionManager) throw new Error('sitePermissionManager not initialized')
+    const { partition, origin } = getTabPermissionContext({
+      tabId: payload.tabId || '',
+      origin: payload.origin || '',
+      partition: payload.partition || ''
+    })
+    const success = sitePermissionManager.resetPermission({
+      partition,
+      origin,
+      permission: payload.permission || ''
+    })
+    return { success, origin, partition }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('browser-reset-all-site-permissions', async (event, payload = {}) => {
+  try {
+    if (!sitePermissionManager) throw new Error('sitePermissionManager not initialized')
+    const { partition, origin } = getTabPermissionContext({
+      tabId: payload.tabId || '',
+      origin: payload.origin || '',
+      partition: payload.partition || ''
+    })
+    const success = sitePermissionManager.resetAllPermissionsForOrigin({
+      partition,
+      origin
+    })
+    return { success, origin, partition }
   } catch (error) {
     return { success: false, error: error.message }
   }
@@ -1361,18 +1717,7 @@ registerBranchHandlers({
 
 // 监听所有 webContents 创建，拦截 webview 中的新窗口请求
 app.on('web-contents-created', (event, contents) => {
-  // 为所有 webContents（包括 webview）设置新窗口处理器
-  contents.setWindowOpenHandler(({ url }) => {
-    safeLog('🔗 [主进程] 拦截新窗口请求:', url)
-    
-    // 发送消息到渲染进程，让其在新标签页中打开
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('open-url-in-new-tab', url)
-    }
-    
-    // 阻止默认行为（不创建新窗口）
-    return { action: 'deny' }
-  })
+  contents.setWindowOpenHandler((details) => handleWindowOpen(details))
   
   // 为 webview 设置导航处理
   contents.on('will-navigate', (event, url) => {
@@ -1383,8 +1728,31 @@ app.on('web-contents-created', (event, contents) => {
 
 app.whenReady().then(async () => {
   safeLog('Electron app ready, creating window...')
-  webTabManager = new WebTabManager({ safeLog, safeError })
+  webTabManager = new WebTabManager({
+    safeLog,
+    safeError,
+    webTabPreloadPath: path.join(__dirname, 'web-tab-preload.js')
+  })
   sitePermissionManager = createSitePermissionManager({ store })
+  sessionPartitionManager = createSessionPartitionManager()
+
+  webTabLifecycleInterval = setInterval(() => {
+    if (!webTabManager) return
+    const transitions = webTabManager.advanceLifecycle(Date.now())
+    if (!Array.isArray(transitions) || transitions.length === 0) return
+
+    for (const transition of transitions) {
+      const [tabId, phase] = String(transition).split(':')
+      if (!tabId || !phase) continue
+      if (phase === 'discarded') {
+        webTabManager.discardWebTab(tabId)
+      }
+    }
+  }, 1000)
+
+  if (typeof webTabLifecycleInterval.unref === 'function') {
+    webTabLifecycleInterval.unref()
+  }
 
   // 注册 local-resource:// 协议：安全地将 ~/.gitManager/ 下的文件提供给渲染进程
   // URL 格式：local-resource://相对路径  例：local-resource://screenshots/screenshot-123.png
@@ -1405,149 +1773,7 @@ app.whenReady().then(async () => {
     }
   })
 
-  // 配置 webview 使用的持久化 session
-  // persist: 前缀会自动持久化 cookies, localStorage, IndexedDB 等
-  const webviewSession = session.fromPartition(SITE_PERMISSION_PARTITION)
-  
-  webviewSession.setPermissionRequestHandler((webContents, permission, callback, details = {}) => {
-    const origin = getPermissionOrigin(webContents, details)
-    if (!origin) {
-      safeLog(`[Permission] deny ${permission}: missing origin`)
-      callback(false)
-      return
-    }
-
-    const rememberedDecision = sitePermissionManager.getRememberedDecision({
-      partition: SITE_PERMISSION_PARTITION,
-      origin,
-      permission
-    })
-
-    if (rememberedDecision === 'allow') {
-      callback(true)
-      return
-    }
-
-    if (rememberedDecision === 'deny') {
-      callback(false)
-      return
-    }
-
-    const defaultDecision = sitePermissionManager.getDefaultDecision(permission)
-    if (defaultDecision !== 'ask') {
-      safeLog(`[Permission] deny ${permission}: default policy`)
-      callback(false)
-      return
-    }
-
-    const tabId = webTabManager?.getTabIdByWebContentsId(webContents?.id) || ''
-    if (!sitePermissionManager.shouldPromptRenderer({ tabId, defaultDecision })) {
-      safeLog(`[Permission] deny ${permission}: unable to map tab for ${origin}`)
-      callback(false)
-      return
-    }
-
-    if (!webTabManager?.isActiveTab(tabId)) {
-      safeLog(`[Permission] deny ${permission}: tab not active for ${origin}`)
-      callback(false)
-      return
-    }
-
-    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
-      safeLog(`[Permission] deny ${permission}: renderer unavailable for ${origin}`)
-      callback(false)
-      return
-    }
-
-    const requestId = createPermissionRequestId()
-    const pendingRequest = sitePermissionManager.createPendingRequest({
-      requestId,
-      partition: SITE_PERMISSION_PARTITION,
-      origin,
-      permission,
-      tabId,
-      expiresAt: Date.now() + SITE_PERMISSION_REQUEST_TIMEOUT_MS
-    })
-
-    pendingPermissionCallbacks.set(requestId, callback)
-    clearPendingPermissionTimeout(requestId)
-
-    const timeout = setTimeout(() => {
-      safeLog(`[Permission] deny ${permission}: renderer response timeout for ${origin}`)
-      resolvePendingPermissionRequest({
-        requestId,
-        decision: 'deny',
-        reason: 'timeout'
-      })
-    }, SITE_PERMISSION_REQUEST_TIMEOUT_MS)
-
-    if (typeof timeout.unref === 'function') {
-      timeout.unref()
-    }
-
-    pendingPermissionTimeouts.set(requestId, timeout)
-
-    const promptPayload = sitePermissionManager.buildPromptPayload(pendingRequest)
-    if (!promptPayload) {
-      safeLog(`[Permission] deny ${permission}: invalid prompt payload for ${origin}`)
-      resolvePendingPermissionRequest({
-        requestId,
-        decision: 'deny',
-        reason: 'invalid-prompt-payload'
-      })
-      return
-    }
-
-    try {
-      mainWindow.webContents.send('browser-permission-requested', promptPayload)
-    } catch (error) {
-      safeError(`[Permission] send prompt failed for ${requestId}:`, error)
-      resolvePendingPermissionRequest({
-        requestId,
-        decision: 'deny',
-        reason: 'renderer-send-failed'
-      })
-    }
-  })
-  
-  webviewSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details = {}) => {
-    const origin = getPermissionOrigin(webContents, details, requestingOrigin)
-    if (!origin) {
-      return false
-    }
-
-    const rememberedDecision = sitePermissionManager.getRememberedDecision({
-      partition: SITE_PERMISSION_PARTITION,
-      origin,
-      permission
-    })
-
-    return rememberedDecision === 'allow'
-  })
-
-  webviewSession.on('will-download', (event, item) => {
-    const downloadId = item.getGUID()
-    const sendDownloadState = (state) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('web-download-state-changed', {
-          id: downloadId,
-          state,
-          fileName: item.getFilename(),
-          totalBytes: item.getTotalBytes(),
-          receivedBytes: item.getReceivedBytes(),
-          url: item.getURL()
-        })
-      }
-    }
-
-    sendDownloadState('started')
-    item.on('updated', () => {
-      sendDownloadState(item.isPaused() ? 'paused' : 'progress')
-    })
-    item.once('done', (e, state) => {
-      sendDownloadState(state === 'completed' ? 'completed' : 'interrupted')
-    })
-  })
+  configureBrowserSessionPartition(SITE_PERMISSION_PARTITION)
   
   // 设置存储路径（确保使用应用数据目录）
   const userDataPath = app.getPath('userData')
@@ -1637,6 +1863,10 @@ const { cleanup: cleanupTerminalSessions } = registerTerminalHandlers({
 })
 
 app.on('will-quit', () => {
+  if (webTabLifecycleInterval) {
+    clearInterval(webTabLifecycleInterval)
+    webTabLifecycleInterval = null
+  }
   if (webTabManager) {
     webTabManager.cleanup()
   }

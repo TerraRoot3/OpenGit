@@ -370,3 +370,16 @@ Manual:
 4. Batch 4:
    - Task 11
    - Task 12
+
+## Execution Status (2026-04-09)
+
+- [x] Task 1-8: Browser shell 已切到 `WebContentsView` 主路径，适配层与 IPC 状态同步完成
+- [x] Task 9: 主进程策略已补齐（新窗口策略、下载状态、权限请求策略）
+- [x] Task 10: 崩溃/失败恢复交互已接入（含恢复动作与错误态区分）
+- [x] Task 11: 标签元数据持久化与恢复已落地（含 private partition/lifecycle 元数据）
+- [x] Task 12: DOM `<webview>` 已从主浏览路径移除，仅保留兼容用途（`contentHost !== 'webcontentsview'`）
+
+## Remaining Follow-ups
+
+- Passkey / WebAuthn: 当前已完成诊断与基线记录，仍需针对目标站点完成兼容性补丁验证
+- Manual regression matrix: 需要按最新剩余计划执行端到端人工回归

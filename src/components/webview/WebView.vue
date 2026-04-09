@@ -4,7 +4,7 @@
     :data-tab-id="tabId"
     class="webview"
     :style="webviewStyle"
-    partition="persist:main"
+    :partition="partition"
     allowpopups
     webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=yes,allowRunningInsecureContent=no"
     @did-start-loading="onLoadStart"
@@ -100,6 +100,11 @@ const props = defineProps({
   userAgent: {
     type: String,
     default: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  },
+  // Compatibility-only path. Main browser flow now uses WebContentsView.
+  partition: {
+    type: String,
+    default: 'persist:main'
   },
   // 当前标签是否是活动标签
   isActive: {

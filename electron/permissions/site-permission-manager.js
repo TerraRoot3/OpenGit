@@ -4,12 +4,18 @@ const ASK_PERMISSIONS = new Set([
   'media',
   'geolocation',
   'notifications',
-  'clipboard-read'
+  'clipboard-read',
+  'publickey-credentials-create',
+  'publickey-credentials-get'
 ])
 
 const DENY_PERMISSIONS = new Set([
   'pointerLock'
 ])
+const MANAGED_PERMISSIONS = Array.from(new Set([
+  ...ASK_PERMISSIONS,
+  ...DENY_PERMISSIONS
+]))
 
 function createSitePermissionManager({ store }) {
   if (!store || typeof store.get !== 'function' || typeof store.set !== 'function') {
@@ -47,6 +53,16 @@ function createSitePermissionManager({ store }) {
     }
 
     return 'deny'
+  }
+
+  const getCheckDecision = ({ permission = '', rememberedDecision = 'unset' } = {}) => {
+    if (rememberedDecision === 'allow') {
+      return true
+    }
+    if (rememberedDecision === 'deny') {
+      return false
+    }
+    return getDefaultDecision(permission) !== 'deny'
   }
 
   const getRememberedDecision = ({ partition = '', origin = '', permission = '' } = {}) => {
@@ -164,9 +180,82 @@ function createSitePermissionManager({ store }) {
     return Boolean(tabId)
   }
 
+  const listPermissionsForOrigin = ({ partition = '', origin = '' } = {}) => {
+    if (!partition || !origin) {
+      return {}
+    }
+    const rules = getRules()
+    const current = rules?.[partition]?.[origin] || {}
+    const result = {}
+    for (const permission of MANAGED_PERMISSIONS) {
+      result[permission] = current[permission] || 'unset'
+    }
+    return result
+  }
+
+  const resetPermission = ({ partition = '', origin = '', permission = '' } = {}) => {
+    if (!partition || !origin || !permission) {
+      return false
+    }
+    const rules = getRules()
+    const existing = rules?.[partition]?.[origin]
+    if (!existing || !(permission in existing)) {
+      return false
+    }
+
+    const nextOriginRules = { ...existing }
+    delete nextOriginRules[permission]
+
+    const nextPartitionRules = {
+      ...(rules[partition] || {}),
+      [origin]: nextOriginRules
+    }
+
+    if (Object.keys(nextOriginRules).length === 0) {
+      delete nextPartitionRules[origin]
+    }
+
+    const nextRules = {
+      ...rules,
+      [partition]: nextPartitionRules
+    }
+
+    if (Object.keys(nextPartitionRules).length === 0) {
+      delete nextRules[partition]
+    }
+
+    setRules(nextRules)
+    return true
+  }
+
+  const resetAllPermissionsForOrigin = ({ partition = '', origin = '' } = {}) => {
+    if (!partition || !origin) {
+      return false
+    }
+    const rules = getRules()
+    if (!rules?.[partition]?.[origin]) {
+      return false
+    }
+
+    const nextPartitionRules = { ...(rules[partition] || {}) }
+    delete nextPartitionRules[origin]
+
+    const nextRules = {
+      ...rules,
+      [partition]: nextPartitionRules
+    }
+    if (Object.keys(nextPartitionRules).length === 0) {
+      delete nextRules[partition]
+    }
+
+    setRules(nextRules)
+    return true
+  }
+
   return {
     normalizeOrigin,
     getDefaultDecision,
+    getCheckDecision,
     getRememberedDecision,
     rememberDecision,
     createPendingRequest,
@@ -174,11 +263,16 @@ function createSitePermissionManager({ store }) {
     resolvePendingRequest,
     expireRequests,
     buildPromptPayload,
-    shouldPromptRenderer
+    shouldPromptRenderer,
+    listPermissionsForOrigin,
+    resetPermission,
+    resetAllPermissionsForOrigin
   }
 }
 
 module.exports = {
   STORAGE_KEY,
+  ASK_PERMISSIONS,
+  DENY_PERMISSIONS,
   createSitePermissionManager
 }
