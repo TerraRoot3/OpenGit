@@ -2,22 +2,51 @@
   <div ref="componentRef" class="commit-history-section git-log">
     <!-- 搜索栏 -->
     <div class="search-bar">
-      <div class="search-input-wrapper">
-        <input 
-          v-model="searchQuery"
-          type="text"
-          placeholder="搜索提交信息、作者、哈希..."
-          class="search-input"
-          @input="handleSearch"
-        />
-        <button 
-          v-if="searchQuery"
-          class="clear-search-btn"
-          @click="clearSearch"
-          title="清除搜索"
-        >
-          ✕
-        </button>
+      <div class="toolbar-row">
+        <div class="search-input-wrapper">
+          <input 
+            v-model="searchQuery"
+            type="text"
+            placeholder="搜索提交信息、作者、哈希..."
+            class="search-input"
+            @input="handleSearch"
+          />
+          <button 
+            v-if="searchQuery"
+            class="clear-search-btn"
+            @click="clearSearch"
+            title="清除搜索"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="scope-controls">
+          <label class="scope-field">
+            <span>范围</span>
+            <select v-model="historyScope" class="scope-select">
+              <option :value="COMMIT_HISTORY_SCOPE.ALL">全部历史</option>
+              <option
+                v-if="props.currentBranch && !props.currentBranch.includes('HEAD detached')"
+                :value="COMMIT_HISTORY_SCOPE.CURRENT"
+              >
+                当前分支
+              </option>
+              <option :value="COMMIT_HISTORY_SCOPE.BRANCH">指定本地分支</option>
+            </select>
+          </label>
+          <label v-if="historyScope === COMMIT_HISTORY_SCOPE.BRANCH" class="scope-field branch-field">
+            <span>分支</span>
+            <select v-model="selectedLocalBranch" class="scope-select">
+              <option
+                v-for="option in localBranchOptions"
+                :key="option"
+                :value="option"
+              >
+                {{ option }}
+              </option>
+            </select>
+          </label>
+        </div>
       </div>
       <div class="search-filters">
         <label class="filter-checkbox">
@@ -44,7 +73,7 @@
       <table>
         <thead>
           <tr>
-            <th class="graph-col" ref="graphColRef">
+            <th class="graph-col" ref="graphColRef" :style="{ width: `${graphColumnWidth}px`, minWidth: `${graphColumnWidth}px` }">
               <p>图形</p>
               <div class="resizer" @mousedown="startResize($event, 'graphColRef')"></div>
             </th>
@@ -89,13 +118,14 @@
             @contextmenu.prevent="showCommitContextMenu($event, commit)"
             :class="{ 'log-highlight': selectedCommit?.hash === commit.hash }"
           >
-            <td class="graph-col"><p>&nbsp;</p></td>
+            <td class="graph-col" :style="{ width: `${graphColumnWidth}px`, minWidth: `${graphColumnWidth}px` }"><p>&nbsp;</p></td>
             <td class="comments">
               <div class="commit-content">
                 <span v-if="commit.branches && commit.branches.length > 0" class="commit-refs">
-                  <span class="commit-ref" 
+                  <span class="commit-ref"
                         v-for="branch in commit.branches" :key="branch"
-                        :style="{ backgroundColor: commit.color || '#1f77b4', color: 'white' }"
+                        :class="getRefClass(branch)"
+                        :style="getRefStyle(branch, commit.color)"
                         :title="branch">
                     {{ branch }}
                   </span>
@@ -210,6 +240,16 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import {
+  COMMIT_HISTORY_SCOPE,
+  buildBranchHeadMap,
+  buildCommitHistoryCommand,
+  buildOrthogonalRoundedPath,
+  captureScrollAnchor,
+  mergeCommitPages,
+  normalizeLocalBranches,
+  restoreScrollAnchor
+} from './commitHistoryState.mjs'
 
 const props = defineProps({
   projectPath: {
@@ -223,6 +263,10 @@ const props = defineProps({
   currentBranch: {
     type: String,
     default: ''
+  },
+  allBranches: {
+    type: Array,
+    default: () => []
   },
   refreshBranchStatus: {
     type: Function,
@@ -249,12 +293,52 @@ interface Commit {
   tags?: string[]
 }
 
+const normalizeDecoratedRefs = (decorateStr: string) => {
+  const trimmed = decorateStr.trim().replace(/^\((.*)\)$/, '$1').trim()
+  if (!trimmed) {
+    return []
+  }
+  return trimmed.split(', ').map(ref => ref.trim()).filter(Boolean)
+}
+
+const getRefClass = (refName: string) => ({
+  'is-head': refName.includes('HEAD ->'),
+  'is-remote': refName.startsWith('origin/'),
+  'is-local': !refName.includes('HEAD ->') && !refName.startsWith('origin/')
+})
+
+const getRefStyle = (refName: string, color = '#5b8def') => {
+  if (refName.includes('HEAD ->')) {
+    return {
+      backgroundColor: color,
+      color: '#ffffff'
+    }
+  }
+
+  if (refName.startsWith('origin/')) {
+    return {
+      backgroundColor: `${color}cc`,
+      color: '#ffffff',
+      border: `1px solid ${color}`
+    }
+  }
+
+  return {
+    backgroundColor: color,
+    color: '#ffffff',
+    border: `1px solid ${color}`
+  }
+}
+
 const commits = ref<Commit[]>([])
 const selectedIndex = ref(-1)
 const loading = ref(false)
 const graphContainer = ref<HTMLDivElement | null>(null)
 const scrollContainer = ref<HTMLDivElement | null>(null)
 const hasMore = ref(true)
+const historyScope = ref<string>(COMMIT_HISTORY_SCOPE.ALL)
+const selectedLocalBranch = ref('')
+const graphColumnWidth = ref(190)
 
 // 🔧 组件卸载标志，防止异步回调访问已卸载的 refs
 let isUnmounted = false
@@ -264,6 +348,8 @@ const commitHistoryCache = ref<{
   data: Commit[]
   timestamp: number
   projectPath: string
+  scope: string
+  revision: string
 } | null>(null)
 const CACHE_DURATION = 5000 // 5秒缓存
 const branchHashesCache = ref<{
@@ -298,11 +384,28 @@ const selectedCommit = computed(() => {
 })
 
 const selectedCommitFiles = ref<any[]>([])
+const localBranchOptions = computed(() => normalizeLocalBranches(props.allBranches as string[]))
+const activeRevision = computed(() => {
+  if (historyScope.value === COMMIT_HISTORY_SCOPE.CURRENT) {
+    if (props.currentBranch && !props.currentBranch.includes('HEAD detached')) {
+      return props.currentBranch
+    }
+    return ''
+  }
+
+  if (historyScope.value === COMMIT_HISTORY_SCOPE.BRANCH) {
+    return selectedLocalBranch.value
+  }
+
+  return ''
+})
 
 // 过滤后的提交列表
 const filteredCommits = computed(() => {
+  const sourceCommits = commits.value
+
   if (!searchQuery.value.trim()) {
-    return commits.value
+    return sourceCommits
   }
   
   const query = searchQuery.value.toLowerCase().trim()
@@ -312,7 +415,7 @@ const filteredCommits = computed(() => {
     hash: searchInHash.value
   }
   
-  return commits.value.filter(commit => {
+  return sourceCommits.filter(commit => {
     if (filters.message && commit.message.toLowerCase().includes(query)) {
       return true
     }
@@ -609,13 +712,13 @@ class GitGraph {
           radius: percentage(circleRadiusPercent)
         },
         circleSpacing: lineHeight,  // 使用lineHeight作为间距，确保与表格行高一致
-        branchSpacing: percentage(branchSpacingPercent),
+        branchSpacing: percentage(branchSpacingPercent) + 4,
         leftMargin: lineHeight / 2,
         topMargin: 0,  // 不从顶部偏移，直接对齐tobody第一行
         crossHeight: 40 / 100,
         colorList: [
-          '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
-          '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+          '#5b8def', '#4cb7a5', '#d89b3c', '#d96c85', '#8b73d6',
+          '#58b8c0', '#c97db0', '#98b857', '#d7845c', '#70a9e0'
         ]
       }
     }
@@ -623,7 +726,6 @@ class GitGraph {
   private setPosition(data: Commit[]): void {
     const branches: (string | undefined)[] = []
     this.maxRow = 0
-
     const getFreeColumn = (): number => {
       for (let i = 0; i < branches.length; i++) {
         if (branches[i] === undefined) return i
@@ -743,19 +845,16 @@ class GitGraph {
               colors.push(newClr)
               lineColor[end.x] = newClr
             }
-            // 线段颜色：使用起始点的颜色（start.y之后的新颜色）
             start.color = lineColor[end.x]
           }
           // 合并：回到左列
           else if (start.x > end.x) {
             mid = { x: start.x, y: end.y - height }
             lineColor[start.x] = undefined
-            // 线段颜色：使用起始点的颜色（被合并分支的颜色）
             start.color = commit.color
           }
           // 同一列
           else {
-            // 线段颜色：使用当前列的颜色
             start.color = commit.color
           }
 
@@ -773,18 +872,11 @@ class GitGraph {
     const lineArray = this.lines(this.data)
 
     const createLine = (d: any[]): string => {
-      let line = ''
-      for (let i = 0; i < d.length; i++) {
-        const x = this.config.leftMargin + (d[i].x * this.config.branchSpacing)
-        // y坐标应该在行中心 = (行高/2) = 16px (32px / 2)
-        const y = (d[i].y * this.config.circleSpacing) + (this.config.circleSpacing / 2)
-        if (i === 0) {
-          line = 'M' + x + ',' + y
-        } else {
-          line += 'L' + x + ',' + y
-        }
-      }
-      return line
+      const points = d.map((point: any) => ({
+        x: this.config.leftMargin + (point.x * this.config.branchSpacing),
+        y: (point.y * this.config.circleSpacing) + (this.config.circleSpacing / 2)
+      }))
+      return buildOrthogonalRoundedPath(points, 5)
     }
 
     // 计算SVG高度
@@ -815,6 +907,9 @@ class GitGraph {
       path.setAttribute('d', createLine(d))
       const strokeColor = d[0].color || '#1f77b4'
       path.setAttribute('stroke', strokeColor)
+      path.setAttribute('stroke-linecap', 'round')
+      path.setAttribute('stroke-linejoin', 'round')
+      path.setAttribute('opacity', '0.95')
     })
 
     this.container.innerHTML = ''
@@ -829,15 +924,18 @@ class GitGraph {
 }
 
 // 加载提交历史
-const loadCommitHistory = async (forceRefresh = false) => {
+const loadCommitHistory = async (forceRefresh = false, options: { append?: boolean } = {}) => {
   if (!props.projectPath) {
     return
   }
+  const append = Boolean(options.append)
   
   // 性能优化：检查缓存
   const now = Date.now()
-  if (!forceRefresh && commitHistoryCache.value && 
+  if (!append && !forceRefresh && commitHistoryCache.value && 
       commitHistoryCache.value.projectPath === props.projectPath &&
+      commitHistoryCache.value.scope === historyScope.value &&
+      commitHistoryCache.value.revision === activeRevision.value &&
       now - commitHistoryCache.value.timestamp < CACHE_DURATION) {
     console.log('⏭️ [CommitHistory] 使用缓存数据，跳过刷新')
     commits.value = commitHistoryCache.value.data
@@ -852,6 +950,7 @@ const loadCommitHistory = async (forceRefresh = false) => {
   }
   
   loading.value = true
+  const scrollAnchor = append ? captureScrollAnchor(scrollContainer.value) : null
 
   try {
     // 性能优化：使用缓存的分支信息
@@ -872,13 +971,7 @@ const loadCommitHistory = async (forceRefresh = false) => {
         )
         if (branchRefsResult) {
           const branchRefsOutput = typeof branchRefsResult === 'string' ? branchRefsResult : (branchRefsResult.stdout || branchRefsResult.output || '')
-          const branchRefs = branchRefsOutput.split('\n').filter(line => line.trim())
-          branchRefs.forEach(line => {
-            const [branch, hash] = line.split('|')
-            if (branch && hash) {
-              branchHashes[hash.trim()] = branch.trim()
-            }
-          })
+          branchHashes = buildBranchHeadMap(branchRefsOutput)
         }
         
         // 缓存分支信息
@@ -930,9 +1023,13 @@ const loadCommitHistory = async (forceRefresh = false) => {
     }
     
     // 使用简单的 git log 来解析，添加--decorate来获取分支和tag信息
-    const result = await props.executeCommand(
-      `cd "${props.projectPath}" && git log --all --decorate --pretty=format:"%H|%h|%an|%ae|%ad|%s|%P|%d" --date=format:"%Y-%m-%d %H:%M" -500`
-    )
+    const result = await props.executeCommand(buildCommitHistoryCommand({
+      projectPath: props.projectPath,
+      currentBranch: props.currentBranch,
+      selectedScope: historyScope.value,
+      selectedBranch: selectedLocalBranch.value,
+      skip: append ? commits.value.length : 0
+    }))
     
     // executeCommand 可能返回对象，需要提取 stdout
     const simpleLog = typeof result === 'string' ? result : (result.stdout || result.output || result || '')
@@ -949,9 +1046,11 @@ const loadCommitHistory = async (forceRefresh = false) => {
         const branches: string[] = []
         const tags: string[] = []
         if (decorateStr && decorateStr.trim()) {
-          const refs = decorateStr.trim().split(', ').filter(ref => ref.trim())
+          const refs = normalizeDecoratedRefs(decorateStr)
           refs.forEach(ref => {
             if (ref.startsWith('origin/')) {
+              branches.push(ref)
+            } else if (ref.includes('HEAD ->')) {
               branches.push(ref)
             } else if (ref.startsWith('tag: ')) {
               tags.push(ref.replace('tag: ', '').trim())
@@ -989,24 +1088,27 @@ const loadCommitHistory = async (forceRefresh = false) => {
     // 更新hasMore状态
     hasMore.value = lines.length >= 500
 
-    // 替换现有列表
-    commits.value = commitList
+    // 替换现有列表 / 分页追加
+    commits.value = mergeCommitPages(commits.value, commitList, append)
 
     // 性能优化：缓存数据
     commitHistoryCache.value = {
-      data: commitList,
+      data: commits.value,
       timestamp: now,
-      projectPath: props.projectPath
+      projectPath: props.projectPath,
+      scope: historyScope.value,
+      revision: activeRevision.value
     }
 
     await nextTick()
     
     // 渲染图形
     await renderGraph()
+    restoreScrollAnchor(scrollContainer.value, scrollAnchor, append ? 'preserve-offset' : 'top')
     
     // 确保滚动位置在顶部（图形渲染后再次确认）
     await nextTick()
-    if (scrollContainer.value) {
+    if (!append && scrollContainer.value) {
       scrollContainer.value.scrollTop = 0
     }
   } catch (error) {
@@ -1023,7 +1125,10 @@ const renderGraph = async () => {
     return
   }
   
-  if (!graphContainer.value || commits.value.length === 0) {
+  if (!graphContainer.value || filteredCommits.value.length === 0) {
+    if (graphContainer.value) {
+      graphContainer.value.innerHTML = ''
+    }
     return
   }
   
@@ -1047,18 +1152,21 @@ const renderGraph = async () => {
 
     // 同步容器尺寸
     graphContainer.value.style.height = `${tbodyEl.getBoundingClientRect().height}px`
-    const graphCol = containerEl.querySelector('.graph-col') as HTMLElement
-    const graphColWidth = graphCol ? graphCol.getBoundingClientRect().width : (graphContainer.value.getBoundingClientRect().width || 250)
-    graphContainer.value.style.width = `${graphColWidth}px`
+    const graphCol = containerEl.querySelector('th.graph-col') as HTMLElement
+    const measuredWidth = graphCol ? graphCol.getBoundingClientRect().width : graphColumnWidth.value
+    graphContainer.value.style.width = `${measuredWidth}px`
 
     // 重绘
     graphContainer.value.innerHTML = ''
-    new GitGraph(graphContainer.value, commits.value, rowHeightPx, 0)
+    new GitGraph(graphContainer.value, filteredCommits.value, rowHeightPx, 0)
+    const svg = graphContainer.value.querySelector('svg')
+    const svgWidth = svg ? Number(svg.getAttribute('width') || 0) : 0
+    const requiredWidth = Math.max(190, Math.ceil(svgWidth) + 24)
+    if (requiredWidth !== graphColumnWidth.value) {
+      graphColumnWidth.value = requiredWidth
+      graphContainer.value.style.width = `${requiredWidth}px`
+    }
   }
-  
-  // 强制触发响应式更新，确保color属性被Vue检测到
-  await nextTick()
-  commits.value = [...commits.value]
 }
 
 // 选择提交（通过原始索引）
@@ -1280,236 +1388,7 @@ const getFileStats = (status: string) => {
 // 加载更多数据
 const loadMore = async () => {
   if (loading.value || !hasMore.value) return
-  
-  const skip = commits.value.length
-  const count = 500
-  
-  loading.value = true
-  
-  try {
-    // 性能优化：使用缓存的分支信息
-    const now = Date.now()
-    let branchHashes: Record<string, string> = {}
-    const branchCacheValid = branchHashesCache.value && 
-                             branchHashesCache.value.projectPath === props.projectPath &&
-                             now - branchHashesCache.value.timestamp < BRANCH_CACHE_DURATION
-    
-    if (branchCacheValid && branchHashesCache.value) {
-      console.log('⏭️ [CommitHistory] loadMore 使用缓存的分支信息')
-      branchHashes = branchHashesCache.value.data
-    } else {
-      // 性能优化：使用单个命令获取所有分支的hash（减少Git命令数量）
-      try {
-        const branchRefsResult = await props.executeCommand(
-          `cd "${props.projectPath}" && git for-each-ref --format="%(refname:short)|%(objectname)" refs/heads/`
-        )
-        if (branchRefsResult) {
-          const branchRefsOutput = typeof branchRefsResult === 'string' ? branchRefsResult : (branchRefsResult.stdout || branchRefsResult.output || '')
-          const branchRefs = branchRefsOutput.split('\n').filter(line => line.trim())
-          branchRefs.forEach(line => {
-            const [branch, hash] = line.split('|')
-            if (branch && hash) {
-              branchHashes[hash.trim()] = branch.trim()
-            }
-          })
-        }
-        
-        // 缓存分支信息
-        branchHashesCache.value = {
-          data: branchHashes,
-          timestamp: now,
-          projectPath: props.projectPath
-        }
-      } catch (error) {
-        console.error('获取分支信息失败，使用备用方法:', error)
-        // 备用方法：如果 for-each-ref 失败，使用原来的方法，但限制并发
-        try {
-          const branchListResult = await props.executeCommand(
-            `cd "${props.projectPath}" && git branch`
-          )
-          if (branchListResult) {
-            const branchListOutput = typeof branchListResult === 'string' ? branchListResult : (branchListResult.stdout || branchListResult.output || '')
-            const branches = branchListOutput.split('\n')
-              .map(line => line.replace(/^\*\s*/, '').trim())
-              .filter(line => line && !line.includes('->'))
-            
-            // 限制并发数量，避免过载
-            const CONCURRENT_LIMIT = 5
-            for (let i = 0; i < branches.length; i += CONCURRENT_LIMIT) {
-              const batch = branches.slice(i, i + CONCURRENT_LIMIT)
-              const hashPromises = batch.map(async (branch) => {
-                try {
-                  const branchHashResult = await props.executeCommand(
-                    `cd "${props.projectPath}" && git rev-parse ${branch}`
-                  )
-                  if (branchHashResult) {
-                    const hashOutput = typeof branchHashResult === 'string' ? branchHashResult : (branchHashResult.stdout || branchHashResult.output || '')
-                    const hash = hashOutput.trim()
-                    if (hash) {
-                      branchHashes[hash] = branch
-                    }
-                  }
-                } catch (error) {
-                  // 静默失败
-                }
-              })
-              await Promise.all(hashPromises)
-            }
-          }
-        } catch (error) {
-          // 静默失败
-        }
-      }
-    }
-    
-    // 使用skip和count来实现真正的增量加载
-    const result = await props.executeCommand(
-      `cd "${props.projectPath}" && git log --all --decorate --pretty=format:"%H|%h|%an|%ae|%ad|%s|%P|%d" --date=format:"%Y-%m-%d %H:%M" --skip=${skip} --max-count=${count}`
-    )
-    
-    const simpleLog = typeof result === 'string' ? result : (result.stdout || result.output || result || '')
-    const lines = simpleLog.split('\n').filter(line => line.trim() && line.includes('|'))
-    
-    const commitList: Commit[] = []
-    
-    lines.forEach((line, index) => {
-      const parts = line.split('|')
-      if (parts.length >= 8) {
-        const [hash, shortHash, author, authorEmail, date, message, parentsStr, decorateStr] = parts
-        // 解析分支和tag信息
-        const branches: string[] = []
-        const tags: string[] = []
-        if (decorateStr && decorateStr.trim()) {
-          const refs = decorateStr.trim().split(', ').filter(ref => ref.trim())
-          refs.forEach(ref => {
-            if (ref.startsWith('origin/')) {
-              branches.push(ref)
-            } else if (ref.startsWith('tag: ')) {
-              tags.push(ref.replace('tag: ', '').trim())
-            } else {
-              branches.push(ref)
-            }
-          })
-        }
-        
-        // 如果这个提交的 hash 匹配任何本地分支的 hash，确保分支名在列表中
-        if (branchHashes[hash]) {
-          const branchName = branchHashes[hash]
-          if (!branches.includes(branchName)) {
-            branches.push(branchName)
-          }
-        }
-        
-        commitList.push({
-          hash: hash,
-          shortHash: shortHash,
-          author: author,
-          authorEmail: authorEmail,
-          date: date,
-          message: message || '(no message)',
-          parents: parentsStr?.trim().split(' ').filter(p => p) || [],
-          row: skip + index,
-          column: 0,
-          color: '',
-          branches: branches,
-          tags: tags
-        })
-      }
-    })
-    
-    // 更新hasMore状态
-    hasMore.value = lines.length >= count
-    
-    // 追加到现有列表
-    commits.value = [...commits.value, ...commitList]
-    
-    // 确保新添加的行也有32px高度
-    await nextTick()
-    const allTableRows = document.querySelectorAll('.commit-history-section tbody tr')
-    allTableRows.forEach((row) => {
-      const rowEl = row as HTMLElement
-      rowEl.style.height = '32px'
-      rowEl.style.maxHeight = '32px'
-      rowEl.style.minHeight = '32px'
-      rowEl.style.lineHeight = '32px'
-      
-      // 强制设置所有 td 的高度
-      const tds = rowEl.querySelectorAll('td')
-      tds.forEach(td => {
-        const tdEl = td as HTMLElement
-        tdEl.style.height = '32px'
-        tdEl.style.maxHeight = '32px'
-        tdEl.style.minHeight = '32px'
-        tdEl.style.lineHeight = '32px'
-        
-        // 强制设置 td 内的所有元素
-        const ps = tdEl.querySelectorAll('p')
-        ps.forEach(p => {
-          const pEl = p as HTMLElement
-          pEl.style.height = '32px'
-          pEl.style.maxHeight = '32px'
-          pEl.style.minHeight = '32px'
-          pEl.style.lineHeight = '32px'
-          pEl.style.margin = '0'
-          pEl.style.padding = '0'
-        })
-        
-        const divs = tdEl.querySelectorAll('div')
-        divs.forEach(div => {
-          const divEl = div as HTMLElement
-          divEl.style.height = '32px'
-          divEl.style.maxHeight = '32px'
-          divEl.style.minHeight = '32px'
-          divEl.style.lineHeight = '32px'
-        })
-      })
-    })
-    
-    // 重新渲染图形（因为增量加载后需要连接处理）
-    await nextTick()
-    if (graphContainer.value && commits.value.length > 0) {
-      graphContainer.value.innerHTML = ''
-      
-      // 等待DOM更新
-      await nextTick()
-      const tableRows = document.querySelectorAll('.commit-history-section tbody tr')
-      if (tableRows[0]) {
-        const thead = graphContainer.value.parentElement?.querySelector('thead')
-        const headerHeight = thead?.getBoundingClientRect().height || 32
-        graphContainer.value.style.top = `${headerHeight}px`
-      }
-      
-      // 重新计算并渲染，保证增量加载后仍对齐
-      const containerEl = graphContainer.value.parentElement as HTMLElement
-      const tbodyEl = containerEl?.querySelector('tbody') as HTMLElement
-      const tableRowsMore = tbodyEl?.querySelectorAll('tr') || []
-      if (containerEl && tbodyEl && tableRowsMore.length > 0) {
-        const mainTop = containerEl.getBoundingClientRect().top
-        const tbodyRect = tbodyEl.getBoundingClientRect()
-        graphContainer.value.style.top = `${tbodyRect.top - mainTop}px`
-
-        const farIndex = Math.min(60, tableRowsMore.length - 1)
-        const firstRect = (tableRowsMore[0] as HTMLElement).getBoundingClientRect()
-        const farRect = (tableRowsMore[farIndex] as HTMLElement).getBoundingClientRect()
-        const rowHeightPx = farIndex > 0 ? (farRect.top - firstRect.top) / farIndex : ((tableRowsMore[0] as HTMLElement).getBoundingClientRect().height || 33)
-
-        graphContainer.value.style.height = `${tbodyEl.getBoundingClientRect().height}px`
-        const graphCol = containerEl.querySelector('.graph-col') as HTMLElement
-        const graphColWidth = graphCol ? graphCol.getBoundingClientRect().width : (graphContainer.value.getBoundingClientRect().width || 250)
-        graphContainer.value.style.width = `${graphColWidth}px`
-
-        new GitGraph(graphContainer.value, commits.value, rowHeightPx, 0)
-      }
-      
-      // 强制触发响应式更新，确保color属性被Vue检测到
-      await nextTick()
-      commits.value = [...commits.value]
-    }
-  } catch (error) {
-    console.error('加载更多提交历史失败:', error)
-  } finally {
-    loading.value = false
-  }
+  await loadCommitHistory(true, { append: true })
 }
 
 // 监听滚动事件
@@ -1719,10 +1598,39 @@ watch(() => props.projectPath, () => {
   loadCommitHistory()
 }, { immediate: true })
 
+watch(localBranchOptions, (branches) => {
+  if (!branches.length) {
+    selectedLocalBranch.value = ''
+    if (historyScope.value === COMMIT_HISTORY_SCOPE.BRANCH) {
+      historyScope.value = props.currentBranch ? COMMIT_HISTORY_SCOPE.CURRENT : COMMIT_HISTORY_SCOPE.ALL
+    }
+    return
+  }
+
+  if (!selectedLocalBranch.value || !branches.includes(selectedLocalBranch.value)) {
+    selectedLocalBranch.value = branches.includes(props.currentBranch)
+      ? props.currentBranch
+      : branches[0]
+  }
+}, { immediate: true })
+
+watch([historyScope, selectedLocalBranch], async () => {
+  selectedIndex.value = -1
+  hasMore.value = true
+  commitHistoryCache.value = null
+  if (scrollContainer.value) {
+    scrollContainer.value.scrollTop = 0
+  }
+  await loadCommitHistory(true)
+})
+
 // 监听当前分支变化（分支切换后需要重新加载提交历史）
 watch(() => props.currentBranch, async (newBranch, oldBranch) => {
   
   if (newBranch && newBranch !== oldBranch) {
+    if (historyScope.value === COMMIT_HISTORY_SCOPE.CURRENT || !selectedLocalBranch.value) {
+      selectedLocalBranch.value = newBranch
+    }
     selectedIndex.value = -1
     hasMore.value = true
     // 重置滚动位置到顶部
@@ -1734,6 +1642,14 @@ watch(() => props.currentBranch, async (newBranch, oldBranch) => {
     loadCommitHistory()
   }
 })
+
+watch(
+  [searchQuery, searchInMessage, searchInAuthor, searchInHash],
+  async () => {
+    await nextTick()
+    await renderGraph()
+  }
+)
 
 // 🔧 检查并重新渲染图形（用于窗口切回前台时）
 const checkAndRenderGraph = async () => {
@@ -1786,8 +1702,6 @@ const handleWindowResize = () => {
 }
 
 onMounted(() => {
-  loadCommitHistory()
-  
   // 添加滚动监听
   if (scrollContainer.value) {
     scrollContainer.value.addEventListener('scroll', handleScroll)
@@ -1875,7 +1789,9 @@ onUnmounted(() => {
   overflow-x: auto;
   overflow-y: auto;
   flex-shrink: 0;
-  background: #2d2d2d;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+    #252526;
 }
 
 /* 
@@ -1920,7 +1836,7 @@ onUnmounted(() => {
   border-collapse: collapse;
   table-layout: fixed;
   border-spacing: 0;
-  background: #2d2d2d;
+  background: transparent;
 }
 
 .git-log tbody {
@@ -1942,12 +1858,13 @@ onUnmounted(() => {
 
 .git-log th {
   text-align: left;
-  padding: 4px 8px;
+  padding: 6px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 13px;
   position: sticky;
   top: 0;
-  background-color: #2d2d2d;
+  background-color: rgba(32, 33, 36, 0.96);
+  backdrop-filter: blur(6px);
   z-index: 20;
   user-select: none;
   color: rgba(255, 255, 255, 0.8);
@@ -1998,8 +1915,8 @@ onUnmounted(() => {
 
 .git-log th.graph-col,
 .git-log td.graph-col {
-  width: 150px;
-  min-width: 100px;
+  width: 170px;
+  min-width: 120px;
 }
 
 .git-log th.comments,
@@ -2028,7 +1945,8 @@ onUnmounted(() => {
 }
 
 .git-log .log-highlight {
-  background-color: rgba(102, 126, 234, 0.25); /* 更明显的选中背景 */
+  background:
+    linear-gradient(90deg, rgba(79, 140, 255, 0.2), rgba(79, 140, 255, 0.06));
 }
 
 .git-log tbody tr {
@@ -2043,10 +1961,13 @@ onUnmounted(() => {
   padding: 0 !important;
   font-size: 12px;
   overflow: hidden !important;
-  transform: scaleY(0.97) !important;
-  transform-origin: center !important;
-  background: #2d2d2d;
+  background: transparent;
   color: rgba(255, 255, 255, 0.9);
+  transition: background-color 0.18s ease;
+}
+
+.git-log tbody tr:nth-child(even):not(.log-highlight) {
+  background: rgba(255, 255, 255, 0.018);
 }
 
 .git-log tbody td {
@@ -2091,7 +2012,7 @@ onUnmounted(() => {
 }
 
 .git-log tbody tr:hover:not(.log-highlight) {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
 /* 分隔线样式 */
@@ -2271,17 +2192,26 @@ onUnmounted(() => {
 
 .search-bar {
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
+  background:
+    linear-gradient(180deg, rgba(79, 140, 255, 0.08), rgba(79, 140, 255, 0.02)),
+    rgba(255, 255, 255, 0.04);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
+.toolbar-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .search-input-wrapper {
   position: relative;
   display: flex;
   align-items: center;
+  flex: 1;
 }
 
 .search-input {
@@ -2324,8 +2254,47 @@ onUnmounted(() => {
 
 .search-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   font-size: 12px;
+}
+
+.scope-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.scope-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.scope-field span {
+  white-space: nowrap;
+}
+
+.branch-field {
+  min-width: 220px;
+}
+
+.scope-select {
+  min-width: 128px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(20, 21, 24, 0.86);
+  color: rgba(255, 255, 255, 0.92);
+  outline: none;
+}
+
+.scope-select:focus {
+  border-color: rgba(79, 140, 255, 0.75);
+  box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.18);
 }
 
 .filter-checkbox {
@@ -2361,7 +2330,7 @@ onUnmounted(() => {
 .commit-content {
   display: inline-flex !important;
   align-items: center !important;
-  gap: 4px;
+  gap: 6px;
   font-size: 12px;
   margin: 0 !important;
   padding: 0 !important;
@@ -2380,6 +2349,7 @@ onUnmounted(() => {
   line-height: 32px !important;
   margin: 0 !important;
   padding: 0 !important;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .commit-refs {
@@ -2393,32 +2363,73 @@ onUnmounted(() => {
 }
 
 .commit-ref {
-  padding: 2px 6px;
-  font-size: 11px;
-  border-radius: 4px;
+  padding: 1px 8px;
+  font-size: 10px;
+  border-radius: 6px;
   color: white;
-  font-weight: 500;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
-  opacity: 0.85;
+  opacity: 0.92;
   border-width: 0;
   line-height: 1;
-  height: 20px;
-  max-height: 20px;
+  height: 18px;
+  max-height: 18px;
   vertical-align: middle;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  gap: 4px;
 }
 
 .commit-ref.tag {
-  background-color: transparent;
+  background-color: rgba(255, 255, 255, 0.04);
   border: 1px solid;
-  padding: 2px 6px;
-  font-size: 11px;
-  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 10px;
+  border-radius: 999px;
   line-height: 1;
-  height: 20px;
-  max-height: 20px;
+  height: 18px;
+  max-height: 18px;
   vertical-align: middle;
+}
+
+.commit-ref::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+  flex: 0 0 10px;
+  background-color: currentColor;
+  opacity: 0.95;
+}
+
+.commit-ref.is-head::before,
+.commit-ref.is-local::before,
+.commit-ref.is-remote::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='4' cy='3' r='2' fill='black'/%3E%3Ccircle cx='4' cy='13' r='2' fill='black'/%3E%3Ccircle cx='12' cy='8' r='2' fill='black'/%3E%3Cpath d='M4 5v6M6 3h2.5A3.5 3.5 0 0 1 12 6.5V6M6 13h2.5A3.5 3.5 0 0 0 12 9.5V10' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+}
+
+.commit-ref.tag::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M7 2H3v4l6.2 6.2a1.5 1.5 0 0 0 2.1 0l1.9-1.9a1.5 1.5 0 0 0 0-2.1L7 2Z' fill='black'/%3E%3Ccircle cx='5' cy='5' r='1.2' fill='white'/%3E%3C/svg%3E");
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+}
+
+.commit-ref.is-head {
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.commit-ref.is-local:not(.is-head) {
+  backdrop-filter: blur(4px);
+}
+
+.commit-ref.is-remote {
+  font-weight: 500;
 }
 
 /* 右键菜单 */
