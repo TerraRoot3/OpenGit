@@ -2858,6 +2858,11 @@ function bindWebContentsViewEvents() {
         filledPasswordByTabId.delete(webTabId)
         passwordCapturedSignatures.delete(webTabId)
         tab.__webContentsCreated = false
+        if (tab.id === activeBrowserTabId.value) {
+          restoreWebContentsViewTab(tab, { activate: true }).catch((error) => {
+            console.warn('活动标签页自动恢复失败:', error)
+          })
+        }
       }
       if (payload.phase !== 'discarded' && tab.id === activeBrowserTabId.value) {
         syncPermissionPromptForActiveTab()

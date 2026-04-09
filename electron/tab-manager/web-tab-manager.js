@@ -22,10 +22,12 @@ class WebTabManager {
     safeLog = () => {},
     safeError = () => {},
     lifecycleOptions = {},
-    webTabPreloadPath = ''
+    webTabPreloadPath = '',
+    ViewClass = WebContentsView
   } = {}) {
     this.safeLog = safeLog
     this.safeError = safeError
+    this.ViewClass = ViewClass
     this.mainWindow = null
     this.renderer = null
     this.views = new Map()
@@ -177,6 +179,35 @@ class WebTabManager {
     })
   }
 
+  _createView(partition) {
+    if (typeof this.ViewClass !== 'function') {
+      throw new TypeError('WebContentsView is not available')
+    }
+
+    return new this.ViewClass({
+      webPreferences: {
+        partition,
+        contextIsolation: true,
+        nodeIntegration: false,
+        preload: this.webTabPreloadPath || undefined
+      }
+    })
+  }
+
+  _restoreMissingView(tabId, url = '') {
+    if (!tabId || !this.recoveryMeta.has(tabId)) {
+      return null
+    }
+
+    const snapshot = this.createRecoverySnapshot(tabId)
+    const restoreResult = this.restoreWebTab(tabId, url || snapshot.url || 'about:blank')
+    if (!restoreResult?.success) {
+      return null
+    }
+
+    return this._getView(tabId)
+  }
+
   createWebTab(tabId, url = 'about:blank', options = {}) {
     if (!tabId) throw new Error('tabId is required')
     const partition = options.partition || 'persist:main'
@@ -195,14 +226,7 @@ class WebTabManager {
       return existingView
     }
 
-    const view = new WebContentsView({
-      webPreferences: {
-        partition,
-        contextIsolation: true,
-        nodeIntegration: false,
-        preload: this.webTabPreloadPath || undefined
-      }
-    })
+    const view = this._createView(partition)
 
     this.views.set(tabId, view)
     this.contentsToTab.set(view.webContents.id, tabId)
@@ -298,10 +322,9 @@ class WebTabManager {
   }
 
   activateWebTab(tabId, bounds = null) {
-    const view = this._getView(tabId)
+    const view = this._getView(tabId) || this._restoreMissingView(tabId)
     if (!view || !this.mainWindow || this.mainWindow.isDestroyed()) return false
 
-    const previousActiveTabId = this.activeTabId
     this.hideAllWebTabs()
 
     try {
@@ -324,12 +347,24 @@ class WebTabManager {
   }
 
   navigateWebTab(tabId, url) {
-    const view = this._getView(tabId)
+    let view = this._getView(tabId)
+    let restored = false
+    if (!view) {
+      view = this._restoreMissingView(tabId, url)
+      restored = Boolean(view)
+    }
     if (!view) return false
     this._setRecoveryMeta(tabId, {
       url: url || 'about:blank',
       isCrashed: false
     })
+
+    if (restored && (!this.activeTabId || this.activeTabId === tabId)) {
+      const activated = this.activateWebTab(tabId, this.activeBounds)
+      if (!activated) return false
+      view = this._getView(tabId)
+      if (!view) return false
+    }
 
     view.webContents.loadURL(url).catch((error) => {
       if (String(error?.message || '').toUpperCase().includes('ERR_ABORTED')) return
@@ -346,8 +381,21 @@ class WebTabManager {
   }
 
   reloadWebTab(tabId) {
-    const view = this._getView(tabId)
+    let view = this._getView(tabId)
+    let restored = false
+    if (!view) {
+      view = this._restoreMissingView(tabId)
+      restored = Boolean(view)
+    }
     if (!view) return false
+
+    if (restored && (!this.activeTabId || this.activeTabId === tabId)) {
+      const activated = this.activateWebTab(tabId, this.activeBounds)
+      if (!activated) return false
+      view = this._getView(tabId)
+      if (!view) return false
+    }
+
     view.webContents.reload()
     return true
   }

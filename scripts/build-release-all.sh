@@ -43,7 +43,7 @@ npm run build
 # 步骤2：打包 Electron 应用（仅生成 app 目录）
 echo ""
 echo "📦 步骤2: 打包 Electron 应用 (ARM64 + X64)..."
-CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --x64 --dir
+CSC_IDENTITY_AUTO_DISCOVERY=false bash scripts/run-electron-builder.sh --mac --arm64 --x64 --dir
 
 # 步骤3：ad-hoc 签名
 echo ""
@@ -75,13 +75,13 @@ rm -f "$DIST_DIR"/*.dmg "$DIST_DIR"/*.zip "$DIST_DIR"/*.blockmap 2>/dev/null || 
 # 打包 ARM64
 if [ -d "$DIST_DIR/mac-arm64" ]; then
   echo "📦 打包 ARM64..."
-  CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --prepackaged="$DIST_DIR/mac-arm64"
+  CSC_IDENTITY_AUTO_DISCOVERY=false bash scripts/run-electron-builder.sh --mac --arm64 --prepackaged="$DIST_DIR/mac-arm64"
 fi
 
 # 打包 X64
 if [ -d "$DIST_DIR/mac" ]; then
   echo "📦 打包 X64..."
-  CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --x64 --prepackaged="$DIST_DIR/mac"
+  CSC_IDENTITY_AUTO_DISCOVERY=false bash scripts/run-electron-builder.sh --mac --x64 --prepackaged="$DIST_DIR/mac"
 fi
 
 echo ""

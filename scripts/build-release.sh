@@ -61,7 +61,7 @@ npm run build
 # 步骤2：打包 Electron 应用（仅生成 app 目录）
 echo ""
 echo "📦 步骤2: 打包 Electron 应用 (ARM64)..."
-CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --dir
+CSC_IDENTITY_AUTO_DISCOVERY=false bash scripts/run-electron-builder.sh --mac --arm64 --dir
 
 # 步骤3：ad-hoc 签名
 echo ""
@@ -83,7 +83,7 @@ fi
 echo ""
 echo "📦 步骤4: 创建分发包..."
 rm -f "$DIST_DIR"/*arm64*.dmg "$DIST_DIR"/*arm64*.zip "$DIST_DIR"/*arm64*.blockmap
-CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --prepackaged="$DIST_DIR/mac-arm64"
+CSC_IDENTITY_AUTO_DISCOVERY=false bash scripts/run-electron-builder.sh --mac --arm64 --prepackaged="$DIST_DIR/mac-arm64"
 
 echo ""
 echo "🎉 构建完成！"
