@@ -1124,7 +1124,7 @@ const checkoutCommitAction = async () => {
     branchHashesCache.value = null
     await loadCommitHistory(true)
     if (props.refreshBranchStatus) {
-      props.refreshBranchStatus()
+      await props.refreshBranchStatus()
     }
   } catch (error: any) {
     console.error('检出失败:', error)
@@ -1146,6 +1146,9 @@ const revertCommitAction = async () => {
     commitHistoryCache.value = null
     branchHashesCache.value = null
     await loadCommitHistory(true)
+    if (props.refreshBranchStatus) {
+      await props.refreshBranchStatus()
+    }
   } catch (error: any) {
     const errMsg = typeof error === 'string' ? error : (error?.stderr || error?.message || '')
     // 检测冲突
@@ -1173,6 +1176,9 @@ const cherryPickCommitAction = async () => {
     commitHistoryCache.value = null
     branchHashesCache.value = null
     await loadCommitHistory(true)
+    if (props.refreshBranchStatus) {
+      await props.refreshBranchStatus()
+    }
   } catch (error: any) {
     const errMsg = typeof error === 'string' ? error : (error?.stderr || error?.message || '')
     // 检测冲突

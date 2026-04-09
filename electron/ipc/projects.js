@@ -2,6 +2,29 @@ const fs = require('fs')
 const path = require('path')
 const fsp = fs.promises
 
+function shouldNotifyProjectsUpdated(previousProjects = [], nextProjects = []) {
+  if (previousProjects.length !== nextProjects.length) return true
+
+  const previousMap = new Map(previousProjects.map(project => [project.path, project]))
+
+  for (const project of nextProjects) {
+    const previous = previousMap.get(project.path)
+    if (!previous) return true
+
+    if (
+      previous.name !== project.name ||
+      previous.relativePath !== project.relativePath ||
+      previous.type !== project.type ||
+      previous.branch !== project.branch ||
+      Boolean(previous.hasPendingFiles) !== Boolean(project.hasPendingFiles)
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
 function registerProjectHandlers({
   ipcMain,
   store,
@@ -97,11 +120,7 @@ function registerProjectHandlers({
             const tasks = gitProjects.map(p => () => getProjectGitInfo(p))
             const projects = await promiseAllWithLimit(tasks, 8)
 
-            const cachedPaths = new Set(cachedData.projects.map(p => p.path))
-            const newPaths = new Set(projects.map(p => p.path))
-            const hasChanges = cachedData.projects.length !== projects.length ||
-              projects.some(p => !cachedPaths.has(p.path)) ||
-              cachedData.projects.some(p => !newPaths.has(p.path))
+            const hasChanges = shouldNotifyProjectsUpdated(cachedData.projects, projects)
 
             store.set(cacheKey, { projects, timestamp: Date.now() })
 
@@ -154,4 +173,7 @@ function registerProjectHandlers({
   })
 }
 
-module.exports = { registerProjectHandlers }
+module.exports = {
+  registerProjectHandlers,
+  shouldNotifyProjectsUpdated
+}
