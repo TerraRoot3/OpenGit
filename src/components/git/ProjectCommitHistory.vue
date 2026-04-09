@@ -339,6 +339,10 @@ const hasMore = ref(true)
 const historyScope = ref<string>(COMMIT_HISTORY_SCOPE.ALL)
 const selectedLocalBranch = ref('')
 const graphColumnWidth = ref(190)
+let graphRerenderAfterWidthSync = false
+let scrollLoadLockedUntil = 0
+const graphLayoutBranches: (string | undefined)[] = []
+const graphPalette = ['#5b8def', '#4cb7a5', '#d89b3c', '#d96c85', '#8b73d6', '#58b8c0', '#c97db0', '#98b857', '#d7845c', '#70a9e0']
 
 // 🔧 组件卸载标志，防止异步回调访问已卸载的 refs
 let isUnmounted = false
@@ -428,6 +432,76 @@ const filteredCommits = computed(() => {
     return false
   })
 })
+
+const resetGraphLayoutState = () => {
+  graphLayoutBranches.length = 0
+}
+
+const assignCommitLayout = (nextCommits: Commit[], existingCommits: Commit[], append: boolean) => {
+  if (!append) {
+    resetGraphLayoutState()
+  }
+
+  const getFreeColumn = () => {
+    for (let index = 0; index < graphLayoutBranches.length; index += 1) {
+      if (graphLayoutBranches[index] === undefined) {
+        return index
+      }
+    }
+    return graphLayoutBranches.length
+  }
+
+  const updateBranch = (hash: string, column: number) => {
+    graphLayoutBranches[column] = hash
+  }
+
+  const createBranch = (commit: Commit) => {
+    let myColumn = graphLayoutBranches.indexOf(commit.hash)
+    if (myColumn === -1) {
+      myColumn = getFreeColumn()
+    }
+
+    while (graphLayoutBranches.indexOf(commit.hash) > -1) {
+      graphLayoutBranches[graphLayoutBranches.indexOf(commit.hash)] = undefined
+    }
+
+    for (let index = 0; index < commit.parents.length; index += 1) {
+      const parentHash = commit.parents[index]
+      const existingColumn = graphLayoutBranches.indexOf(parentHash)
+      if (existingColumn > -1) {
+        if (graphLayoutBranches[myColumn] === undefined) {
+          updateBranch(parentHash, myColumn)
+        }
+      } else if (commit.parents.length === 1 || index === 0) {
+        updateBranch(parentHash, myColumn)
+      } else {
+        updateBranch(parentHash, getFreeColumn())
+      }
+    }
+
+    return myColumn
+  }
+
+  const rowOffset = append ? existingCommits.length : 0
+  for (let index = 0; index < nextCommits.length; index += 1) {
+    const commit = nextCommits[index]
+    commit.column = createBranch(commit)
+    commit.row = rowOffset + index
+    commit.color = graphPalette[(commit.column || 0) % graphPalette.length]
+  }
+
+  const combinedCommits = [...existingCommits, ...nextCommits]
+  const commitMap = new Map(combinedCommits.map(commit => [commit.hash, commit]))
+  for (const commit of nextCommits) {
+    if ((commit.message.includes('WIP on') || commit.message.includes('index on')) && commit.parents.length > 0) {
+      const parentCommit = commitMap.get(commit.parents[0])
+      if (parentCommit && typeof parentCommit.column === 'number') {
+        commit.column = parentCommit.column
+        commit.color = graphPalette[(commit.column || 0) % graphPalette.length]
+      }
+    }
+  }
+}
 
 // 拖拽调整高度（只调整上方提交列表高度，下方详情区域固定）
 let isResizingHeight = false
@@ -724,8 +798,15 @@ class GitGraph {
     }
 
   private setPosition(data: Commit[]): void {
+    if (data.every(commit => typeof commit.column === 'number' && typeof commit.row === 'number')) {
+      this.maxColumn = data.reduce((maxColumn, commit) => Math.max(maxColumn, commit.column || 0), 0)
+      this.maxRow = data.length
+      return
+    }
+
     const branches: (string | undefined)[] = []
     this.maxRow = 0
+    const commitMap = new Map(data.map(commit => [commit.hash, commit]))
     const getFreeColumn = (): number => {
       for (let i = 0; i < branches.length; i++) {
         if (branches[i] === undefined) return i
@@ -793,7 +874,7 @@ class GitGraph {
     data.forEach((commit) => {
       if (isStashEntry(commit) && commit.parents.length > 0) {
         const parentHash = commit.parents[0]
-        const parentCommit = data.find(c => c.hash === parentHash)
+        const parentCommit = commitMap.get(parentHash)
         if (parentCommit && parentCommit.column !== undefined) {
           commit.column = parentCommit.column
         }
@@ -808,6 +889,7 @@ class GitGraph {
     const colors = [...this.config.colorList]
     const lineArray: any[] = []
     const lineColor: (string | undefined)[] = []
+    const commitMap = new Map(data.map(commit => [commit.hash, commit]))
 
     for (let i = 0; i < data.length; i++) {
       const commit = data[i]
@@ -826,7 +908,7 @@ class GitGraph {
           const start: any = {}
           const end: any = {}
 
-          const parent = data.find(c => c.hash === commit.parents[j])
+          const parent = commitMap.get(commit.parents[j])
           if (!parent) continue
 
           start.x = commit.column!
@@ -1088,6 +1170,8 @@ const loadCommitHistory = async (forceRefresh = false, options: { append?: boole
     // 更新hasMore状态
     hasMore.value = lines.length >= 500
 
+    assignCommitLayout(commitList, append ? commits.value : [], append)
+
     // 替换现有列表 / 分页追加
     commits.value = mergeCommitPages(commits.value, commitList, append)
 
@@ -1104,6 +1188,9 @@ const loadCommitHistory = async (forceRefresh = false, options: { append?: boole
     
     // 渲染图形
     await renderGraph()
+    if (append) {
+      scrollLoadLockedUntil = Date.now() + 180
+    }
     restoreScrollAnchor(scrollContainer.value, scrollAnchor, append ? 'preserve-offset' : 'top')
     
     // 确保滚动位置在顶部（图形渲染后再次确认）
@@ -1140,9 +1227,7 @@ const renderGraph = async () => {
   const tbodyEl = containerEl?.querySelector('tbody') as HTMLElement
   const tableRowsLocal = tbodyEl?.querySelectorAll('tr') || []
   if (containerEl && tbodyEl && tableRowsLocal.length > 0) {
-    const mainTop = containerEl.getBoundingClientRect().top
-    const tbodyRect = tbodyEl.getBoundingClientRect()
-    graphContainer.value.style.top = `${tbodyRect.top - mainTop}px`
+    graphContainer.value.style.top = `${tbodyEl.offsetTop}px`
 
     // 使用远行差分获取平均行高，降低累积误差
     const farIndex = Math.min(60, tableRowsLocal.length - 1)
@@ -1151,7 +1236,7 @@ const renderGraph = async () => {
     const rowHeightPx = farIndex > 0 ? (farRect.top - firstRect.top) / farIndex : ((tableRowsLocal[0] as HTMLElement).getBoundingClientRect().height || 33)
 
     // 同步容器尺寸
-    graphContainer.value.style.height = `${tbodyEl.getBoundingClientRect().height}px`
+    graphContainer.value.style.height = `${tbodyEl.offsetHeight}px`
     const graphCol = containerEl.querySelector('th.graph-col') as HTMLElement
     const measuredWidth = graphCol ? graphCol.getBoundingClientRect().width : graphColumnWidth.value
     graphContainer.value.style.width = `${measuredWidth}px`
@@ -1165,6 +1250,12 @@ const renderGraph = async () => {
     if (requiredWidth !== graphColumnWidth.value) {
       graphColumnWidth.value = requiredWidth
       graphContainer.value.style.width = `${requiredWidth}px`
+      if (!graphRerenderAfterWidthSync) {
+        graphRerenderAfterWidthSync = true
+        await nextTick()
+        graphRerenderAfterWidthSync = false
+        await renderGraph()
+      }
     }
   }
 }
@@ -1395,6 +1486,7 @@ const loadMore = async () => {
 const handleScroll = (e: Event) => {
   const target = e.target as HTMLElement
   if (!target) return
+  if (Date.now() < scrollLoadLockedUntil) return
   
   const scrollTop = target.scrollTop
   const scrollHeight = target.scrollHeight
