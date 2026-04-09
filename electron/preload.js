@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -196,6 +196,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 读取图片文件并返回 base64
   readImageAsBase64: (filePath) => ipcRenderer.invoke('read-image-as-base64', filePath),
+
+  // Electron 32+ 不再支持 renderer 直接读取 File.path，改用 webUtils
+  getPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || ''
+    } catch (error) {
+      return ''
+    }
+  },
 
   // 文件保存对话框
   showSaveDialog: (options) => ipcRenderer.invoke('show-save-dialog', options),

@@ -74,22 +74,50 @@
         </button>
       </div>
     </div>
-    <div class="terminal-body" ref="terminalBodyRef">
+    <div
+      class="terminal-body"
+      :class="{ 'drag-over': isDragOverTerminal }"
+      ref="terminalBodyRef"
+      @dragover.prevent="handleTerminalDragOver"
+      @dragleave="handleTerminalDragLeave"
+      @drop.prevent="handleTerminalDrop"
+    >
       <div v-if="isSplitMode && activeTabTermIds.length === 2" class="terminal-split">
-        <div class="terminal-pane">
+        <div class="terminal-pane" :class="{ inactive: isPaneInactive(activeTabTermIds[0]) }">
           <button class="pane-close-btn" title="关闭左侧分屏" @mousedown.prevent.stop @click.stop="closeSplitPane(activeTabTermIds[0])">
             <X :size="11" />
           </button>
-          <div class="terminal-pane-content" ref="leftPaneRef" @mousedown="focusSplitPane(activeTabTermIds[0])"></div>
+          <div
+            class="terminal-pane-content"
+            ref="leftPaneRef"
+            @mousedown="focusSplitPane(activeTabTermIds[0])"
+            @dragover.prevent="handleTerminalDragOver"
+            @dragleave="handleTerminalDragLeave"
+            @drop.prevent="handleTerminalDrop($event, activeTabTermIds[0])"
+          ></div>
         </div>
-        <div class="terminal-pane">
+        <div class="terminal-pane" :class="{ inactive: isPaneInactive(activeTabTermIds[1]) }">
           <button class="pane-close-btn" title="关闭右侧分屏" @mousedown.prevent.stop @click.stop="closeSplitPane(activeTabTermIds[1])">
             <X :size="11" />
           </button>
-          <div class="terminal-pane-content" ref="rightPaneRef" @mousedown="focusSplitPane(activeTabTermIds[1])"></div>
+          <div
+            class="terminal-pane-content"
+            ref="rightPaneRef"
+            @mousedown="focusSplitPane(activeTabTermIds[1])"
+            @dragover.prevent="handleTerminalDragOver"
+            @dragleave="handleTerminalDragLeave"
+            @drop.prevent="handleTerminalDrop($event, activeTabTermIds[1])"
+          ></div>
         </div>
       </div>
-      <div v-else class="terminal-single-pane" ref="singlePaneRef"></div>
+      <div
+        v-else
+        class="terminal-single-pane"
+        ref="singlePaneRef"
+        @dragover.prevent="handleTerminalDragOver"
+        @dragleave="handleTerminalDragLeave"
+        @drop.prevent="handleTerminalDrop"
+      ></div>
     </div>
   </div>
 </template>
@@ -102,6 +130,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useTerminalRouter } from '../../composables/useTerminalRouter'
+import { buildDropPayload } from './terminalInteractions.mjs'
 import '@xterm/xterm/css/xterm.css'
 
 const props = defineProps({
@@ -125,6 +154,7 @@ const terminalCache = new Map()
 const showCwdMenu = ref(false)
 const cwdMenuRef = ref(null)
 const showSearchBar = ref(false)
+const isDragOverTerminal = ref(false)
 const searchQuery = ref('')
 const searchHasMatch = ref(true)
 const searchInputRef = ref(null)
@@ -136,6 +166,7 @@ const handleDocumentClick = (event) => {
 }
 
 const { register, unregister } = useTerminalRouter()
+const TERMINAL_DROP_HANDLED = '__open_git_terminal_drop_handled__'
 
 function normalizeIncomingPath(raw) {
   if (typeof raw !== 'string' || !raw.trim()) return ''
@@ -180,6 +211,11 @@ const currentTerminal = computed(() => {
   const firstId = activeTabTermIds.value[0]
   return firstId ? findTerminalById(firstId) : null
 })
+
+const isPaneInactive = (termId) => {
+  if (!termId || !isSplitMode.value) return false
+  return activeTermId.value !== termId
+}
 
 const currentCwd = computed(() => {
   const cwd = currentTerminal.value?.cwd || props.defaultCwd || ''
@@ -240,10 +276,204 @@ const createXterm = () => {
   const searchAddon = new SearchAddon()
   xterm.loadAddon(fitAddon)
   xterm.loadAddon(searchAddon)
-  xterm.loadAddon(new WebLinksAddon())
+  xterm.loadAddon(new WebLinksAddon((event, uri) => {
+    event?.preventDefault?.()
+    const normalizedUri = typeof uri === 'string' ? uri.trim() : ''
+    if (!/^https?:\/\//i.test(normalizedUri)) return
+
+    if (window.electronAPI?.openUrlInNewTab) {
+      window.electronAPI.openUrlInNewTab(normalizedUri)
+      return
+    }
+
+    window.open(normalizedUri, '_blank', 'noopener,noreferrer')
+  }))
   xterm.open(el)
 
   return { xterm, fitAddon, searchAddon, el }
+}
+
+const handleTerminalDragOver = () => {
+  isDragOverTerminal.value = true
+}
+
+const handleTerminalDragLeave = (event) => {
+  const currentTarget = event.currentTarget
+  const relatedTarget = event.relatedTarget
+  if (currentTarget && relatedTarget && currentTarget.contains(relatedTarget)) {
+    return
+  }
+  isDragOverTerminal.value = false
+}
+
+const collectDroppedFilePaths = (event) => {
+  const itemPaths = Array.from(event.dataTransfer?.items || [])
+    .map(item => {
+      if (!item || item.kind !== 'file') return ''
+      const file = item.getAsFile?.()
+      if (!file) return ''
+      if (window.electronAPI?.getPathForFile) {
+        return window.electronAPI.getPathForFile(file) || ''
+      }
+      return file?.path || ''
+    })
+    .filter(path => typeof path === 'string' && path.trim())
+    .map(path => path.trim())
+
+  if (itemPaths.length > 0) return itemPaths
+
+  const files = Array.from(event.dataTransfer?.files || [])
+  const paths = files
+    .map(file => {
+      if (!file) return ''
+      if (window.electronAPI?.getPathForFile) {
+        return window.electronAPI.getPathForFile(file) || ''
+      }
+      return file?.path || ''
+    })
+    .filter(path => typeof path === 'string' && path.trim())
+
+  if (paths.length > 0) return paths
+
+  const uriList = event.dataTransfer?.getData('text/uri-list') || ''
+  if (!uriList.trim()) return []
+
+  return uriList
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith('#'))
+    .map(line => {
+      if (!/^file:\/\//i.test(line)) return ''
+      try {
+        const url = new URL(line)
+        return decodeURIComponent(url.pathname || '')
+      } catch {
+        return ''
+      }
+    })
+    .filter(Boolean)
+    .map(path => path.trim())
+}
+
+const collectTextPlainPaths = (event) => {
+  const plain = event.dataTransfer?.getData('text/plain') || ''
+  if (!plain.trim()) return []
+
+  return plain
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      if (/^file:\/\//i.test(line)) {
+        try {
+          const url = new URL(line)
+          return decodeURIComponent(url.pathname || '').trim()
+        } catch {
+          return ''
+        }
+      }
+      if (line.startsWith('/')) return line
+      return ''
+    })
+    .filter(Boolean)
+}
+
+const handleTerminalDrop = (event, targetTermId = null) => {
+  if (event?.[TERMINAL_DROP_HANDLED]) return
+  if (event && typeof event === 'object') {
+    event[TERMINAL_DROP_HANDLED] = true
+  }
+  isDragOverTerminal.value = false
+  const term = targetTermId ? findTerminalById(targetTermId) : currentTerminal.value
+  if (!term?.ptyId || !term.connected) return
+
+  const droppedPaths = collectDroppedFilePaths(event)
+  const paths = droppedPaths.length > 0 ? droppedPaths : collectTextPlainPaths(event)
+  const payload = buildDropPayload(paths)
+  if (!payload) return
+
+  activeTermId.value = term.termId
+  term.hasUserInput = true
+  window.electronAPI.terminal.write({ id: term.ptyId, data: `${payload} ` })
+  refreshVisibleTerminal(term, true)
+}
+
+const resolveDropTargetTermId = (event) => {
+  const tabTermIds = activeTabTermIds.value
+  if (!tabTermIds.length) return null
+  if (!isSplitMode.value || tabTermIds.length < 2) {
+    return activeTermId.value || tabTermIds[0] || null
+  }
+
+  const targetNode = document.elementFromPoint(event.clientX, event.clientY)
+  if (rightPaneRef.value && targetNode && rightPaneRef.value.contains(targetNode)) {
+    return tabTermIds[1]
+  }
+  if (leftPaneRef.value && targetNode && leftPaneRef.value.contains(targetNode)) {
+    return tabTermIds[0]
+  }
+  return activeTermId.value || tabTermIds[0] || null
+}
+
+const isEventInsideTerminal = (event) => {
+  if (!containerRef.value) return false
+  const rect = containerRef.value.getBoundingClientRect()
+  return (
+    event.clientX >= rect.left &&
+    event.clientX <= rect.right &&
+    event.clientY >= rect.top &&
+    event.clientY <= rect.bottom
+  )
+}
+
+const handleGlobalDragOver = (event) => {
+  if (!isEventInsideTerminal(event)) return
+  event.preventDefault()
+  event.stopPropagation()
+  isDragOverTerminal.value = true
+}
+
+const handleGlobalDrop = (event) => {
+  if (!isEventInsideTerminal(event)) return
+  event.preventDefault()
+  event.stopPropagation()
+  const targetTermId = resolveDropTargetTermId(event)
+  handleTerminalDrop(event, targetTermId)
+}
+
+const bindTerminalDropEvents = (term) => {
+  if (!term?.el) return
+
+  const onDragOver = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    handleTerminalDragOver(event)
+  }
+
+  const onDragLeave = (event) => {
+    event.stopPropagation()
+    handleTerminalDragLeave(event)
+  }
+
+  const onDrop = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    handleTerminalDrop(event, term.termId)
+  }
+
+  term._dropHandlers = { onDragOver, onDragLeave, onDrop }
+  term.el.addEventListener('dragover', onDragOver, true)
+  term.el.addEventListener('dragleave', onDragLeave, true)
+  term.el.addEventListener('drop', onDrop, true)
+}
+
+const unbindTerminalDropEvents = (term) => {
+  if (!term?.el || !term?._dropHandlers) return
+  const { onDragOver, onDragLeave, onDrop } = term._dropHandlers
+  term.el.removeEventListener('dragover', onDragOver, true)
+  term.el.removeEventListener('dragleave', onDragLeave, true)
+  term.el.removeEventListener('drop', onDrop, true)
+  term._dropHandlers = null
 }
 
 const nextIndex = () => {
@@ -357,8 +587,11 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     el,
     connected: false,
     ptyId: null,
-    hasUserInput: false
+    hasUserInput: false,
+    _dropHandlers: null
   }
+
+  bindTerminalDropEvents(term)
 
   xterm.onData((data) => {
     if (term.ptyId && term.connected) {
@@ -518,6 +751,7 @@ const closeTerminalById = async (termId) => {
   if (idx === -1) return
 
   const term = terminals.value[idx]
+  unbindTerminalDropEvents(term)
   if (term.ptyId) {
     await window.electronAPI.terminal.destroy({ id: term.ptyId }).catch(() => {})
   }
@@ -804,6 +1038,7 @@ const restoreState = (path) => {
 
 const destroyTerminals = (terms) => {
   for (const t of terms) {
+    unbindTerminalDropEvents(t)
     if (t.ptyId) window.electronAPI.terminal.destroy({ id: t.ptyId }).catch(() => {})
     try { t.xterm.dispose() } catch (e) {}
     t.el.remove()
@@ -934,12 +1169,16 @@ onMounted(() => {
 
   document.addEventListener('click', handleDocumentClick)
   document.addEventListener('keydown', handleTerminalKeydown, true)
+  window.addEventListener('dragover', handleGlobalDragOver, true)
+  window.addEventListener('drop', handleGlobalDrop, true)
 })
 
 onUnmounted(() => {
   if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null }
   document.removeEventListener('click', handleDocumentClick)
   document.removeEventListener('keydown', handleTerminalKeydown, true)
+  window.removeEventListener('dragover', handleGlobalDragOver, true)
+  window.removeEventListener('drop', handleGlobalDrop, true)
   containerRef.value?._ro?.disconnect()
   destroyTerminals(terminals.value)
   terminals.value = []
@@ -1132,6 +1371,10 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal })
   overflow: hidden;
   position: relative;
 }
+.terminal-body.drag-over {
+  background: rgba(14, 116, 144, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.55);
+}
 .terminal-single-pane {
   width: 100%;
   height: 100%;
@@ -1153,8 +1396,20 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal })
 .terminal-pane-content {
   width: 100%;
   height: 100%;
+  position: relative;
   box-sizing: border-box;
   padding-right: 8px;
+}
+.terminal-pane + .terminal-pane .terminal-pane-content {
+  padding-left: 8px;
+}
+.terminal-pane.inactive .terminal-pane-content::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 214, 102, 0.12);
+  pointer-events: none;
+  z-index: 2;
 }
 .pane-close-btn {
   position: absolute;
