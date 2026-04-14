@@ -77,21 +77,21 @@
               <p>图形</p>
               <div class="resizer" @mousedown="startResize($event, 'graphColRef')"></div>
             </th>
-            <th class="comments" ref="commentsColRef">
-              <p>备注</p>
-              <div class="resizer" @mousedown="startResize($event, 'commentsColRef')"></div>
+            <th class="comments" ref="commentsColRef" :style="columnStyles.comments">
+                <p>备注</p>
+                <div class="resizer" @mousedown="startResize($event, 'commentsColRef')"></div>
             </th>
-            <th class="commit" ref="commitColRef">
-              <p>提交</p>
-              <div class="resizer" @mousedown="startResize($event, 'commitColRef')"></div>
+            <th class="commit" ref="commitColRef" :style="columnStyles.commit">
+                <p>提交</p>
+                <div class="resizer" @mousedown="startResize($event, 'commitColRef')"></div>
             </th>
-            <th class="date" ref="dateColRef">
-              <p>日期</p>
-              <div class="resizer" @mousedown="startResize($event, 'dateColRef')"></div>
+            <th class="date" ref="dateColRef" :style="columnStyles.date">
+                <p>日期</p>
+                <div class="resizer" @mousedown="startResize($event, 'dateColRef')"></div>
             </th>
-            <th class="author" ref="authorColRef">
-              <p>作者</p>
-              <div class="resizer" @mousedown="startResize($event, 'authorColRef')"></div>
+            <th class="author" ref="authorColRef" :style="columnStyles.author">
+                <p>作者</p>
+                <div class="resizer" @mousedown="startResize($event, 'authorColRef')"></div>
             </th>
           </tr>
         </thead>
@@ -119,7 +119,7 @@
             :class="{ 'log-highlight': selectedCommit?.hash === commit.hash }"
           >
             <td class="graph-col" :style="{ width: `${graphColumnWidth}px`, minWidth: `${graphColumnWidth}px` }"><p>&nbsp;</p></td>
-            <td class="comments">
+            <td class="comments" :style="columnStyles.comments">
               <div class="commit-content">
                 <span v-if="commit.branches && commit.branches.length > 0" class="commit-refs">
                   <span class="commit-ref"
@@ -141,9 +141,9 @@
                 <span class="commit-message">{{ commit.message }}</span>
               </div>
             </td>
-            <td class="commit"><p>{{ commit.shortHash }}</p></td>
-            <td class="date"><p>{{ commit.date }}</p></td>
-            <td class="author"><p>{{ commit.author }}</p></td>
+            <td class="commit" :style="columnStyles.commit"><p>{{ commit.shortHash }}</p></td>
+            <td class="date" :style="columnStyles.date"><p>{{ commit.date }}</p></td>
+            <td class="author" :style="columnStyles.author"><p>{{ commit.author }}</p></td>
           </tr>
         </tbody>
       </table>
@@ -154,7 +154,7 @@
     
     <!-- 下半部分：提交详情（固定高度，不随拖拽变化） -->
     <div class="detail-section">
-      <div class="detail-left" :style="{ flex: '0 0 ' + leftWidth + '%' }">
+      <div class="detail-left" :style="detailLeftStyle">
         <!-- 文件列表 -->
         <div class="file-list-panel file-list-expanded">
           <div class="panel-header">
@@ -239,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick, computed, reactive } from 'vue'
 import {
   COMMIT_HISTORY_SCOPE,
   buildBranchHeadMap,
@@ -267,6 +267,10 @@ const props = defineProps({
   allBranches: {
     type: Array,
     default: () => []
+  },
+  refreshToken: {
+    type: Number,
+    default: 0
   },
   refreshBranchStatus: {
     type: Function,
@@ -343,6 +347,14 @@ let graphRerenderAfterWidthSync = false
 let scrollLoadLockedUntil = 0
 const graphLayoutBranches: (string | undefined)[] = []
 const graphPalette = ['#5b8def', '#4cb7a5', '#d89b3c', '#d96c85', '#8b73d6', '#58b8c0', '#c97db0', '#98b857', '#d7845c', '#70a9e0']
+const componentWidth = ref(1280)
+const manualColumnWidths = reactive<Record<string, number | null>>({
+  comments: null,
+  commit: null,
+  date: null,
+  author: null
+})
+const manualLeftWidth = ref<number | null>(null)
 
 // 🔧 组件卸载标志，防止异步回调访问已卸载的 refs
 let isUnmounted = false
@@ -365,7 +377,6 @@ const BRANCH_CACHE_DURATION = 10000 // 10秒缓存
 
 // 布局调整
 const topHeight = ref(0) // 0表示使用flex比例，非0表示固定像素
-const leftWidth = ref(50) // percentage
 
 // 文件相关
 const selectedFile = ref<any>(null)
@@ -389,19 +400,57 @@ const selectedCommit = computed(() => {
 
 const selectedCommitFiles = ref<any[]>([])
 const localBranchOptions = computed(() => normalizeLocalBranches(props.allBranches as string[]))
+const defaultColumnWidths = computed(() => {
+  const width = Math.max(componentWidth.value || window.innerWidth || 1280, 960)
+  return {
+    comments: Math.round(Math.min(Math.max(width * 0.32, 360), width * 0.46)),
+    commit: Math.round(Math.min(Math.max(width * 0.09, 96), width * 0.12)),
+    date: Math.round(Math.min(Math.max(width * 0.12, 156), width * 0.16)),
+    author: Math.round(Math.min(Math.max(width * 0.11, 128), width * 0.15))
+  }
+})
+const columnStyles = computed(() => {
+  const widths = {
+    comments: manualColumnWidths.comments ?? defaultColumnWidths.value.comments,
+    commit: manualColumnWidths.commit ?? defaultColumnWidths.value.commit,
+    date: manualColumnWidths.date ?? defaultColumnWidths.value.date,
+    author: manualColumnWidths.author ?? defaultColumnWidths.value.author
+  }
+
+  return {
+    comments: { width: `${widths.comments}px`, minWidth: `${widths.comments}px`, maxWidth: `${widths.comments}px` },
+    commit: { width: `${widths.commit}px`, minWidth: `${widths.commit}px`, maxWidth: `${widths.commit}px` },
+    date: { width: `${widths.date}px`, minWidth: `${widths.date}px`, maxWidth: `${widths.date}px` },
+    author: { width: `${widths.author}px`, minWidth: `${widths.author}px`, maxWidth: `${widths.author}px` }
+  }
+})
+const defaultLeftWidth = computed(() => {
+  const width = Math.max(componentWidth.value || window.innerWidth || 1280, 960)
+  if (width >= 2200) return 28
+  if (width >= 1800) return 30
+  if (width >= 1500) return 34
+  if (width >= 1280) return 38
+  return 50
+})
+const detailLeftWidth = computed(() => manualLeftWidth.value ?? defaultLeftWidth.value)
+const detailLeftStyle = computed(() => ({
+  flex: `0 0 ${detailLeftWidth.value}%`
+}))
 const activeRevision = computed(() => {
+  const revisionSuffix = `::${props.refreshToken || 0}`
+
   if (historyScope.value === COMMIT_HISTORY_SCOPE.CURRENT) {
     if (props.currentBranch && !props.currentBranch.includes('HEAD detached')) {
-      return props.currentBranch
+      return `${props.currentBranch}${revisionSuffix}`
     }
-    return ''
+    return revisionSuffix
   }
 
   if (historyScope.value === COMMIT_HISTORY_SCOPE.BRANCH) {
-    return selectedLocalBranch.value
+    return `${selectedLocalBranch.value}${revisionSuffix}`
   }
 
-  return ''
+  return revisionSuffix
 })
 
 // 过滤后的提交列表
@@ -555,11 +604,12 @@ let isResizingWidth = false
 let startXWidth = 0
 let startLeftWidth = 0
 let resizeWidthContainer: HTMLElement | null = null
+let resizeObserver: ResizeObserver | null = null
 
 const startResizeWidth = (e: MouseEvent) => {
   isResizingWidth = true
   startXWidth = e.clientX
-  startLeftWidth = leftWidth.value
+  startLeftWidth = detailLeftWidth.value
   
   const target = e.currentTarget as HTMLElement
   resizeWidthContainer = target?.parentElement as HTMLElement
@@ -576,7 +626,7 @@ const doResizeWidth = (e: MouseEvent) => {
   const diff = e.clientX - startXWidth
   const percentage = (diff / containerWidth) * 100
   const newWidth = Math.max(20, Math.min(startLeftWidth + percentage, 80))
-  leftWidth.value = newWidth
+  manualLeftWidth.value = newWidth
 }
 
 const stopResizeWidth = () => {
@@ -673,7 +723,6 @@ let isResizingColumn = false
 let currentResizer: string | null = null
 let startXColumn = 0
 let startWidth = 0
-let resizeElement: HTMLElement | null = null
 let rafId: number | null = null
 
 // 列最小宽度配置
@@ -698,7 +747,7 @@ const startResize = (e: MouseEvent, colRef: string) => {
     authorColRef: authorColRef.value
   }
   
-  resizeElement = refMap[colRef]
+  const resizeElement = refMap[colRef]
   if (resizeElement) {
     startWidth = resizeElement.getBoundingClientRect().width
   }
@@ -714,7 +763,7 @@ const startResize = (e: MouseEvent, colRef: string) => {
 }
 
 const doResize = (e: MouseEvent) => {
-  if (!isResizingColumn || !resizeElement || !currentResizer) return
+  if (!isResizingColumn || !currentResizer) return
   
   // 使用 requestAnimationFrame 优化性能
   if (rafId) {
@@ -726,21 +775,21 @@ const doResize = (e: MouseEvent) => {
     const minWidth = minWidths[currentResizer!] || 50
     const newWidth = Math.max(minWidth, startWidth + diff)
     
-    // 更新 th 的宽度
-    resizeElement!.style.width = `${newWidth}px`
-    resizeElement!.style.maxWidth = `${newWidth}px`
-    
-    // 获取列的 class 名称并更新对应的所有 td
-    const className = resizeElement!.classList[0] // 获取第一个 class，如 graph-col, comments 等
-    if (className) {
-      const table = resizeElement!.closest('table')
-      if (table) {
-        const cells = table.querySelectorAll(`td.${className}`)
-        cells.forEach((cell: any) => {
-          cell.style.width = `${newWidth}px`
-          cell.style.maxWidth = `${newWidth}px`
-        })
-      }
+    if (currentResizer === 'graphColRef') {
+      graphColumnWidth.value = newWidth
+      return
+    }
+
+    const widthKeyMap: Record<string, 'comments' | 'commit' | 'date' | 'author'> = {
+      commentsColRef: 'comments',
+      commitColRef: 'commit',
+      dateColRef: 'date',
+      authorColRef: 'author'
+    }
+
+    const widthKey = widthKeyMap[currentResizer]
+    if (widthKey) {
+      manualColumnWidths[widthKey] = newWidth
     }
   })
 }
@@ -748,7 +797,6 @@ const doResize = (e: MouseEvent) => {
 const stopResize = () => {
   isResizingColumn = false
   currentResizer = null
-  resizeElement = null
   
   if (rafId) {
     cancelAnimationFrame(rafId)
@@ -1716,6 +1764,19 @@ watch([historyScope, selectedLocalBranch], async () => {
   await loadCommitHistory(true)
 })
 
+watch(() => props.refreshToken, async (newToken, oldToken) => {
+  if (newToken === oldToken) {
+    return
+  }
+
+  hasMore.value = true
+  commitHistoryCache.value = null
+  branchHashesCache.value = null
+
+  await nextTick()
+  await loadCommitHistory(true)
+})
+
 // 监听当前分支变化（分支切换后需要重新加载提交历史）
 watch(() => props.currentBranch, async (newBranch, oldBranch) => {
   
@@ -1791,9 +1852,11 @@ const handleVisibilityChange = async () => {
 const handleWindowResize = () => {
   // 重置 topHeight，让布局恢复默认的 flex 比例
   topHeight.value = 0
+  componentWidth.value = componentRef.value?.clientWidth || window.innerWidth || componentWidth.value
 }
 
 onMounted(() => {
+  componentWidth.value = componentRef.value?.clientWidth || window.innerWidth || componentWidth.value
   // 添加滚动监听
   if (scrollContainer.value) {
     scrollContainer.value.addEventListener('scroll', handleScroll)
@@ -1804,6 +1867,16 @@ onMounted(() => {
   
   // 监听窗口大小变化，重置高度
   window.addEventListener('resize', handleWindowResize)
+
+  if (componentRef.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) {
+        componentWidth.value = entry.contentRect.width
+      }
+    })
+    resizeObserver.observe(componentRef.value)
+  }
   
   // 🔧 使用 IntersectionObserver 检测组件可见性变化（用于标签页切换时）
   if (componentRef.value) {
@@ -1849,11 +1922,21 @@ onUnmounted(() => {
     visibilityObserver.disconnect()
     visibilityObserver = null
   }
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
 })
 </script>
 
 <style scoped>
 .commit-history-section.git-log {
+  --commit-comments-width: clamp(360px, 36vw, 840px);
+  --commit-hash-width: clamp(96px, 9vw, 160px);
+  --commit-date-width: clamp(156px, 13vw, 220px);
+  --commit-author-width: clamp(128px, 12vw, 220px);
+  --detail-left-min-width: clamp(320px, 28vw, 520px);
+  --detail-right-min-width: clamp(420px, 40vw, 960px);
   display: flex;
   flex-direction: column;
   background-color: #2d2d2d;
@@ -2013,27 +2096,27 @@ onUnmounted(() => {
 
 .git-log th.comments,
 .git-log td.comments {
-  width: 380px;
-  min-width: 150px;
-  max-width: 380px;
+  width: var(--commit-comments-width);
+  min-width: 280px;
+  max-width: none;
 }
 
 .git-log th.commit,
 .git-log td.commit {
-  width: 80px;
-  min-width: 80px;
+  width: var(--commit-hash-width);
+  min-width: 96px;
 }
 
 .git-log th.date,
 .git-log td.date {
-  width: 120px;
-  min-width: 120px;
+  width: var(--commit-date-width);
+  min-width: 156px;
 }
 
 .git-log th.author,
 .git-log td.author {
-  width: 100px;
-  min-width: 100px;
+  width: var(--commit-author-width);
+  min-width: 128px;
 }
 
 .git-log .log-highlight {
@@ -2148,7 +2231,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   border-right: 1px solid rgba(255, 255, 255, 0.1);
-  min-width: 0;
+  min-width: min(var(--detail-left-min-width), 100%);
   height: 100%;
 }
 
@@ -2280,6 +2363,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: min(var(--detail-right-min-width), 100%);
 }
 
 .search-bar {
@@ -2295,6 +2379,7 @@ onUnmounted(() => {
 
 .toolbar-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
 }
@@ -2353,6 +2438,7 @@ onUnmounted(() => {
 
 .scope-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
 }
@@ -2550,5 +2636,21 @@ onUnmounted(() => {
   height: 1px;
   background: rgba(255, 255, 255, 0.1);
   margin: 6px 0;
+}
+
+@media (min-width: 1600px) {
+  .commit-history-section.git-log {
+    --commit-comments-width: clamp(520px, 38vw, 1040px);
+    --commit-hash-width: clamp(112px, 9vw, 180px);
+    --commit-date-width: clamp(180px, 12vw, 260px);
+    --commit-author-width: clamp(160px, 11vw, 240px);
+    --detail-left-min-width: clamp(360px, 26vw, 560px);
+    --detail-right-min-width: clamp(560px, 46vw, 1180px);
+  }
+
+  .file-diff {
+    font-size: 13px;
+    line-height: 1.6;
+  }
 }
 </style>

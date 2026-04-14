@@ -10,13 +10,21 @@ export const buildProjectRefreshPlan = (
   const reloadTags = Boolean(
     overrides.reloadTags ?? request.reloadTags ?? visibility.showTags
   )
+  const defaultReloadCommitHistory =
+    reloadBranches || reloadBranchStatus || reloadTags
+  const reloadCommitHistory = Boolean(
+    overrides.reloadCommitHistory ??
+    request.reloadCommitHistory ??
+    defaultReloadCommitHistory
+  )
 
   return {
     reloadBranches,
     reloadBranchStatus,
     reloadFileStatus,
     preserveFileStatus,
-    reloadTags
+    reloadTags,
+    reloadCommitHistory
   }
 }
 

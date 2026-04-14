@@ -210,6 +210,7 @@
               :project-path="path"
               :current-branch="currentBranch"
               :all-branches="allBranches"
+              :refresh-token="commitHistoryRefreshToken"
               :execute-command="executeCommand"
               :refresh-branch-status="loadBranches"
               @switch-to-file-status="selectFileStatus"
@@ -584,6 +585,7 @@ const showTags = ref(false)
 const tagsLoading = ref(false)
 const tagsRefreshing = ref(false)
 const tagsRefreshSuccess = ref(false)
+const commitHistoryRefreshToken = ref(0)
 const refreshing = ref(false)
 const refreshSuccess = ref(false)
 
@@ -717,12 +719,17 @@ const finishOperation = ({ hideDialog = false } = {}) => {
   }
 }
 
+const bumpCommitHistoryRevision = () => {
+  commitHistoryRefreshToken.value += 1
+}
+
 const queueProjectRefresh = ({
   reloadBranches = false,
   reloadBranchStatus = false,
   reloadFileStatus = false,
   preserveFileStatus = false,
-  reloadTags = false
+  reloadTags = false,
+  reloadCommitHistory = false
 } = {}) => {
   const projectPath = props.path
   if (!projectPath) return
@@ -732,7 +739,8 @@ const queueProjectRefresh = ({
     reloadBranchStatus,
     reloadFileStatus,
     preserveFileStatus,
-    reloadTags
+    reloadTags,
+    reloadCommitHistory
   }, {
     showTags: showTags.value
   })
@@ -764,6 +772,10 @@ const queueProjectRefresh = ({
 
       if (refreshPlan.reloadFileStatus) {
         fileStatusRef.value?.loadFileStatus?.(refreshPlan.preserveFileStatus)
+      }
+
+      if (refreshPlan.reloadCommitHistory) {
+        bumpCommitHistoryRevision()
       }
     } catch (error) {
       console.error('刷新状态失败:', error)
@@ -1168,6 +1180,7 @@ const handleFileStatusChanged = async () => {
     debugLog('🔄 [ProjectDetailNew] 本地仓库，不增加 localAhead')
   }
   
+  bumpCommitHistoryRevision()
   emitPendingStatusChanged(props.path)
 }
 
@@ -1242,7 +1255,7 @@ const switchBranch = async (branchName) => {
     
     if (result.success) {
       finishOperation({ hideDialog: true })
-      queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true })
+      queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
       operationOutput.value += '\n\n❌ 分支切换失败: ' + (result.error || '')
@@ -1273,7 +1286,7 @@ const switchToRemoteBranch = async (branchName) => {
     
     if (result.success) {
       finishOperation({ hideDialog: true })
-      queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true })
+      queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
       operationOutput.value += '\n\n❌ 远程分支切换失败: ' + (result.error || '')
@@ -1356,7 +1369,7 @@ const pullProject = async () => {
         operationOutput.value += '\n\n❌ 拉取失败: ' + errorMsg
       }
     }
-    queueProjectRefresh({ reloadBranchStatus: true, reloadFileStatus: true, preserveFileStatus: true })
+    queueProjectRefresh({ reloadBranchStatus: true, reloadFileStatus: true, preserveFileStatus: true, reloadCommitHistory: true })
   } catch (error) {
     finishOperation()
     operationOutput.value += `\n\n❌ 拉取失败: ${error.message}`
@@ -1385,7 +1398,7 @@ const pushProject = async () => {
     
     if (result.success) {
       finishOperation({ hideDialog: true })
-      queueProjectRefresh({ reloadBranchStatus: true })
+      queueProjectRefresh({ reloadBranchStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
       // 分析错误类型给出更友好的提示
@@ -1413,7 +1426,7 @@ const pushProject = async () => {
           })
           operationOutput.value += '\n\n✅ 推送完成'
           showOperationDialog.value = false
-          queueProjectRefresh({ reloadBranchStatus: true })
+          queueProjectRefresh({ reloadBranchStatus: true, reloadCommitHistory: true })
           return
         }
         operationOutput.value += '\n\n❌ 推送失败'
@@ -1454,6 +1467,7 @@ const refreshRemoteBranches = async () => {
         allBranchStatus.value = result.data.allBranchStatus
         storeAllBranchStatus(props.path, result.data.allBranchStatus)
       }
+      bumpCommitHistoryRevision()
       markRefreshSuccess(refreshSuccess)
     }
   } catch (error) {
@@ -1497,7 +1511,7 @@ const createBranch = async () => {
     
     if (result.success) {
       finishOperation({ hideDialog: true })
-      queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true })
+      queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
       operationOutput.value += '\n\n❌ 分支创建失败: ' + (result.error || '')
@@ -1613,7 +1627,7 @@ const confirmDeleteBranch = async () => {
     }
     
     finishOperation({ hideDialog: true })
-    queueProjectRefresh({ reloadBranches: true, reloadBranchStatus: true })
+    queueProjectRefresh({ reloadBranches: true, reloadBranchStatus: true, reloadCommitHistory: true })
   } catch (error) {
     finishOperation()
     operationOutput.value += `\n\n❌ 删除分支失败: ${error.message}`
@@ -1640,7 +1654,7 @@ const confirmMergeBranch = async () => {
     
     if (result.success) {
       finishOperation({ hideDialog: true })
-      queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true })
+      queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
       operationOutput.value += '\n\n❌ 分支合并失败: ' + (result.error || '')
@@ -1666,7 +1680,7 @@ const checkoutTag = async (tag) => {
       branchStatus.value = null
       emitStatusUpdated(props.path, { remoteAhead: 0, localAhead: 0 })
       finishOperation({ hideDialog: true })
-      queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true })
+      queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
       operationOutput.value += '\n\n❌ 检出标签失败'
@@ -1732,7 +1746,7 @@ const pushTagAction = async () => {
     
     if (result.success) {
       finishOperation({ hideDialog: true })
-      loadTags().catch(() => {})
+      queueProjectRefresh({ reloadTags: true, reloadCommitHistory: true })
     } else {
       finishOperation()
       operationOutput.value += '\n\n❌ 推送标签失败'
@@ -1799,7 +1813,7 @@ const confirmCreateTag = async () => {
       }
       
       finishOperation({ hideDialog: true })
-      loadTags().catch(() => {})
+      queueProjectRefresh({ reloadTags: true, reloadCommitHistory: true })
     } else {
       finishOperation()
       operationOutput.value += '\n\n❌ 创建标签失败'
@@ -1837,7 +1851,7 @@ const confirmDeleteTag = async () => {
     }
     
     finishOperation({ hideDialog: true })
-    loadTags().catch(() => {})
+    queueProjectRefresh({ reloadTags: true, reloadCommitHistory: true })
   } catch (error) {
     finishOperation()
     operationOutput.value += `\n\n❌ 删除标签失败: ${error.message}`
@@ -2049,6 +2063,7 @@ const refreshCurrentProject = async () => {
   debugLog('🔄 [ProjectDetailNew] 刷新当前项目状态...')
 
   await clearProjectBranchStatusCache(props.path)
+  bumpCommitHistoryRevision()
 
   // 异步刷新文件状态（保留勾选状态）
   if (fileStatusRef.value?.loadFileStatus) {
