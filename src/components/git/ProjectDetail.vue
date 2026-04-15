@@ -313,7 +313,7 @@
         <div class="dialog-body">
           <div class="form-group">
             <label>标签名称：</label>
-            <input v-model="newTagName" type="text" placeholder="例如: v1.0.0" class="branch-input" @keyup.enter="confirmCreateTag" />
+            <input ref="newTagNameInputRef" v-model="newTagName" type="text" placeholder="例如: v1.0.0" class="branch-input" @keyup.enter="confirmCreateTag" />
           </div>
           <div class="form-group">
             <label>标签信息（可选）：</label>
@@ -503,6 +503,7 @@ const emit = defineEmits([
 const fileStatusRef = ref(null)
 const stashListRef = ref(null)
 const terminalRef = ref(null)
+const newTagNameInputRef = ref(null)
 
 /** 传给嵌入式终端的项目根（解码 git: 路由里可能出现的 %20 等），保证主进程拿到真实绝对路径 */
 const terminalProjectPath = computed(() => {
@@ -2121,6 +2122,13 @@ watch(() => props.isActive, (newIsActive, oldIsActive) => {
     debugLog('🔄 [ProjectDetailNew] 标签激活，刷新状态...')
     refreshCurrentProject()
   }
+})
+
+watch(showCreateTagDialog, async (visible) => {
+  if (!visible) return
+  await nextTick()
+  newTagNameInputRef.value?.focus?.()
+  newTagNameInputRef.value?.select?.()
 })
 
 // ==================== 暴露给父组件 ====================
