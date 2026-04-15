@@ -197,6 +197,24 @@ function buildProxyUrl({ scheme = 'http', host = '', port = '', username = '', p
   return `${scheme}://${auth}${host}:${port}`
 }
 
+function normalizeQuotedValue(value = '') {
+  return String(value || '').trim().replace(/^'+|'+$/g, '').replace(/^"+|"+$/g, '')
+}
+
+function normalizeNoProxyList(values = []) {
+  const out = []
+  for (const raw of values) {
+    const value = String(raw || '').trim()
+    if (!value) continue
+    if (value === '<local>') {
+      out.push('localhost', '127.0.0.1')
+      continue
+    }
+    out.push(value)
+  }
+  return [...new Set(out)].join(',')
+}
+
 function getMacSystemProxyEnv() {
   if (process.platform !== 'darwin') {
     return {}
@@ -278,6 +296,189 @@ function getMacSystemProxyEnv() {
   }
 }
 
+function parseWindowsProxyServer(rawValue = '') {
+  const text = String(rawValue || '').trim()
+  if (!text) return {}
+
+  const assignments = text.includes('=')
+    ? text.split(';').map((item) => item.trim()).filter(Boolean)
+    : [`http=${text}`, `https=${text}`]
+
+  let httpProxy = ''
+  let httpsProxy = ''
+  let allProxy = ''
+
+  for (const item of assignments) {
+    const [rawKey, rawTarget] = item.includes('=') ? item.split('=') : ['http', item]
+    const key = String(rawKey || '').trim().toLowerCase()
+    const target = String(rawTarget || '').trim()
+    if (!target) continue
+
+    const buildPlainProxy = (scheme) => {
+      try {
+        const parsed = new URL(target)
+        return buildProxyUrl({
+          scheme,
+          host: parsed.hostname,
+          port: parsed.port || (scheme === 'http' ? '80' : ''),
+          username: decodeURIComponent(parsed.username || ''),
+          password: decodeURIComponent(parsed.password || '')
+        })
+      } catch {
+        const [host, port] = target.split(':')
+        return buildProxyUrl({ scheme, host, port })
+      }
+    }
+
+    if (key === 'http') httpProxy = buildPlainProxy('http')
+    else if (key === 'https') httpsProxy = buildPlainProxy('http')
+    else if (key === 'socks') allProxy = buildPlainProxy('socks5')
+  }
+
+  return { httpProxy, httpsProxy, allProxy }
+}
+
+function getWindowsSystemProxyEnv() {
+  if (process.platform !== 'win32') {
+    return {}
+  }
+
+  const now = Date.now()
+  if (cachedSystemProxyEnv && (now - cachedSystemProxyEnvAt) < SYSTEM_PROXY_ENV_TTL) {
+    return { ...cachedSystemProxyEnv }
+  }
+
+  try {
+    const output = execFileSync('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+    const values = {}
+    output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .forEach((line) => {
+        const match = line.match(/^([A-Za-z0-9_]+)\s+REG_[A-Z0-9_]+\s+(.+)$/)
+        if (!match) return
+        values[match[1]] = String(match[2] || '').trim()
+      })
+
+    if (Number(values.ProxyEnable) !== 1) {
+      cachedSystemProxyEnv = {}
+      cachedSystemProxyEnvAt = now
+      return {}
+    }
+
+    const { httpProxy, httpsProxy, allProxy } = parseWindowsProxyServer(values.ProxyServer)
+    const noProxy = normalizeNoProxyList(String(values.ProxyOverride || '').split(';'))
+    const env = {}
+
+    if (httpProxy) {
+      env.http_proxy = httpProxy
+      env.HTTP_PROXY = httpProxy
+    }
+    if (httpsProxy || httpProxy) {
+      const resolvedHttpsProxy = httpsProxy || httpProxy
+      env.https_proxy = resolvedHttpsProxy
+      env.HTTPS_PROXY = resolvedHttpsProxy
+    }
+    if (allProxy) {
+      env.all_proxy = allProxy
+      env.ALL_PROXY = allProxy
+    }
+    if (noProxy) {
+      env.no_proxy = noProxy
+      env.NO_PROXY = noProxy
+    }
+
+    cachedSystemProxyEnv = env
+    cachedSystemProxyEnvAt = now
+    return { ...env }
+  } catch (error) {
+    cachedSystemProxyEnv = {}
+    cachedSystemProxyEnvAt = now
+    return {}
+  }
+}
+
+function getLinuxSystemProxyEnv() {
+  if (process.platform !== 'linux') {
+    return {}
+  }
+
+  const now = Date.now()
+  if (cachedSystemProxyEnv && (now - cachedSystemProxyEnvAt) < SYSTEM_PROXY_ENV_TTL) {
+    return { ...cachedSystemProxyEnv }
+  }
+
+  try {
+    const execGsettings = (schema, key) => execFileSync('gsettings', ['get', schema, key], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).trim()
+
+    const mode = normalizeQuotedValue(execGsettings('org.gnome.system.proxy', 'mode'))
+    if (mode !== 'manual') {
+      cachedSystemProxyEnv = {}
+      cachedSystemProxyEnvAt = now
+      return {}
+    }
+
+    const httpHost = normalizeQuotedValue(execGsettings('org.gnome.system.proxy.http', 'host'))
+    const httpPort = normalizeQuotedValue(execGsettings('org.gnome.system.proxy.http', 'port'))
+    const httpsHost = normalizeQuotedValue(execGsettings('org.gnome.system.proxy.https', 'host'))
+    const httpsPort = normalizeQuotedValue(execGsettings('org.gnome.system.proxy.https', 'port'))
+    const socksHost = normalizeQuotedValue(execGsettings('org.gnome.system.proxy.socks', 'host'))
+    const socksPort = normalizeQuotedValue(execGsettings('org.gnome.system.proxy.socks', 'port'))
+    const ignoreHostsRaw = normalizeQuotedValue(execGsettings('org.gnome.system.proxy', 'ignore-hosts'))
+    const ignoreHosts = ignoreHostsRaw
+      ? ignoreHostsRaw.replace(/^\[|\]$/g, '').split(',').map((item) => normalizeQuotedValue(item)).filter(Boolean)
+      : []
+
+    const env = {}
+    if (httpHost && httpPort) {
+      const proxy = buildProxyUrl({ scheme: 'http', host: httpHost, port: httpPort })
+      env.http_proxy = proxy
+      env.HTTP_PROXY = proxy
+    }
+    if (httpsHost && httpsPort) {
+      const proxy = buildProxyUrl({ scheme: 'http', host: httpsHost, port: httpsPort })
+      env.https_proxy = proxy
+      env.HTTPS_PROXY = proxy
+    } else if (env.http_proxy) {
+      env.https_proxy = env.http_proxy
+      env.HTTPS_PROXY = env.HTTP_PROXY
+    }
+    if (socksHost && socksPort) {
+      const proxy = buildProxyUrl({ scheme: 'socks5', host: socksHost, port: socksPort })
+      env.all_proxy = proxy
+      env.ALL_PROXY = proxy
+    }
+
+    const noProxy = normalizeNoProxyList(ignoreHosts)
+    if (noProxy) {
+      env.no_proxy = noProxy
+      env.NO_PROXY = noProxy
+    }
+
+    cachedSystemProxyEnv = env
+    cachedSystemProxyEnvAt = now
+    return { ...env }
+  } catch (error) {
+    cachedSystemProxyEnv = {}
+    cachedSystemProxyEnvAt = now
+    return {}
+  }
+}
+
+function getSystemProxyEnv() {
+  if (process.platform === 'darwin') return getMacSystemProxyEnv()
+  if (process.platform === 'win32') return getWindowsSystemProxyEnv()
+  if (process.platform === 'linux') return getLinuxSystemProxyEnv()
+  return {}
+}
+
 function buildTerminalLaunchOptions({ shell, resolvedCwd, homeDir }) {
   const shellBase = path.basename(shell).replace(/\.exe$/i, '').toLowerCase()
   const requiredUnixPathEntries = [
@@ -304,7 +505,7 @@ function buildTerminalLaunchOptions({ shell, resolvedCwd, homeDir }) {
     env.PATH = ensurePathEntries(env.PATH, requiredUnixPathEntries)
   }
 
-  const systemProxyEnv = getMacSystemProxyEnv()
+  const systemProxyEnv = getSystemProxyEnv()
   Object.assign(env, systemProxyEnv)
 
   if (process.platform === 'win32') {
