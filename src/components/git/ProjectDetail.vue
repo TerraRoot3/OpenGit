@@ -61,6 +61,15 @@
               <span>终端</span>
             </div>
 
+            <div
+              class="file-status-button"
+              :class="{ active: currentView === 'ai-sessions' }"
+              @click="selectAiSessions"
+            >
+              <Bot :size="16" />
+              <span>AI会话</span>
+            </div>
+
             <!-- 文件状态按钮 -->
             <div
               class="file-status-button"
@@ -202,6 +211,12 @@
               ref="fileStatusRef"
               @status-changed="handleFileStatusChanged"
               @pending-count-changed="handlePendingCountChanged"
+            />
+
+            <ProjectAiSessions
+              v-if="currentView === 'ai-sessions'"
+              :project-path="path"
+              @resume-session="handleResumeAiSession"
             />
 
             <!-- 提交历史 -->
@@ -415,12 +430,13 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   FolderOpen, GitBranch, Tag, GitPullRequest, ArrowUpCircle, GitMerge,
-  Terminal as TerminalIcon, ExternalLink, FileText, History, Archive,
+  Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot,
   Folder, Globe, RefreshCw, Check,   ChevronRight, Settings
 } from 'lucide-vue-next'
 import ProjectFileStatus from './ProjectFileStatus.vue'
 import ProjectStashList from './ProjectStashList.vue'
 import ProjectCommitHistory from './ProjectCommitHistory.vue'
+import ProjectAiSessions from './ProjectAiSessions.vue'
 import OperationDialog from '../dialog/OperationDialog.vue'
 import ProjectSettingsDialog from '../dialog/ProjectSettingsDialog.vue'
 import TerminalPanel from '../terminal/TerminalPanel.vue'
@@ -535,7 +551,7 @@ const getExpandStateKey = (path) => `expandState_${path?.replace(/[^a-zA-Z0-9]/g
 const getSavedCurrentView = (path) => {
   try {
     const saved = localStorage.getItem(getProjectViewKey(path))
-    if (saved && ['file-status', 'commit-history', 'stash-list', 'terminal'].includes(saved)) {
+    if (saved && ['file-status', 'commit-history', 'stash-list', 'terminal', 'ai-sessions'].includes(saved)) {
       return saved
     }
   } catch (e) {}
@@ -1145,6 +1161,11 @@ const selectFileStatus = () => {
   }
 }
 
+const selectAiSessions = () => {
+  currentView.value = 'ai-sessions'
+  saveCurrentView('ai-sessions')
+}
+
 // 处理文件状态变化（提交后）
 const handleFileStatusChanged = async () => {
   debugLog('🔄 [ProjectDetailNew] 文件状态变化')
@@ -1215,6 +1236,23 @@ const selectTerminal = () => {
   if (props.isActive) {
     nextTick(() => {
       terminalRef.value?.ensureDefaultTerminal?.(terminalProjectPath.value)
+    })
+  }
+}
+
+const handleResumeAiSession = async (session) => {
+  const command = typeof session?.command === 'string' ? session.command.trim() : ''
+  if (!command) return
+
+  terminalMounted.value = true
+  currentView.value = 'terminal'
+  saveCurrentView('terminal')
+
+  await nextTick()
+
+  if (props.isActive) {
+    await terminalRef.value?.runCommand?.(command, {
+      cwd: session.cwd || terminalProjectPath.value
     })
   }
 }

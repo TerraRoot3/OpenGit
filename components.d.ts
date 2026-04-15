@@ -22,6 +22,7 @@ declare module 'vue' {
     OperationDialog: typeof import('./src/components/dialog/OperationDialog.vue')['default']
     PasswordManager: typeof import('./src/components/browser/PasswordManager.vue')['default']
     PasswordSaveDialog: typeof import('./src/components/dialog/PasswordSaveDialog.vue')['default']
+    ProjectAiSessions: typeof import('./src/components/git/ProjectAiSessions.vue')['default']
     ProjectBuildConfig: typeof import('./src/components/git/ProjectBuildConfig.vue')['default']
     ProjectCommitHistory: typeof import('./src/components/git/ProjectCommitHistory.vue')['default']
     ProjectDetail: typeof import('./src/components/git/ProjectDetail.vue')['default']

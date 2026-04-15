@@ -13,6 +13,7 @@ const { registerRefreshHandlers } = require('./ipc/refresh')
 const { registerTerminalHandlers } = require('./ipc/terminal')
 const { registerConfigHandlers } = require('./ipc/config')
 const { registerFilesystemHandlers } = require('./ipc/filesystem')
+const { registerAiSessionHandlers } = require('./ipc/ai-sessions')
 const { registerBrowserDataHandlers } = require('./ipc/browser-data')
 const { registerCommandHandlers } = require('./ipc/command')
 const { registerNavigationHandlers } = require('./ipc/navigation')
@@ -1928,6 +1929,11 @@ registerFilesystemHandlers({
   getMainWindow: () => mainWindow,
   executeGitCommand,
   safeLog,
+  safeError
+})
+
+registerAiSessionHandlers({
+  ipcMain,
   safeError
 })
 

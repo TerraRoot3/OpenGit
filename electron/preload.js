@@ -69,6 +69,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 项目操作
   getProjects: (data) => ipcRenderer.invoke('get-projects', data),
+  getProjectAiSessions: (data) => ipcRenderer.invoke('get-project-ai-sessions', data),
+  getProjectAiSessionDetail: (data) => ipcRenderer.invoke('get-project-ai-session-detail', data),
+  deleteProjectAiSession: (data) => ipcRenderer.invoke('delete-project-ai-session', data),
   
   // 配置管理
   getCurrentConfig: (data) => ipcRenderer.invoke('get-current-config', data),

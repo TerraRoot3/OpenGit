@@ -983,6 +983,48 @@ const ensureDefaultTerminal = async (cwdOverride = '') => {
   }
 }
 
+const runCommand = async (command, options = {}) => {
+  const payload = typeof command === 'string' ? command.trim() : ''
+  if (!payload) return false
+
+  const {
+    cwd = '',
+    forceNewTerminal = false,
+    submit = true
+  } = options
+
+  const targetCwd = normalizeIncomingPath(cwd || getProjectRootCwd())
+  let targetTerm = null
+
+  if (!forceNewTerminal) {
+    await ensureDefaultTerminal(targetCwd)
+    const current = currentTerminal.value || terminals.value[0] || null
+    const currentCwd = normalizeIncomingPath(current?.cwd || '')
+    if (current && !current.hasUserInput && (!targetCwd || currentCwd === targetCwd)) {
+      targetTerm = current
+    }
+  }
+
+  if (!targetTerm) {
+    const termId = await addTerminal(targetCwd || null, { autoSwitch: true })
+    if (termId) {
+      targetTerm = findTerminalById(termId)
+    }
+  }
+
+  if (!targetTerm?.ptyId || !targetTerm.connected) return false
+
+  activeTabId.value = targetTerm.tabId
+  activeTermId.value = targetTerm.termId
+  targetTerm.hasUserInput = true
+  window.electronAPI.terminal.write({
+    id: targetTerm.ptyId,
+    data: submit ? `${payload}\r` : payload
+  })
+  applyLayout(true)
+  return true
+}
+
 // ---- 项目切换：缓存 & 恢复 ----
 
 const normalizeCacheKey = (path) => normalizeIncomingPath(path || '')
@@ -1189,7 +1231,7 @@ onUnmounted(() => {
   unregister(ipcHandler)
 })
 
-defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal })
+defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand })
 </script>
 
 <style scoped>
