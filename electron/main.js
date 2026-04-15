@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Menu, shell, dialog, ipcMain, session, protocol, net, screen } = require('electron')
 const path = require('path')
-const { exec, spawn } = require('child_process')
+const { exec, spawn, execFileSync } = require('child_process')
 const { promisify, format } = require('util')
 const fs = require('fs')
 const https = require('https')
@@ -171,6 +171,113 @@ function ensurePathEntries(pathValue, requiredEntries) {
   return [...currentParts, ...missing].join(delimiter)
 }
 
+let cachedSystemProxyEnv = null
+let cachedSystemProxyEnvAt = 0
+const SYSTEM_PROXY_ENV_TTL = 15 * 1000
+
+function parseScutilProxyOutput(rawOutput = '') {
+  const values = {}
+  rawOutput
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const match = line.match(/^([A-Za-z0-9]+)\s*:\s*(.+)$/)
+      if (!match) return
+      values[match[1]] = match[2]
+    })
+  return values
+}
+
+function buildProxyUrl({ scheme = 'http', host = '', port = '', username = '', password = '' } = {}) {
+  if (!host || !port) return ''
+  const auth = username
+    ? `${encodeURIComponent(username)}${password ? `:${encodeURIComponent(password)}` : ''}@`
+    : ''
+  return `${scheme}://${auth}${host}:${port}`
+}
+
+function getMacSystemProxyEnv() {
+  if (process.platform !== 'darwin') {
+    return {}
+  }
+
+  const now = Date.now()
+  if (cachedSystemProxyEnv && (now - cachedSystemProxyEnvAt) < SYSTEM_PROXY_ENV_TTL) {
+    return { ...cachedSystemProxyEnv }
+  }
+
+  try {
+    const output = execFileSync('scutil', ['--proxy'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+    const proxyConfig = parseScutilProxyOutput(output)
+    const env = {}
+
+    const httpProxy = Number(proxyConfig.HTTPEnable) === 1
+      ? buildProxyUrl({
+        scheme: 'http',
+        host: proxyConfig.HTTPProxy,
+        port: proxyConfig.HTTPPort,
+        username: proxyConfig.HTTPUser,
+        password: proxyConfig.HTTPPassword
+      })
+      : ''
+
+    const httpsProxy = Number(proxyConfig.HTTPSEnable) === 1
+      ? buildProxyUrl({
+        scheme: 'http',
+        host: proxyConfig.HTTPSProxy,
+        port: proxyConfig.HTTPSPort,
+        username: proxyConfig.HTTPSUser,
+        password: proxyConfig.HTTPSPassword
+      })
+      : ''
+
+    const socksProxy = Number(proxyConfig.SOCKSEnable) === 1
+      ? buildProxyUrl({
+        scheme: 'socks5',
+        host: proxyConfig.SOCKSProxy,
+        port: proxyConfig.SOCKSPort
+      })
+      : ''
+
+    const noProxy = typeof proxyConfig.ExceptionsList === 'string'
+      ? proxyConfig.ExceptionsList.replace(/[()"]/g, '').split(/\s*,\s*|\s+/).filter(Boolean).join(',')
+      : ''
+
+    if (httpProxy) {
+      env.http_proxy = httpProxy
+      env.HTTP_PROXY = httpProxy
+    }
+
+    if (httpsProxy || httpProxy) {
+      const resolvedHttpsProxy = httpsProxy || httpProxy
+      env.https_proxy = resolvedHttpsProxy
+      env.HTTPS_PROXY = resolvedHttpsProxy
+    }
+
+    if (socksProxy) {
+      env.all_proxy = socksProxy
+      env.ALL_PROXY = socksProxy
+    }
+
+    if (noProxy) {
+      env.no_proxy = noProxy
+      env.NO_PROXY = noProxy
+    }
+
+    cachedSystemProxyEnv = env
+    cachedSystemProxyEnvAt = now
+    return { ...env }
+  } catch (error) {
+    cachedSystemProxyEnv = {}
+    cachedSystemProxyEnvAt = now
+    return {}
+  }
+}
+
 function buildTerminalLaunchOptions({ shell, resolvedCwd, homeDir }) {
   const shellBase = path.basename(shell).replace(/\.exe$/i, '').toLowerCase()
   const requiredUnixPathEntries = [
@@ -197,6 +304,9 @@ function buildTerminalLaunchOptions({ shell, resolvedCwd, homeDir }) {
     env.PATH = ensurePathEntries(env.PATH, requiredUnixPathEntries)
   }
 
+  const systemProxyEnv = getMacSystemProxyEnv()
+  Object.assign(env, systemProxyEnv)
+
   if (process.platform === 'win32') {
     return { shellArgs: [], env, shellBase }
   }
@@ -206,7 +316,7 @@ function buildTerminalLaunchOptions({ shell, resolvedCwd, homeDir }) {
     env.GIT_MANAGER_INITIAL_CWD = resolvedCwd
     env.GIT_MANAGER_REAL_ZDOTDIR = process.env.ZDOTDIR || homeDir
     env.ZDOTDIR = zshDir
-    return { shellArgs: ['-i'], env, shellBase }
+    return { shellArgs: ['-il'], env, shellBase }
   }
 
   if (shellBase === 'bash') {
@@ -545,6 +655,9 @@ function configureBrowserSessionPartition(partition = SITE_PERMISSION_PARTITION)
   }
 
   const webviewSession = session.fromPartition(partition)
+  webviewSession.setProxy({ mode: 'system' }).catch((error) => {
+    safeError(`[Proxy] failed to apply system proxy for partition ${partition}:`, error.message || error)
+  })
 
   webviewSession.setPermissionRequestHandler((webContents, permission, callback, details = {}) => {
     const origin = getPermissionOrigin(webContents, details)
@@ -1728,6 +1841,9 @@ app.on('web-contents-created', (event, contents) => {
 
 app.whenReady().then(async () => {
   safeLog('Electron app ready, creating window...')
+  await session.defaultSession.setProxy({ mode: 'system' }).catch((error) => {
+    safeError('[Proxy] failed to apply system proxy for default session:', error.message || error)
+  })
   webTabManager = new WebTabManager({
     safeLog,
     safeError,

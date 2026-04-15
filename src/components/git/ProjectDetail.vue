@@ -612,7 +612,7 @@ const showCreateTagDialog = ref(false)
 const newTagName = ref('')
 const newTagMessage = ref('')
 const tagCommit = ref('')
-const pushTagAfterCreate = ref(false)
+const pushTagAfterCreate = ref(true)
 
 // ==================== 删除标签对话框 ====================
 const showDeleteTagDialog = ref(false)
@@ -1558,7 +1558,7 @@ const createTagFromRemoteBranch = () => {
   newTagName.value = ''
   newTagMessage.value = ''
   tagCommit.value = `origin/${branchContextMenuBranch.value}`
-  pushTagAfterCreate.value = false
+  pushTagAfterCreate.value = true
   showCreateTagDialog.value = true
 }
 
@@ -1771,7 +1771,7 @@ const openCreateTagDialog = () => {
   newTagName.value = ''
   newTagMessage.value = ''
   tagCommit.value = ''
-  pushTagAfterCreate.value = false
+  pushTagAfterCreate.value = true
   showCreateTagDialog.value = true
 }
 
