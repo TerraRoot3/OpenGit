@@ -3,13 +3,28 @@ const path = require('path')
 const os = require('os')
 
 const SESSION_CACHE_TTL = 15 * 1000
+const SUMMARY_CACHE_VERSION = 1
 
 let codexSessionsCache = { loadedAt: 0, sessions: [] }
 let claudeHistoryCache = { loadedAt: 0, entries: new Map() }
+let summaryCacheStore = { filePath: '', loaded: false, dirty: false, entries: new Map() }
+const summaryRefreshJobs = new Map()
 
 function resetSessionCaches() {
   codexSessionsCache = { loadedAt: 0, sessions: [] }
   claudeHistoryCache = { loadedAt: 0, entries: new Map() }
+}
+
+function configureSummaryCache(filePath = '') {
+  const normalizedFilePath = normalizeProjectPath(filePath)
+  if (summaryCacheStore.filePath === normalizedFilePath) return
+
+  summaryCacheStore = {
+    filePath: normalizedFilePath,
+    loaded: false,
+    dirty: false,
+    entries: new Map()
+  }
 }
 
 function normalizeProjectPath(inputPath = '') {
@@ -87,6 +102,323 @@ function readJsonlFile(filePath, onItem) {
   } catch (error) {}
 }
 
+function readJsonlFileUntil(filePath, onItem, chunkSize = 64 * 1024) {
+  let fd = null
+  let position = 0
+  let remainder = ''
+
+  try {
+    fd = fs.openSync(filePath, 'r')
+    const buffer = Buffer.alloc(chunkSize)
+
+    while (true) {
+      const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, position)
+      if (bytesRead <= 0) break
+
+      position += bytesRead
+      remainder += buffer.toString('utf8', 0, bytesRead)
+
+      const lines = remainder.split('\n')
+      remainder = lines.pop() || ''
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim()
+        if (!line) continue
+        const item = safeReadJsonLine(line)
+        if (item && onItem(item) === true) return
+      }
+    }
+
+    const line = remainder.trim()
+    if (!line) return
+    const item = safeReadJsonLine(line)
+    if (item) onItem(item)
+  } catch (error) {
+  } finally {
+    if (fd != null) {
+      try {
+        fs.closeSync(fd)
+      } catch (error) {}
+    }
+  }
+}
+
+function ensureSummaryCacheLoaded() {
+  if (summaryCacheStore.loaded) return summaryCacheStore
+
+  summaryCacheStore.loaded = true
+  if (!summaryCacheStore.filePath || !fs.existsSync(summaryCacheStore.filePath)) {
+    return summaryCacheStore
+  }
+
+  try {
+    const raw = fs.readFileSync(summaryCacheStore.filePath, 'utf8')
+    const parsed = JSON.parse(raw)
+    if (parsed?.version !== SUMMARY_CACHE_VERSION || !Array.isArray(parsed.entries)) {
+      return summaryCacheStore
+    }
+
+    summaryCacheStore.entries = new Map(
+      parsed.entries
+        .filter((entry) => entry && entry.provider && entry.sessionId && entry.sourcePath)
+        .map((entry) => [`${entry.provider}:${entry.sessionId}`, {
+          provider: entry.provider,
+          sessionId: entry.sessionId,
+          sourcePath: normalizeProjectPath(entry.sourcePath),
+          sourceMtimeMs: Number(entry.sourceMtimeMs) || 0,
+          summary: typeof entry.summary === 'string' ? entry.summary : ''
+        }])
+    )
+  } catch (error) {
+    summaryCacheStore.entries = new Map()
+  }
+
+  return summaryCacheStore
+}
+
+function flushSummaryCache() {
+  const store = ensureSummaryCacheLoaded()
+  if (!store.dirty || !store.filePath) return
+
+  try {
+    fs.mkdirSync(path.dirname(store.filePath), { recursive: true })
+    fs.writeFileSync(store.filePath, JSON.stringify({
+      version: SUMMARY_CACHE_VERSION,
+      entries: [...store.entries.values()]
+    }), 'utf8')
+    store.dirty = false
+  } catch (error) {}
+}
+
+function getSessionSummaryCacheState({
+  provider = '',
+  sessionId = '',
+  sourcePath = '',
+  sourceMtimeMs = 0
+} = {}) {
+  const store = ensureSummaryCacheLoaded()
+  const key = `${provider}:${sessionId}`
+  const entry = store.entries.get(key)
+  const normalizedSourcePath = normalizeProjectPath(sourcePath)
+  const normalizedMtime = Number(sourceMtimeMs) || 0
+
+  if (!entry) {
+    return { status: 'missing', summary: '' }
+  }
+
+  if (entry.sourcePath !== normalizedSourcePath) {
+    store.entries.delete(key)
+    store.dirty = true
+    return { status: 'missing', summary: '' }
+  }
+
+  if (entry.sourceMtimeMs === normalizedMtime) {
+    return {
+      status: 'fresh',
+      summary: typeof entry.summary === 'string' ? entry.summary : ''
+    }
+  }
+
+  return {
+    status: 'stale',
+    summary: typeof entry.summary === 'string' ? entry.summary : ''
+  }
+}
+
+function readSessionSummaryCache({
+  provider = '',
+  sessionId = '',
+  sourcePath = '',
+  sourceMtimeMs = 0
+} = {}) {
+  const state = getSessionSummaryCacheState({
+    provider,
+    sessionId,
+    sourcePath,
+    sourceMtimeMs
+  })
+  return {
+    hit: state.status === 'fresh',
+    summary: state.status === 'fresh' ? state.summary : ''
+  }
+}
+
+function writeSessionSummaryCache({
+  provider = '',
+  sessionId = '',
+  sourcePath = '',
+  sourceMtimeMs = 0,
+  summary = ''
+} = {}) {
+  const normalizedSourcePath = normalizeProjectPath(sourcePath)
+  if (!provider || !sessionId || !normalizedSourcePath) {
+    return typeof summary === 'string' ? summary : ''
+  }
+
+  const store = ensureSummaryCacheLoaded()
+  const normalizedSummary = typeof summary === 'string' ? summary.trim() : ''
+
+  store.entries.set(`${provider}:${sessionId}`, {
+    provider,
+    sessionId,
+    sourcePath: normalizedSourcePath,
+    sourceMtimeMs: Number(sourceMtimeMs) || 0,
+    summary: normalizedSummary
+  })
+  store.dirty = true
+
+  return normalizedSummary
+}
+
+function deleteSessionSummaryCache({ provider = '', sessionId = '', sourcePath = '' } = {}) {
+  const store = ensureSummaryCacheLoaded()
+  const normalizedSourcePath = normalizeProjectPath(sourcePath)
+  let changed = false
+
+  if (provider && sessionId) {
+    changed = store.entries.delete(`${provider}:${sessionId}`) || changed
+  }
+
+  if (normalizedSourcePath) {
+    for (const [key, entry] of store.entries.entries()) {
+      if (entry.sourcePath !== normalizedSourcePath) continue
+      store.entries.delete(key)
+      changed = true
+    }
+  }
+
+  if (changed) {
+    store.dirty = true
+  }
+
+  return changed
+}
+
+function getSummaryRefreshJobKey({
+  provider = '',
+  sessionId = '',
+  sourcePath = '',
+  sourceMtimeMs = 0
+} = {}) {
+  return [
+    provider,
+    sessionId,
+    normalizeProjectPath(sourcePath),
+    Number(sourceMtimeMs) || 0
+  ].join(':')
+}
+
+function updateCachedSessionSummary({
+  provider = '',
+  sessionId = '',
+  sourcePath = '',
+  sourceMtimeMs = 0,
+  summary = ''
+} = {}) {
+  const normalizedSourcePath = normalizeProjectPath(sourcePath)
+  const normalizedMtime = Number(sourceMtimeMs) || 0
+  const normalizedSummary = typeof summary === 'string' ? summary : ''
+
+  for (const session of codexSessionsCache.sessions) {
+    if (session.provider !== provider || session.sessionId !== sessionId) continue
+    if (normalizeProjectPath(session.sourcePath) !== normalizedSourcePath) continue
+    if ((Number(session.sourceMtimeMs) || 0) !== normalizedMtime) continue
+    session.summary = normalizedSummary
+  }
+}
+
+function scheduleSessionSummaryRefresh({
+  provider = '',
+  sessionId = '',
+  sourcePath = '',
+  sourceMtimeMs = 0,
+  extractSummary
+} = {}) {
+  const normalizedSourcePath = normalizeProjectPath(sourcePath)
+  const jobKey = getSummaryRefreshJobKey({ provider, sessionId, sourcePath: normalizedSourcePath, sourceMtimeMs })
+  if (!provider || !sessionId || !normalizedSourcePath || typeof extractSummary !== 'function') {
+    return false
+  }
+  if (summaryRefreshJobs.has(jobKey)) {
+    return false
+  }
+
+  const timer = setTimeout(() => {
+    try {
+      const summary = writeSessionSummaryCache({
+        provider,
+        sessionId,
+        sourcePath: normalizedSourcePath,
+        sourceMtimeMs,
+        summary: extractSummary(normalizedSourcePath)
+      })
+      updateCachedSessionSummary({
+        provider,
+        sessionId,
+        sourcePath: normalizedSourcePath,
+        sourceMtimeMs,
+        summary
+      })
+      flushSummaryCache()
+    } catch (error) {
+    } finally {
+      summaryRefreshJobs.delete(jobKey)
+    }
+  }, 0)
+
+  if (typeof timer.unref === 'function') {
+    timer.unref()
+  }
+
+  summaryRefreshJobs.set(jobKey, timer)
+  return true
+}
+
+function hasPendingSummaryRefreshForSessions(sessions = []) {
+  return sessions.some((session) => summaryRefreshJobs.has(getSummaryRefreshJobKey({
+    provider: session.provider,
+    sessionId: session.sessionId,
+    sourcePath: session.sourcePath,
+    sourceMtimeMs: session.sourceMtimeMs
+  })))
+}
+
+function resolveSessionSummary({
+  provider = '',
+  sessionId = '',
+  sourcePath = '',
+  sourceMtimeMs = 0,
+  extractSummary
+} = {}) {
+  const cacheState = getSessionSummaryCacheState({
+    provider,
+    sessionId,
+    sourcePath,
+    sourceMtimeMs
+  })
+
+  if (cacheState.status === 'fresh') {
+    return {
+      summary: cacheState.summary,
+      pendingRefresh: false
+    }
+  }
+
+  const jobKey = getSummaryRefreshJobKey({ provider, sessionId, sourcePath, sourceMtimeMs })
+  const pendingRefresh = scheduleSessionSummaryRefresh({
+    provider,
+    sessionId,
+    sourcePath,
+    sourceMtimeMs,
+    extractSummary
+  }) || summaryRefreshJobs.has(jobKey)
+
+  return {
+    summary: cacheState.status === 'stale' ? cacheState.summary : '',
+    pendingRefresh
+  }
+}
+
 function truncateText(text = '', maxLength = 400) {
   const normalized = String(text || '').replace(/\s+/g, ' ').trim()
   if (!normalized) return ''
@@ -120,12 +452,13 @@ function extractCodexMessageText(messageContent) {
 function extractCodexSummary(filePath) {
   let summary = ''
 
-  readJsonlFile(filePath, (item) => {
+  readJsonlFileUntil(filePath, (item) => {
     if (summary) return
     if (item?.type === 'response_item' && item.payload?.type === 'message' && item.payload?.role === 'user') {
       const text = extractCodexMessageText(item.payload.content)
       if (text) {
         summary = text
+        return true
       }
       return
     }
@@ -134,6 +467,7 @@ function extractCodexSummary(filePath) {
       const text = normalizeSessionText(item.payload.message)
       if (text) {
         summary = text
+        return true
       }
     }
   })
@@ -186,13 +520,14 @@ function extractClaudeContentText(content) {
 function extractClaudeSummary(filePath) {
   let summary = ''
 
-  readJsonlFile(filePath, (item) => {
+  readJsonlFileUntil(filePath, (item) => {
     if (summary) return
     if (item?.type !== 'user') return
     if (item.message?.role !== 'user') return
     const text = extractClaudeContentText(item.message.content)
     if (text) {
       summary = text
+      return true
     }
   })
 
@@ -279,6 +614,8 @@ function deleteAiSessionSource({ provider = '', sourcePath = '' } = {}) {
 
   fs.unlinkSync(normalizedSourcePath)
   pruneEmptyDirectories(path.dirname(normalizedSourcePath), rootDir)
+  deleteSessionSummaryCache({ provider, sourcePath: normalizedSourcePath })
+  flushSummaryCache()
   resetSessionCaches()
 
   return { deleted: true }
@@ -310,13 +647,17 @@ function buildCodexIndex(homeDir) {
 function loadCodexSessions(homeDir) {
   const now = Date.now()
   if ((now - codexSessionsCache.loadedAt) < SESSION_CACHE_TTL) {
-    return codexSessionsCache.sessions
+    return {
+      sessions: codexSessionsCache.sessions,
+      hasPendingSummaryRefresh: hasPendingSummaryRefreshForSessions(codexSessionsCache.sessions)
+    }
   }
 
   const sessionsRoot = path.join(homeDir, '.codex', 'sessions')
   const indexMap = buildCodexIndex(homeDir)
   const files = walkFiles(sessionsRoot, (fullPath) => fullPath.endsWith('.jsonl'))
   const sessionMap = new Map()
+  let hasPendingSummaryRefresh = false
 
   for (const filePath of files) {
     const firstLine = safeReadFirstLine(filePath)
@@ -336,6 +677,14 @@ function loadCodexSessions(homeDir) {
     const updatedAt = indexed?.updatedAt
       || normalizeIsoString(record.payload.timestamp, statTimestamp)
       || normalizeIsoString(statTimestamp)
+    const summaryState = resolveSessionSummary({
+      provider: 'codex',
+      sessionId,
+      sourcePath: filePath,
+      sourceMtimeMs: statTimestamp,
+      extractSummary: extractCodexSummary
+    })
+    hasPendingSummaryRefresh = hasPendingSummaryRefresh || summaryState.pendingRefresh
 
     mergeSessionEntry(sessionMap, {
       provider: 'codex',
@@ -343,8 +692,9 @@ function loadCodexSessions(homeDir) {
       title: indexed?.title || path.basename(cwd) || sessionId,
       cwd,
       updatedAt,
-      summary: extractCodexSummary(filePath),
-      sourcePath: filePath
+      summary: summaryState.summary,
+      sourcePath: filePath,
+      sourceMtimeMs: statTimestamp
     })
   }
 
@@ -353,7 +703,10 @@ function loadCodexSessions(homeDir) {
     sessions: [...sessionMap.values()].sort((a, b) => toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt))
   }
 
-  return codexSessionsCache.sessions
+  return {
+    sessions: codexSessionsCache.sessions,
+    hasPendingSummaryRefresh
+  }
 }
 
 function loadClaudeHistory(homeDir) {
@@ -392,13 +745,24 @@ function encodeClaudeProjectPath(projectPath = '') {
 
 function loadClaudeSessions(homeDir, projectPath) {
   const projectsRoot = path.join(homeDir, '.claude', 'projects')
-  if (!fs.existsSync(projectsRoot)) return []
+  if (!fs.existsSync(projectsRoot)) {
+    return {
+      sessions: [],
+      hasPendingSummaryRefresh: false
+    }
+  }
 
   const encodedProjectPath = encodeClaudeProjectPath(projectPath)
-  if (!encodedProjectPath) return []
+  if (!encodedProjectPath) {
+    return {
+      sessions: [],
+      hasPendingSummaryRefresh: false
+    }
+  }
 
   const historyMap = loadClaudeHistory(homeDir)
   const sessionMap = new Map()
+  let hasPendingSummaryRefresh = false
   const projectEntries = fs.readdirSync(projectsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .filter((entry) => entry.name === encodedProjectPath || entry.name.startsWith(`${encodedProjectPath}-`))
@@ -423,6 +787,14 @@ function loadClaudeSessions(homeDir, projectPath) {
       const history = historyMap.get(sessionId)
       const cwd = normalizeProjectPath(record?.cwd || history?.project || projectPath)
       if (!isPathInsideProject(cwd, projectPath)) continue
+      const summaryState = resolveSessionSummary({
+        provider: 'claude',
+        sessionId,
+        sourcePath: filePath,
+        sourceMtimeMs: statTimestamp,
+        extractSummary: extractClaudeSummary
+      })
+      hasPendingSummaryRefresh = hasPendingSummaryRefresh || summaryState.pendingRefresh
 
       mergeSessionEntry(sessionMap, {
         provider: 'claude',
@@ -430,19 +802,26 @@ function loadClaudeSessions(homeDir, projectPath) {
         title: history?.title || path.basename(cwd) || sessionId,
         cwd,
         updatedAt: normalizeIsoString(history?.timestamp || record?.timestamp, statTimestamp),
-        summary: extractClaudeSummary(filePath),
-        sourcePath: filePath
+        summary: summaryState.summary,
+        sourcePath: filePath,
+        sourceMtimeMs: statTimestamp
       })
     }
   }
 
-  return [...sessionMap.values()].sort((a, b) => toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt))
+  return {
+    sessions: [...sessionMap.values()].sort((a, b) => toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt)),
+    hasPendingSummaryRefresh
+  }
 }
 
 function registerAiSessionHandlers({
   ipcMain,
-  safeError
+  safeError,
+  summaryCacheFilePath = ''
 }) {
+  configureSummaryCache(summaryCacheFilePath)
+
   ipcMain.handle('get-project-ai-sessions', async (event, { projectPath } = {}) => {
     try {
       const normalizedProjectPath = normalizeProjectPath(projectPath)
@@ -451,6 +830,7 @@ function registerAiSessionHandlers({
           success: true,
           data: {
             projectPath: '',
+            hasPendingSummaryRefresh: false,
             sessions: {
               claude: [],
               codex: []
@@ -460,15 +840,22 @@ function registerAiSessionHandlers({
       }
 
       const homeDir = os.homedir()
-      const codexSessions = loadCodexSessions(homeDir)
+      const codexResult = loadCodexSessions(homeDir)
+      const codexSessions = codexResult.sessions
         .filter((session) => isPathInsideProject(session.cwd, normalizedProjectPath))
         .slice(0, 100)
-      const claudeSessions = loadClaudeSessions(homeDir, normalizedProjectPath).slice(0, 100)
+      const claudeResult = loadClaudeSessions(homeDir, normalizedProjectPath)
+      const claudeSessions = claudeResult.sessions.slice(0, 100)
 
       return {
         success: true,
         data: {
           projectPath: normalizedProjectPath,
+          hasPendingSummaryRefresh:
+            hasPendingSummaryRefreshForSessions(codexSessions)
+            || hasPendingSummaryRefreshForSessions(claudeSessions)
+            || codexResult.hasPendingSummaryRefresh
+            || claudeResult.hasPendingSummaryRefresh,
           sessions: {
             claude: claudeSessions,
             codex: codexSessions
@@ -482,12 +869,15 @@ function registerAiSessionHandlers({
         error: error.message,
         data: {
           projectPath: normalizeProjectPath(projectPath),
+          hasPendingSummaryRefresh: false,
           sessions: {
             claude: [],
             codex: []
           }
         }
       }
+    } finally {
+      flushSummaryCache()
     }
   })
 
@@ -572,6 +962,12 @@ module.exports = {
   registerAiSessionHandlers,
   __testables: {
     normalizeSessionText,
+    configureSummaryCache,
+    flushSummaryCache,
+    getSessionSummaryCacheState,
+    readSessionSummaryCache,
+    writeSessionSummaryCache,
+    deleteSessionSummaryCache,
     deleteAiSessionSource,
     extractCodexMessageText,
     extractCodexSummary,

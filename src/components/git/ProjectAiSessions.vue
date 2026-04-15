@@ -157,7 +157,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 
 const props = defineProps({
   projectPath: {
@@ -183,6 +183,23 @@ const sessions = ref({
   claude: [],
   codex: []
 })
+let silentReloadTimer = null
+let silentReloadAttempts = 0
+
+const clearSilentReload = () => {
+  if (silentReloadTimer == null || typeof window === 'undefined') return
+  window.clearTimeout(silentReloadTimer)
+  silentReloadTimer = null
+}
+
+const scheduleSilentReload = (delay = 450) => {
+  if (typeof window === 'undefined') return
+  clearSilentReload()
+  silentReloadTimer = window.setTimeout(() => {
+    silentReloadTimer = null
+    loadSessions({ silent: true })
+  }, delay)
+}
 
 const normalizePath = (input) => {
   if (!input || typeof input !== 'string') return ''
@@ -290,21 +307,29 @@ const syncSelectedSession = () => {
   selectedSessionId.value = selectedProviderSessions.value[0]?.sessionId || ''
 }
 
-const loadSessions = async () => {
+const loadSessions = async ({ silent = false } = {}) => {
   if (!props.projectPath || !window.electronAPI?.getProjectAiSessions) {
     sessions.value = { claude: [], codex: [] }
+    clearSilentReload()
+    silentReloadAttempts = 0
     return
   }
 
-  loading.value = true
-  errorMessage.value = ''
+  if (!silent) {
+    loading.value = true
+    errorMessage.value = ''
+  }
 
   try {
     const result = await window.electronAPI.getProjectAiSessions({ projectPath: props.projectPath })
     if (!result?.success) {
-      errorMessage.value = result?.error || '读取会话失败'
-      sessions.value = { claude: [], codex: [] }
-      selectedSessionId.value = ''
+      if (!silent) {
+        errorMessage.value = result?.error || '读取会话失败'
+        sessions.value = { claude: [], codex: [] }
+        selectedSessionId.value = ''
+      }
+      clearSilentReload()
+      silentReloadAttempts = 0
       return
     }
 
@@ -314,12 +339,27 @@ const loadSessions = async () => {
     }
     syncSelectedProvider()
     syncSelectedSession()
+    errorMessage.value = ''
+
+    if (result.data?.hasPendingSummaryRefresh) {
+      silentReloadAttempts += 1
+      scheduleSilentReload(Math.min(350 + (silentReloadAttempts * 150), 1500))
+    } else {
+      clearSilentReload()
+      silentReloadAttempts = 0
+    }
   } catch (error) {
-    errorMessage.value = error?.message || '读取会话失败'
-    sessions.value = { claude: [], codex: [] }
-    selectedSessionId.value = ''
+    if (!silent) {
+      errorMessage.value = error?.message || '读取会话失败'
+      sessions.value = { claude: [], codex: [] }
+      selectedSessionId.value = ''
+    }
+    clearSilentReload()
+    silentReloadAttempts = 0
   } finally {
-    loading.value = false
+    if (!silent) {
+      loading.value = false
+    }
   }
 }
 
@@ -442,9 +482,15 @@ const loadSessionDetail = async (session) => {
 }
 
 watch(() => props.projectPath, () => {
+  clearSilentReload()
+  silentReloadAttempts = 0
   closeSummaryDialog()
   loadSessions()
 }, { immediate: true })
+
+onUnmounted(() => {
+  clearSilentReload()
+})
 </script>
 
 <style scoped>

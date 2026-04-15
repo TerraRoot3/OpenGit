@@ -12,6 +12,12 @@ if (!__testables) {
 }
 
 const {
+  configureSummaryCache,
+  flushSummaryCache,
+  getSessionSummaryCacheState,
+  readSessionSummaryCache,
+  writeSessionSummaryCache,
+  deleteSessionSummaryCache,
   deleteAiSessionSource,
   normalizeSessionText,
   extractCodexSummary,
@@ -78,6 +84,97 @@ try {
     extractClaudeSummary(claudeFile),
     '检查一下项目里的代理配置为什么没有生效',
     'claude summary should support plain string content'
+  )
+
+  const summaryCacheFile = path.join(tempDir, 'ai-session-summary-cache.json')
+  configureSummaryCache(summaryCacheFile)
+
+  const cacheSourceFile = path.join(tempDir, 'cached-session.jsonl')
+  fs.writeFileSync(cacheSourceFile, 'cached')
+  const cacheSourceMtimeMs = fs.statSync(cacheSourceFile).mtimeMs
+
+  assert.deepEqual(
+    readSessionSummaryCache({
+      provider: 'codex',
+      sessionId: 'session-1',
+      sourcePath: cacheSourceFile,
+      sourceMtimeMs: cacheSourceMtimeMs
+    }),
+    { hit: false, summary: '' },
+    'summary cache should miss before any entry is written'
+  )
+
+  writeSessionSummaryCache({
+    provider: 'codex',
+    sessionId: 'session-1',
+    sourcePath: cacheSourceFile,
+    sourceMtimeMs: cacheSourceMtimeMs,
+    summary: '缓存首条消息'
+  })
+  flushSummaryCache()
+
+  configureSummaryCache(path.join(tempDir, 'other-cache.json'))
+  configureSummaryCache(summaryCacheFile)
+
+  assert.deepEqual(
+    readSessionSummaryCache({
+      provider: 'codex',
+      sessionId: 'session-1',
+      sourcePath: cacheSourceFile,
+      sourceMtimeMs: cacheSourceMtimeMs
+    }),
+    { hit: true, summary: '缓存首条消息' },
+    'summary cache should persist entries by provider and session id'
+  )
+
+  const nextMtime = new Date(cacheSourceMtimeMs + 2000)
+  fs.utimesSync(cacheSourceFile, nextMtime, nextMtime)
+  const updatedMtimeMs = fs.statSync(cacheSourceFile).mtimeMs
+
+  assert.deepEqual(
+    readSessionSummaryCache({
+      provider: 'codex',
+      sessionId: 'session-1',
+      sourcePath: cacheSourceFile,
+      sourceMtimeMs: updatedMtimeMs
+    }),
+    { hit: false, summary: '' },
+    'summary cache should invalidate when the source file changes'
+  )
+
+  assert.deepEqual(
+    getSessionSummaryCacheState({
+      provider: 'codex',
+      sessionId: 'session-1',
+      sourcePath: cacheSourceFile,
+      sourceMtimeMs: updatedMtimeMs
+    }),
+    { status: 'stale', summary: '缓存首条消息' },
+    'stale summary cache state should preserve the previous summary for async refresh'
+  )
+
+  writeSessionSummaryCache({
+    provider: 'codex',
+    sessionId: 'session-1',
+    sourcePath: cacheSourceFile,
+    sourceMtimeMs: updatedMtimeMs,
+    summary: '新的缓存摘要'
+  })
+  deleteSessionSummaryCache({
+    provider: 'codex',
+    sessionId: 'session-1',
+    sourcePath: cacheSourceFile
+  })
+
+  assert.deepEqual(
+    readSessionSummaryCache({
+      provider: 'codex',
+      sessionId: 'session-1',
+      sourcePath: cacheSourceFile,
+      sourceMtimeMs: updatedMtimeMs
+    }),
+    { hit: false, summary: '' },
+    'summary cache delete should remove matching entries'
   )
 
   assert.deepEqual(

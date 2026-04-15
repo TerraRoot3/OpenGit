@@ -1934,7 +1934,8 @@ registerFilesystemHandlers({
 
 registerAiSessionHandlers({
   ipcMain,
-  safeError
+  safeError,
+  summaryCacheFilePath: path.join(app.getPath('userData'), 'cache', 'ai-session-summary-cache.json')
 })
 
 
