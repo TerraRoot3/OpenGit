@@ -214,7 +214,8 @@
             />
 
             <ProjectAiSessions
-              v-if="currentView === 'ai-sessions'"
+              v-if="aiSessionsMounted"
+              v-show="currentView === 'ai-sessions'"
               :project-path="path"
               @resume-session="handleResumeAiSession"
             />
@@ -596,6 +597,7 @@ const restoreExpandState = (path) => {
 
 const currentView = ref('terminal')
 const terminalMounted = ref(false)
+const aiSessionsMounted = ref(false)
 const showLocalBranches = ref(true)
 const showRemoteBranches = ref(false)
 const showTags = ref(false)
@@ -605,6 +607,37 @@ const tagsRefreshSuccess = ref(false)
 const commitHistoryRefreshToken = ref(0)
 const refreshing = ref(false)
 const refreshSuccess = ref(false)
+let aiSessionsPreloadHandle = null
+
+const clearAiSessionsPreload = () => {
+  if (aiSessionsPreloadHandle == null || typeof window === 'undefined') return
+
+  if (typeof aiSessionsPreloadHandle === 'number') {
+    window.clearTimeout(aiSessionsPreloadHandle)
+  } else if (typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(aiSessionsPreloadHandle)
+  }
+
+  aiSessionsPreloadHandle = null
+}
+
+const scheduleAiSessionsPreload = () => {
+  if (aiSessionsMounted.value || typeof window === 'undefined') return
+
+  clearAiSessionsPreload()
+
+  const mountAiSessions = () => {
+    aiSessionsPreloadHandle = null
+    aiSessionsMounted.value = true
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    aiSessionsPreloadHandle = window.requestIdleCallback(mountAiSessions, { timeout: 600 })
+    return
+  }
+
+  aiSessionsPreloadHandle = window.setTimeout(mountAiSessions, 0)
+}
 
 // ==================== 操作对话框 ====================
 const showOperationDialog = ref(false)
@@ -2008,11 +2041,15 @@ const cancelOperation = () => {
 
 // ==================== 生命周期 ====================
 watch(() => props.path, (newPath, oldPath) => {
+  clearAiSessionsPreload()
   if (newPath) {
     // 恢复该项目保存的视图状态和展开状态
     currentView.value = getSavedCurrentView(newPath)
     if (currentView.value === 'terminal') {
       terminalMounted.value = true
+    }
+    if (currentView.value === 'ai-sessions') {
+      aiSessionsMounted.value = true
     }
     restoreExpandState(newPath)
     
@@ -2060,6 +2097,8 @@ watch(() => props.path, (newPath, oldPath) => {
     clearProjectBranchStatusCache(newPath).finally(() => {
       loadProjectInfo()
     })
+
+    scheduleAiSessionsPreload()
   } else {
     projectInfo.value = null
     // 切换项目时重置状态
@@ -2074,6 +2113,7 @@ watch(() => props.path, (newPath, oldPath) => {
     refreshing.value = false
     refreshSuccess.value = false
     statusLoading.value = false
+    aiSessionsMounted.value = false
   }
 }, { immediate: true })
 
@@ -2083,6 +2123,9 @@ watch(currentView, (view) => {
     nextTick(() => {
       terminalRef.value?.ensureDefaultTerminal?.(terminalProjectPath.value)
     })
+  }
+  if (view === 'ai-sessions') {
+    aiSessionsMounted.value = true
   }
 }, { immediate: true })
 
@@ -2147,6 +2190,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  clearAiSessionsPreload()
   window.removeEventListener('focus', handleWindowFocus)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (window.electronAPI?.removeWindowFocusListener) {
