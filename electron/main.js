@@ -2048,6 +2048,9 @@ app.whenReady().then(async () => {
   webTabManager = new WebTabManager({
     safeLog,
     safeError,
+    lifecycleOptions: {
+      discardDelayMs: Number.POSITIVE_INFINITY
+    },
     webTabPreloadPath: path.join(__dirname, 'web-tab-preload.js')
   })
   sitePermissionManager = createSitePermissionManager({ store })
