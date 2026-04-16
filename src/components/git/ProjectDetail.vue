@@ -304,8 +304,8 @@
       <div class="dialog-content" @click.stop>
         <div class="dialog-header-simple"><h3>删除分支</h3></div>
         <div class="dialog-body">
-          <p>确定要删除分支 <strong>{{ branchToDelete }}</strong> 吗？</p>
-          <div class="form-group">
+          <p>{{ deleteBranchMessage }}</p>
+          <div v-if="showDeleteRemoteOption" class="form-group">
             <label><input type="checkbox" v-model="deleteRemoteBranch" /> 同时删除远程分支</label>
           </div>
         </div>
@@ -428,6 +428,9 @@
       <div v-if="branchContextMenuType === 'local'" :class="['context-menu-item', { disabled: branchContextMenuBranch === currentBranch }]" @click="deleteBranchAction">
         删除分支 {{ branchContextMenuBranch }}
       </div>
+      <div v-if="branchContextMenuType === 'remote'" class="context-menu-item" @click="deleteRemoteBranchAction">
+        删除远程分支 {{ branchContextMenuBranch }}
+      </div>
       <div v-if="branchContextMenuType === 'remote'" class="context-menu-item" @click="createMergeRequestFromBranch">
         Merge {{ branchContextMenuBranch }} 到目标分支
       </div>
@@ -455,6 +458,10 @@ import {
   buildProjectRefreshPlan,
   deriveBranchStatusState
 } from './projectDetailRefresh.mjs'
+import {
+  buildBranchDeleteCommands,
+  buildBranchDeleteDialogPlan
+} from './projectDetailBranchDelete.mjs'
 import {
   deriveProjectGitMonitorRefreshRequest,
   shouldRunProjectGitMonitor
@@ -674,7 +681,11 @@ const newBranchName = ref('')
 // ==================== 删除分支对话框 ====================
 const showDeleteBranchDialog = ref(false)
 const branchToDelete = ref('')
+const deleteLocalBranch = ref(true)
 const deleteRemoteBranch = ref(false)
+const deleteBranchMessage = ref('')
+const deleteBranchOperationText = ref('')
+const showDeleteRemoteOption = ref(true)
 
 // ==================== 合并分支对话框 ====================
 const showMergeBranchDialog = ref(false)
@@ -1765,12 +1776,31 @@ const copyBranchName = async () => {
   }
 }
 
-const deleteBranchAction = () => {
-  if (branchContextMenuBranch.value === currentBranch.value) return
+const openDeleteBranchDialog = (contextType = 'local') => {
+  const deletePlan = buildBranchDeleteDialogPlan({
+    branch: branchContextMenuBranch.value,
+    contextType,
+    currentBranch: currentBranch.value
+  })
+
   showBranchContextMenuModal.value = false
-  branchToDelete.value = branchContextMenuBranch.value
-  deleteRemoteBranch.value = false
+  if (!deletePlan) return
+
+  branchToDelete.value = deletePlan.branch
+  deleteLocalBranch.value = deletePlan.deleteLocal
+  deleteRemoteBranch.value = deletePlan.deleteRemote
+  deleteBranchMessage.value = deletePlan.message
+  deleteBranchOperationText.value = deletePlan.operationText
+  showDeleteRemoteOption.value = deletePlan.showRemoteToggle
   showDeleteBranchDialog.value = true
+}
+
+const deleteBranchAction = () => {
+  openDeleteBranchDialog('local')
+}
+
+const deleteRemoteBranchAction = () => {
+  openDeleteBranchDialog('remote')
 }
 
 const createMergeRequestFromBranch = () => {
@@ -1786,28 +1816,40 @@ const createMergeRequestFromBranch = () => {
 const closeDeleteBranchDialog = () => {
   showDeleteBranchDialog.value = false
   branchToDelete.value = ''
+  deleteLocalBranch.value = true
   deleteRemoteBranch.value = false
+  deleteBranchMessage.value = ''
+  deleteBranchOperationText.value = ''
+  showDeleteRemoteOption.value = true
 }
 
 const confirmDeleteBranch = async () => {
   if (!props.path || !branchToDelete.value) return
   
   const branch = branchToDelete.value
+  const deleteLocal = deleteLocalBranch.value
   const deleteRemote = deleteRemoteBranch.value
+  const commands = buildBranchDeleteCommands({
+    projectPath: props.path,
+    branch,
+    deleteLocal,
+    deleteRemote
+  })
+
+  if (commands.length === 0) {
+    closeDeleteBranchDialog()
+    return
+  }
   
   showDeleteBranchDialog.value = false
-  openOperationDialog('删除分支', `正在删除分支 "${branch}"${deleteRemote ? ' (包括远程分支)' : ''}...\n`)
+  openOperationDialog('删除分支', deleteBranchOperationText.value || `正在删除分支 "${branch}"...\n`)
   
   try {
-    // 删除本地分支
-    let command = `cd "${props.path}" && git branch -D "${branch}"`
-    await executeCommandWithProgress(command, appendProgressOutput)
-    
-    // 删除远程分支
-    if (deleteRemote) {
-      operationOutput.value += '\n正在删除远程分支...\n'
-      const remoteCommand = `cd "${props.path}" && git push origin --delete "${branch}"`
-      await executeCommandWithProgress(remoteCommand, appendProgressOutput)
+    for (let index = 0; index < commands.length; index += 1) {
+      if (index > 0) {
+        operationOutput.value += '\n正在删除远程分支...\n'
+      }
+      await executeCommandWithProgress(commands[index], appendProgressOutput)
     }
     
     finishOperation({ hideDialog: true })

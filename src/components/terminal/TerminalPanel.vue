@@ -114,6 +114,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useTerminalRouter } from '../../composables/useTerminalRouter'
 import { buildDropPayload } from './terminalInteractions.mjs'
+import { XTERM_OPTS } from './terminalXtermOptions.mjs'
 import { isBufferViewportAtBottom } from './terminalViewportState.mjs'
 import { scheduleViewportRevealSync, cancelViewportRevealSync } from './terminalViewportSync.mjs'
 import TerminalSplitNode from './TerminalSplitNode.vue'
@@ -437,27 +438,6 @@ const pathDisplay = computed(() => {
   const parts = p.split('/')
   return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : p
 })
-
-const XTERM_OPTS = {
-  cursorBlink: true,
-  cursorStyle: 'block',
-  fontSize: 13,
-  fontFamily: "'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace",
-  theme: {
-    background: '#1e1e1e',
-    foreground: '#d4d4d4',
-    cursor: '#d4d4d4',
-    cursorAccent: '#1e1e1e',
-    selectionBackground: 'rgba(255, 255, 255, 0.3)',
-    black: '#000000', red: '#cd3131', green: '#0dbc79', yellow: '#e5e510',
-    blue: '#2472c8', magenta: '#bc3fbc', cyan: '#11a8cd', white: '#e5e5e5',
-    brightBlack: '#666666', brightRed: '#f14c4c', brightGreen: '#23d18b',
-    brightYellow: '#f5f543', brightBlue: '#3b8eea', brightMagenta: '#d670d6',
-    brightCyan: '#29b8db', brightWhite: '#ffffff'
-  },
-  allowProposedApi: true,
-  scrollback: 10000
-}
 
 const SEARCH_OPTIONS = {
   decorations: {
