@@ -114,6 +114,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useTerminalRouter } from '../../composables/useTerminalRouter'
 import { buildDropPayload } from './terminalInteractions.mjs'
+import { isBufferViewportAtBottom } from './terminalViewportState.mjs'
 import TerminalSplitNode from './TerminalSplitNode.vue'
 import '@xterm/xterm/css/xterm.css'
 
@@ -712,6 +713,13 @@ const mountTermToPane = (term, paneEl) => {
   term.el.style.display = ''
 }
 
+const rememberVisibleTerminalViewportState = () => {
+  for (const term of terminals.value) {
+    if (term.el.style.display === 'none') continue
+    term.restoreViewportToBottom = isBufferViewportAtBottom(term.xterm?.buffer)
+  }
+}
+
 const handlePaneElementChange = ({ nodeId, el }) => {
   if (!nodeId) return
   if (el) {
@@ -730,6 +738,7 @@ const refreshActiveTabTerminals = (focusActive = false) => {
 }
 
 const applyLayout = (focusActive = true) => {
+  rememberVisibleTerminalViewportState()
   nextTick(() => {
     for (const t of terminals.value) {
       t.el.style.display = 'none'
@@ -854,6 +863,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     connected: false,
     ptyId: null,
     hasUserInput: restoredHasUserInput,
+    restoreViewportToBottom: true,
     _dropHandlers: null
   }
 
@@ -958,6 +968,19 @@ const refreshVisibleTerminal = (term, focus = true) => {
           window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
         }
       } catch (error) {}
+      if (term.restoreViewportToBottom) {
+        requestAnimationFrame(() => {
+          try {
+            term.xterm.scrollToBottom()
+          } catch (error) {}
+          try {
+            if (typeof term.xterm.rows === 'number' && term.xterm.rows > 0) {
+              term.xterm.refresh(0, term.xterm.rows - 1)
+            }
+          } catch (error) {}
+        })
+      }
+      term.restoreViewportToBottom = false
       if (focus) {
         try { term.xterm.focus() } catch (error) {}
       }
