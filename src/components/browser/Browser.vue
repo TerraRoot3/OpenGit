@@ -63,6 +63,7 @@
             <History v-else-if="tab.routeType === 'browsing-history'" :size="14" />
             <HardDrive v-else-if="tab.routeType === 'backup-manager'" :size="14" />
             <Puzzle v-else-if="tab.routeType === 'extension-manager'" :size="14" />
+            <Terminal v-else-if="tab.routeType === 'standalone-terminal'" :size="14" />
             <Globe v-else :size="14" />
           </div>
           <span class="browser-tab-title">{{ tab.isLoading && !tab.title ? '加载中...' : (tab.title || '新标签页') }}</span>
@@ -229,6 +230,10 @@
                 <Download :size="16" />
                 <span>下载管理</span>
               </div>
+              <div class="menu-item" @click="openStandaloneTerminal">
+                <Terminal :size="16" />
+                <span>终端</span>
+              </div>
               <div class="menu-item" @click="createNewPrivateBrowserTab">
                 <Globe :size="16" />
                 <span>新建隐私标签页</span>
@@ -394,6 +399,7 @@ import {
   HardDrive,
   Download,
   Puzzle,
+  Terminal,
   GitBranch,
   FolderGit2
 } from 'lucide-vue-next'
@@ -1235,6 +1241,9 @@ const handleNativeMenuAction = (action) => {
     case 'download-panel':
       openDownloadPanel()
       break
+    case 'standalone-terminal':
+      openStandaloneTerminal()
+      break
     case 'backup-manager':
       openBackupManager()
       break
@@ -1383,6 +1392,16 @@ const openBackupManager = () => {
     currentUrl.value = 'about:backup'
     urlInput.value = 'about:backup'
   }
+}
+
+const openStandaloneTerminal = () => {
+  console.log('> 打开独立终端')
+  showMenu.value = false
+  const tab = createBrowserTab('about:terminal', '终端')
+  tab.type = 'standalone-terminal'
+  switchBrowserTab(tab.id)
+  currentUrl.value = 'about:terminal'
+  urlInput.value = 'about:terminal'
 }
 
 const openExtensionManager = () => {

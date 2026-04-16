@@ -37,6 +37,7 @@ declare module 'vue' {
     StandaloneTerminal: typeof import('./src/components/terminal/StandaloneTerminal.vue')['default']
     TabManager: typeof import('./src/components/browser/TabManager.vue')['default']
     TerminalPanel: typeof import('./src/components/terminal/TerminalPanel.vue')['default']
+    TerminalSplitNode: typeof import('./src/components/terminal/TerminalSplitNode.vue')['default']
     WebView: typeof import('./src/components/webview/WebView.vue')['default']
   }
 }

@@ -63,8 +63,11 @@
           </button>
         </div>
         <span v-else class="terminal-path" :title="currentCwd">{{ pathDisplay }}</span>
-        <button class="terminal-btn" @mousedown.prevent @click="toggleSplitTerminal" :title="isSplitMode ? '退出分屏' : '分屏终端'">
-          <span class="split-btn-icon">▦</span>
+        <button class="terminal-btn" @mousedown.prevent @click="splitActiveTerminal('row')" title="水平分屏">
+          <span class="split-btn-icon">▥</span>
+        </button>
+        <button class="terminal-btn" @mousedown.prevent @click="splitActiveTerminal('column')" title="垂直分屏">
+          <span class="split-btn-icon">▤</span>
         </button>
         <button class="terminal-btn" @mousedown.prevent @click="clearTerminal" title="清屏">
           <Eraser :size="14" />
@@ -82,42 +85,17 @@
       @dragleave="handleTerminalDragLeave"
       @drop.prevent="handleTerminalDrop"
     >
-      <div v-if="isSplitMode && activeTabTermIds.length === 2" class="terminal-split">
-        <div class="terminal-pane" :class="{ inactive: isPaneInactive(activeTabTermIds[0]) }">
-          <button class="pane-close-btn" title="关闭左侧分屏" @mousedown.prevent.stop @click.stop="closeSplitPane(activeTabTermIds[0])">
-            <X :size="11" />
-          </button>
-          <div
-            class="terminal-pane-content"
-            ref="leftPaneRef"
-            @mousedown="focusSplitPane(activeTabTermIds[0])"
-            @dragover.prevent="handleTerminalDragOver"
-            @dragleave="handleTerminalDragLeave"
-            @drop.prevent="handleTerminalDrop($event, activeTabTermIds[0])"
-          ></div>
-        </div>
-        <div class="terminal-pane" :class="{ inactive: isPaneInactive(activeTabTermIds[1]) }">
-          <button class="pane-close-btn" title="关闭右侧分屏" @mousedown.prevent.stop @click.stop="closeSplitPane(activeTabTermIds[1])">
-            <X :size="11" />
-          </button>
-          <div
-            class="terminal-pane-content"
-            ref="rightPaneRef"
-            @mousedown="focusSplitPane(activeTabTermIds[1])"
-            @dragover.prevent="handleTerminalDragOver"
-            @dragleave="handleTerminalDragLeave"
-            @drop.prevent="handleTerminalDrop($event, activeTabTermIds[1])"
-          ></div>
-        </div>
-      </div>
-      <div
-        v-else
-        class="terminal-single-pane"
-        ref="singlePaneRef"
-        @dragover.prevent="handleTerminalDragOver"
-        @dragleave="handleTerminalDragLeave"
-        @drop.prevent="handleTerminalDrop"
-      ></div>
+      <TerminalSplitNode
+        v-if="activeTab?.layout"
+        :node="activeTab.layout"
+        :active-term-id="activeTermId"
+        :closable="activeTabTermIds.length > 1"
+        @pane-element-change="handlePaneElementChange"
+        @pane-focus="focusSplitPane"
+        @pane-close="closeSplitPane"
+        @pane-drop="handleTerminalDrop"
+        @start-resize="startResizeDrag"
+      />
     </div>
   </div>
 </template>
@@ -131,6 +109,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useTerminalRouter } from '../../composables/useTerminalRouter'
 import { buildDropPayload } from './terminalInteractions.mjs'
+import TerminalSplitNode from './TerminalSplitNode.vue'
 import '@xterm/xterm/css/xterm.css'
 
 const props = defineProps({
@@ -143,14 +122,12 @@ const props = defineProps({
 
 const containerRef = ref(null)
 const terminalBodyRef = ref(null)
-const singlePaneRef = ref(null)
-const leftPaneRef = ref(null)
-const rightPaneRef = ref(null)
 const tabs = ref([])
 const activeTabId = ref(null)
 const terminals = ref([])
 const activeTermId = ref(null)
 const terminalCache = new Map()
+const paneElements = new Map()
 const showCwdMenu = ref(false)
 const cwdMenuRef = ref(null)
 const showSearchBar = ref(false)
@@ -158,6 +135,7 @@ const isDragOverTerminal = ref(false)
 const searchQuery = ref('')
 const searchHasMatch = ref(true)
 const searchInputRef = ref(null)
+const resizeDragState = ref(null)
 let ensureDefaultPromise = null
 let persistSnapshotTimer = null
 let hasRestoredInitialSnapshot = false
@@ -166,6 +144,8 @@ const TERMINAL_SNAPSHOT_PREFIX = 'terminalSnapshot_v1_'
 const TERMINAL_SNAPSHOT_MAX_LINES = 1200
 const TERMINAL_RESTORE_NOTICE = '\r\n\x1b[33m已恢复上次终端内容，新的终端会话已创建。\x1b[0m\r\n'
 const TERMINAL_RESTORE_EXITED_NOTICE = '\r\n\x1b[33m已恢复上次终端内容，原终端会话已结束。\x1b[0m\r\n'
+const SPLIT_RATIO_MIN = 0.15
+const SPLIT_RATIO_MAX = 0.85
 const handleDocumentClick = (event) => {
   if (cwdMenuRef.value && !cwdMenuRef.value.contains(event.target)) {
     showCwdMenu.value = false
@@ -209,20 +189,146 @@ watch(
 
 const findTabById = (id) => tabs.value.find(t => t.tabId === id)
 const findTerminalById = (id) => terminals.value.find(t => t.termId === id)
+let layoutNodeSeed = 0
+
+const clampSplitRatio = (ratio) => {
+  if (!Number.isFinite(ratio)) return 0.5
+  return Math.min(SPLIT_RATIO_MAX, Math.max(SPLIT_RATIO_MIN, ratio))
+}
+
+const nextLayoutNodeId = () => {
+  layoutNodeSeed += 1
+  return `layout-${Date.now()}-${layoutNodeSeed}`
+}
+
+const createLeafNode = (termId = '') => ({
+  nodeId: nextLayoutNodeId(),
+  type: 'leaf',
+  termId
+})
+
+const createSplitNode = (direction = 'row', left = null, right = null, ratio = 0.5) => ({
+  nodeId: nextLayoutNodeId(),
+  type: 'split',
+  direction: direction === 'column' ? 'column' : 'row',
+  ratio: clampSplitRatio(ratio),
+  children: [left, right].filter(Boolean)
+})
+
+const cloneLayoutNode = (node) => {
+  if (!node || typeof node !== 'object') return null
+  if (node.type === 'leaf') {
+    return {
+      nodeId: node.nodeId || nextLayoutNodeId(),
+      type: 'leaf',
+      termId: node.termId || ''
+    }
+  }
+  const children = Array.isArray(node.children) ? node.children.map(child => cloneLayoutNode(child)).filter(Boolean) : []
+  return {
+    nodeId: node.nodeId || nextLayoutNodeId(),
+    type: 'split',
+    direction: node.direction === 'column' ? 'column' : 'row',
+    ratio: clampSplitRatio(Number(node.ratio)),
+    children
+  }
+}
+
+const collectLayoutTermIds = (node, output = []) => {
+  if (!node) return output
+  if (node.type === 'leaf') {
+    if (node.termId) output.push(node.termId)
+    return output
+  }
+  for (const child of node.children || []) {
+    collectLayoutTermIds(child, output)
+  }
+  return output
+}
+
+const buildLayoutFromTermIds = (termIds = [], split = false) => {
+  const ids = [...new Set((Array.isArray(termIds) ? termIds : []).filter(Boolean))]
+  if (!ids.length) return null
+  if (ids.length === 1) return createLeafNode(ids[0])
+  let layout = createSplitNode(
+    split ? 'row' : 'row',
+    createLeafNode(ids[0]),
+    createLeafNode(ids[1]),
+    0.5
+  )
+  for (let index = 2; index < ids.length; index += 1) {
+    layout = createSplitNode('row', layout, createLeafNode(ids[index]), 0.65)
+  }
+  return layout
+}
+
+const ensureTabLayout = (tab) => {
+  if (!tab) return null
+  if (tab.layout) {
+    tab.layout = cloneLayoutNode(tab.layout)
+  } else {
+    tab.layout = buildLayoutFromTermIds(tab.termIds, tab.split)
+  }
+  if (!Array.isArray(tab.termIds) || tab.termIds.length !== collectLayoutTermIds(tab.layout).length) {
+    tab.termIds = collectLayoutTermIds(tab.layout)
+  }
+  return tab.layout
+}
+
+const syncTabTermIds = (tab) => {
+  if (!tab) return []
+  tab.termIds = collectLayoutTermIds(tab.layout)
+  return tab.termIds
+}
+
+const replaceLeafWithSplit = (node, targetTermId, direction, newTermId) => {
+  if (!node) return null
+  if (node.type === 'leaf') {
+    if (node.termId !== targetTermId) return node
+    return createSplitNode(
+      direction,
+      createLeafNode(node.termId),
+      createLeafNode(newTermId),
+      0.5
+    )
+  }
+  node.children = (node.children || []).map(child => replaceLeafWithSplit(child, targetTermId, direction, newTermId)).filter(Boolean)
+  return node
+}
+
+const removeLeafFromLayout = (node, targetTermId) => {
+  if (!node) return null
+  if (node.type === 'leaf') {
+    return node.termId === targetTermId ? null : node
+  }
+
+  const children = (node.children || []).map(child => removeLeafFromLayout(child, targetTermId)).filter(Boolean)
+  if (children.length === 0) return null
+  if (children.length === 1) return children[0]
+  node.children = children
+  node.ratio = clampSplitRatio(Number(node.ratio))
+  return node
+}
+
+const findLayoutNodeById = (node, nodeId) => {
+  if (!node || !nodeId) return null
+  if (node.nodeId === nodeId) return node
+  if (node.type !== 'split') return null
+  for (const child of node.children || []) {
+    const found = findLayoutNodeById(child, nodeId)
+    if (found) return found
+  }
+  return null
+}
+
 const activeTab = computed(() => findTabById(activeTabId.value))
 const activeTabTermIds = computed(() => activeTab.value?.termIds || [])
-const isSplitMode = computed(() => !!(activeTab.value && activeTab.value.split && activeTabTermIds.value.length === 2))
 const currentTerminal = computed(() => {
   const current = findTerminalById(activeTermId.value)
   if (current) return current
   const firstId = activeTabTermIds.value[0]
   return firstId ? findTerminalById(firstId) : null
 })
-
-const isPaneInactive = (termId) => {
-  if (!termId || !isSplitMode.value) return false
-  return activeTermId.value !== termId
-}
 
 const currentCwd = computed(() => {
   const cwd = currentTerminal.value?.cwd || props.defaultCwd || ''
@@ -408,16 +514,11 @@ const handleTerminalDrop = (event, targetTermId = null) => {
 const resolveDropTargetTermId = (event) => {
   const tabTermIds = activeTabTermIds.value
   if (!tabTermIds.length) return null
-  if (!isSplitMode.value || tabTermIds.length < 2) {
-    return activeTermId.value || tabTermIds[0] || null
-  }
 
   const targetNode = document.elementFromPoint(event.clientX, event.clientY)
-  if (rightPaneRef.value && targetNode && rightPaneRef.value.contains(targetNode)) {
-    return tabTermIds[1]
-  }
-  if (leftPaneRef.value && targetNode && leftPaneRef.value.contains(targetNode)) {
-    return tabTermIds[0]
+  const targetPane = targetNode?.closest?.('[data-term-id]')
+  if (targetPane?.dataset?.termId) {
+    return targetPane.dataset.termId
   }
   return activeTermId.value || tabTermIds[0] || null
 }
@@ -521,32 +622,88 @@ const mountTermToPane = (term, paneEl) => {
   term.el.style.display = ''
 }
 
+const handlePaneElementChange = ({ termId, el }) => {
+  if (!termId) return
+  if (el) {
+    paneElements.set(termId, el)
+    return
+  }
+  paneElements.delete(termId)
+}
+
+const refreshActiveTabTerminals = (focusActive = false) => {
+  for (const termId of activeTabTermIds.value) {
+    const term = findTerminalById(termId)
+    if (!term) continue
+    refreshVisibleTerminal(term, focusActive && term.termId === activeTermId.value)
+  }
+}
+
 const applyLayout = (focusActive = true) => {
   nextTick(() => {
     for (const t of terminals.value) {
       t.el.style.display = 'none'
     }
 
-    if (isSplitMode.value && activeTabTermIds.value.length === 2 && leftPaneRef.value && rightPaneRef.value) {
-      const left = findTerminalById(activeTabTermIds.value[0])
-      const right = findTerminalById(activeTabTermIds.value[1])
-      if (left && right) {
-        mountTermToPane(left, leftPaneRef.value)
-        mountTermToPane(right, rightPaneRef.value)
-        refreshVisibleTerminal(left, focusActive && activeTermId.value === left.termId)
-        refreshVisibleTerminal(right, focusActive && activeTermId.value === right.termId)
-        return
-      }
-      if (activeTab.value) {
-        activeTab.value.split = false
-      }
+    for (const termId of activeTabTermIds.value) {
+      const term = findTerminalById(termId)
+      const paneEl = paneElements.get(termId)
+      if (!term || !paneEl) continue
+      mountTermToPane(term, paneEl)
     }
 
-    const term = currentTerminal.value || terminals.value[0]
-    if (!term || !singlePaneRef.value) return
-    mountTermToPane(term, singlePaneRef.value)
-    refreshVisibleTerminal(term, focusActive)
+    refreshActiveTabTerminals(focusActive)
   })
+}
+
+const stopResizeDrag = () => {
+  if (!resizeDragState.value) return
+  resizeDragState.value = null
+  window.removeEventListener('mousemove', handleResizeDrag)
+  window.removeEventListener('mouseup', stopResizeDrag)
+  schedulePersistedSnapshot()
+}
+
+const handleResizeDrag = (event) => {
+  const state = resizeDragState.value
+  if (!state) return
+  const tab = findTabById(state.tabId)
+  const node = findLayoutNodeById(tab?.layout, state.nodeId)
+  if (!tab || !node || node.type !== 'split') {
+    stopResizeDrag()
+    return
+  }
+
+  const axisSize = state.direction === 'column' ? state.rect.height : state.rect.width
+  if (!axisSize || axisSize <= 0) return
+
+  const delta = state.direction === 'column'
+    ? event.clientY - state.startClientY
+    : event.clientX - state.startClientX
+  const nextRatio = clampSplitRatio(state.startRatio + (delta / axisSize))
+  if (Math.abs((node.ratio || 0.5) - nextRatio) < 0.001) return
+
+  node.ratio = nextRatio
+  refreshActiveTabTerminals(false)
+}
+
+const startResizeDrag = ({ nodeId, direction, rect, startClientX, startClientY }) => {
+  const tab = activeTab.value
+  const node = findLayoutNodeById(tab?.layout, nodeId)
+  if (!tab || !node || node.type !== 'split') return
+
+  stopResizeDrag()
+  resizeDragState.value = {
+    tabId: tab.tabId,
+    nodeId,
+    direction: direction === 'column' ? 'column' : 'row',
+    rect,
+    startClientX,
+    startClientY,
+    startRatio: clampSplitRatio(Number(node.ratio))
+  }
+  window.addEventListener('mousemove', handleResizeDrag)
+  window.addEventListener('mouseup', stopResizeDrag)
 }
 
 const addTerminal = async (cwdOverride = null, options = {}) => {
@@ -567,10 +724,12 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
       tabId: `tab-${Date.now()}-${tabIndex}`,
       label: `终端 ${tabIndex}`,
       _tabIndex: tabIndex,
-      split: false,
+      layout: null,
       termIds: []
     }
     tabs.value.push(targetTab)
+  } else {
+    ensureTabLayout(targetTab)
   }
 
   const idx = Number.isInteger(initialTermIndex) && initialTermIndex > 0 ? initialTermIndex : nextIndex()
@@ -656,6 +815,10 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
   if (!targetTab.termIds.includes(termId)) {
     targetTab.termIds.push(termId)
   }
+  if (!targetTab.layout) {
+    targetTab.layout = createLeafNode(termId)
+    syncTabTermIds(targetTab)
+  }
   if (autoSwitch || !activeTermId.value) {
     activeTabId.value = targetTab.tabId
     activeTermId.value = termId
@@ -714,6 +877,7 @@ const refreshVisibleTerminal = (term, focus = true) => {
 const switchTab = (tabId) => {
   const tab = findTabById(tabId)
   if (!tab) return
+  ensureTabLayout(tab)
   activeTabId.value = tab.tabId
   activeTermId.value = tab.termIds.includes(activeTermId.value) ? activeTermId.value : (tab.termIds[0] || null)
   applyLayout(true)
@@ -728,38 +892,19 @@ const focusSplitPane = (termId) => {
   schedulePersistedSnapshot()
 }
 
-const toggleSplitTerminal = async () => {
+const splitActiveTerminal = async (direction = 'row') => {
   const tab = activeTab.value
   const active = currentTerminal.value || terminals.value[0]
   if (!tab || !active) return
 
-  if (tab.split && tab.termIds.length === 2) {
-    const keepId = active.termId
-    const dropId = tab.termIds.find(id => id !== keepId)
-    if (dropId) {
-      await closeTerminalById(dropId)
-    }
-    tab.termIds = [keepId]
-    tab.split = false
-    activeTermId.value = keepId
-    applyLayout(true)
-    schedulePersistedSnapshot()
-    return
-  }
-
-  if (tab.termIds.length >= 2) {
-    tab.split = true
-    applyLayout(true)
-    schedulePersistedSnapshot()
-    return
-  }
+  ensureTabLayout(tab)
 
   const baseCwd = normalizeIncomingPath(active.cwd || getProjectRootCwd() || '')
   const newTermId = await addTerminal(baseCwd || null, { autoSwitch: false, tabId: tab.tabId })
   if (!newTermId) return
 
-  tab.termIds = [active.termId, newTermId]
-  tab.split = true
+  tab.layout = replaceLeafWithSplit(tab.layout, active.termId, direction, newTermId)
+  syncTabTermIds(tab)
   activeTabId.value = tab.tabId
   activeTermId.value = newTermId
   applyLayout(true)
@@ -769,13 +914,13 @@ const toggleSplitTerminal = async () => {
 const closeSplitPane = async (termId) => {
   const tab = activeTab.value
   if (!tab || tab.termIds.length < 2 || !tab.termIds.includes(termId)) return
-  const keepId = tab.termIds.find(id => id !== termId)
+  const remainingIds = tab.termIds.filter(id => id !== termId)
+  tab.layout = removeLeafFromLayout(tab.layout, termId)
+  syncTabTermIds(tab)
   await closeTerminalById(termId)
-  if (!keepId) return
-  tab.termIds = [keepId]
-  tab.split = false
-  if (activeTermId.value === termId || !tab.termIds.includes(activeTermId.value)) {
-    activeTermId.value = keepId
+  if (!remainingIds.length) return
+  if (activeTermId.value === termId || !remainingIds.includes(activeTermId.value)) {
+    activeTermId.value = remainingIds[0]
   }
   applyLayout(true)
   schedulePersistedSnapshot()
@@ -796,7 +941,9 @@ const closeTerminalById = async (termId) => {
   const tab = findTabById(term.tabId)
   if (!tab) return
   tab.termIds = tab.termIds.filter(id => id !== termId)
-  if (tab.termIds.length < 2) tab.split = false
+  if (!tab.termIds.length) {
+    tab.layout = null
+  }
   schedulePersistedSnapshot()
 }
 
@@ -1096,6 +1243,68 @@ const serializeTerminalBuffer = (term) => {
   return lines.join('\r\n').trimEnd()
 }
 
+const serializeLayoutNode = (node) => {
+  if (!node || typeof node !== 'object') return null
+  if (node.type === 'leaf') {
+    return {
+      nodeId: node.nodeId || nextLayoutNodeId(),
+      type: 'leaf',
+      termId: node.termId || ''
+    }
+  }
+  return {
+    nodeId: node.nodeId || nextLayoutNodeId(),
+    type: 'split',
+    direction: node.direction === 'column' ? 'column' : 'row',
+    ratio: clampSplitRatio(Number(node.ratio)),
+    children: (node.children || []).map(child => serializeLayoutNode(child)).filter(Boolean)
+  }
+}
+
+const deserializeLayoutNode = (node) => {
+  if (!node || typeof node !== 'object') return null
+  if (node.type === 'leaf') {
+    return createLeafNode(node.termId || '')
+  }
+  const children = (node.children || []).map(child => deserializeLayoutNode(child)).filter(Boolean)
+  if (!children.length) return null
+  if (children.length === 1) return children[0]
+  return {
+    nodeId: node.nodeId || nextLayoutNodeId(),
+    type: 'split',
+    direction: node.direction === 'column' ? 'column' : 'row',
+    ratio: clampSplitRatio(Number(node.ratio)),
+    children
+  }
+}
+
+const normalizeSnapshotTabs = (tabSnapshots = [], terminalSnapshots = []) => {
+  const terminalsByTab = new Map()
+  for (const terminalSnapshot of terminalSnapshots) {
+    const list = terminalsByTab.get(terminalSnapshot.tabId) || []
+    list.push(terminalSnapshot)
+    terminalsByTab.set(terminalSnapshot.tabId, list)
+  }
+
+  return tabSnapshots.map((tabSnapshot) => {
+    const fallbackTermIds = Array.isArray(tabSnapshot.termIds) && tabSnapshot.termIds.length
+      ? tabSnapshot.termIds
+      : (terminalsByTab.get(tabSnapshot.tabId) || [])
+        .sort((left, right) => (left.termIndex || 1) - (right.termIndex || 1))
+        .map(item => item.termId)
+    const layout = tabSnapshot.layout
+      ? deserializeLayoutNode(tabSnapshot.layout)
+      : buildLayoutFromTermIds(fallbackTermIds, !!tabSnapshot.split)
+    return {
+      tabId: tabSnapshot.tabId,
+      label: tabSnapshot.label || `终端 ${tabSnapshot.tabIndex || 1}`,
+      _tabIndex: tabSnapshot.tabIndex || 1,
+      layout,
+      termIds: collectLayoutTermIds(layout)
+    }
+  })
+}
+
 const buildSnapshotFromState = (path, state = {}) => {
   const cacheKey = resolveStateCacheKey(path)
   const tabsState = Array.isArray(state.tabs) ? state.tabs : []
@@ -1104,7 +1313,7 @@ const buildSnapshotFromState = (path, state = {}) => {
   if (!tabsState.length || !terminalsState.length) return null
 
   return {
-    version: 1,
+    version: 2,
     path: cacheKey,
     savedAt: new Date().toISOString(),
     activeTabId: state.activeTabId || tabsState[0]?.tabId || null,
@@ -1112,9 +1321,9 @@ const buildSnapshotFromState = (path, state = {}) => {
     tabs: tabsState.map((tab) => ({
       tabId: tab.tabId,
       label: tab.label,
-      split: !!tab.split,
       tabIndex: tab._tabIndex || 1,
-      termIds: Array.isArray(tab.termIds) ? [...tab.termIds] : []
+      termIds: Array.isArray(tab.termIds) ? [...tab.termIds] : [],
+      layout: serializeLayoutNode(tab.layout)
     })),
     terminals: terminalsState.map((term) => ({
       termId: term.termId,
@@ -1153,7 +1362,7 @@ const readPersistedSnapshot = (path) => {
     const raw = window.localStorage.getItem(storageKey)
     if (!raw) return null
     const snapshot = JSON.parse(raw)
-    if (snapshot?.version !== 1 || !Array.isArray(snapshot.tabs) || !Array.isArray(snapshot.terminals)) {
+    if (![1, 2].includes(snapshot?.version) || !Array.isArray(snapshot.tabs) || !Array.isArray(snapshot.terminals)) {
       return null
     }
     return snapshot
@@ -1240,15 +1449,7 @@ const restorePersistedState = async (path) => {
   terminals.value = []
   activeTermId.value = null
 
-  for (const tabSnapshot of snapshot.tabs) {
-    tabs.value.push({
-      tabId: tabSnapshot.tabId,
-      label: tabSnapshot.label || `终端 ${tabSnapshot.tabIndex || 1}`,
-      _tabIndex: tabSnapshot.tabIndex || 1,
-      split: false,
-      termIds: []
-    })
-  }
+  tabs.value = normalizeSnapshotTabs(snapshot.tabs, snapshot.terminals)
 
   const terminalsByTab = new Map()
   for (const terminalSnapshot of snapshot.terminals) {
@@ -1258,6 +1459,10 @@ const restorePersistedState = async (path) => {
   }
 
   for (const tab of tabs.value) {
+    if (!tab.layout) {
+      tab.layout = buildLayoutFromTermIds((terminalsByTab.get(tab.tabId) || []).map(item => item.termId))
+      syncTabTermIds(tab)
+    }
     const termSnapshots = (terminalsByTab.get(tab.tabId) || [])
       .sort((left, right) => (left.termIndex || 1) - (right.termIndex || 1))
 
@@ -1276,7 +1481,6 @@ const restorePersistedState = async (path) => {
       })
     }
 
-    tab.split = !!tabSnapshotHasSplit(tabSnapshotForId(snapshot.tabs, tab.tabId), tab.termIds.length)
   }
 
   activeTabId.value = tabs.value.some((tab) => tab.tabId === snapshot.activeTabId)
@@ -1291,16 +1495,6 @@ const restorePersistedState = async (path) => {
   return terminals.value.length > 0
 }
 
-const tabSnapshotHasSplit = (tabSnapshot, termCount) => {
-  if (!tabSnapshot) return termCount > 1
-  if (tabSnapshot.split) return true
-  return termCount > 1
-}
-
-const tabSnapshotForId = (tabSnapshots = [], tabId = '') => {
-  return tabSnapshots.find((tab) => tab.tabId === tabId) || null
-}
-
 const restoreState = async (path) => {
   const cacheKey = resolveStateCacheKey(path)
   const cached = terminalCache.get(cacheKey)
@@ -1308,7 +1502,17 @@ const restoreState = async (path) => {
     return restorePersistedState(cacheKey)
   }
 
-  tabs.value = Array.isArray(cached.tabs) ? cached.tabs : []
+  tabs.value = (Array.isArray(cached.tabs) ? cached.tabs : []).map((tab) => {
+    const nextTab = {
+      tabId: tab.tabId,
+      label: tab.label,
+      _tabIndex: tab._tabIndex || 1,
+      layout: tab.layout ? cloneLayoutNode(tab.layout) : buildLayoutFromTermIds(tab.termIds),
+      termIds: Array.isArray(tab.termIds) ? [...tab.termIds] : []
+    }
+    syncTabTermIds(nextTab)
+    return nextTab
+  })
   terminals.value = cached.terminals
   activeTabId.value = cached.activeTabId || tabs.value[0]?.tabId || null
   activeTermId.value = cached.activeTermId
@@ -1318,7 +1522,7 @@ const restoreState = async (path) => {
       tabId: `tab-${Date.now()}-${tabIndex}`,
       label: `终端 ${tabIndex}`,
       _tabIndex: tabIndex,
-      split: terminals.value.length > 1,
+      layout: buildLayoutFromTermIds(terminals.value.map(t => t.termId), terminals.value.length > 1),
       termIds: terminals.value.map(t => t.termId)
     }
     tabs.value = [tab]
@@ -1490,6 +1694,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  stopResizeDrag()
   flushPersistedSnapshot(props.defaultCwd)
   for (const [cacheKey, cached] of terminalCache) {
     flushPersistedSnapshot(cacheKey, cached)
