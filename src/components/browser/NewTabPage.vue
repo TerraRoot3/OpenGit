@@ -61,6 +61,7 @@
       v-else-if="routeType === 'single-project'"
       :path="routeProps?.path"
       :is-active="isActive"
+      :show-open-in-new-tab="false"
     />
     
     <!-- 已保存的仓库 -->

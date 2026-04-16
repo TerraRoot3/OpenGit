@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getBranchStatusCache: (data) => ipcRenderer.invoke('get-branch-status-cache', data),
   clearBranchStatusCache: (data) => ipcRenderer.invoke('clear-branch-status-cache', data),
   getBranchInfo: (data) => ipcRenderer.invoke('get-branch-info', data),
+  getProjectGitMonitorSnapshot: (data) => ipcRenderer.invoke('get-project-git-monitor-snapshot', data),
   refreshRemote: (data) => ipcRenderer.invoke('refresh-remote', data),
   
   // 项目操作

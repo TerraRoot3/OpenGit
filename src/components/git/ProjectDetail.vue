@@ -40,7 +40,12 @@
           <button class="finder-open-btn" @click="openInFinder" title="在访达中打开">
             <FolderOpen :size="14" /> 访达
           </button>
-          <button class="new-tab-btn" @click="openProjectInNewTab" title="在新标签中单独打开项目">
+          <button
+            v-if="props.showOpenInNewTab"
+            class="new-tab-btn"
+            @click="openProjectInNewTab"
+            title="在新标签中单独打开项目"
+          >
             <Plus :size="14" /> 新标签
           </button>
           <button class="settings-btn" @click="openProjectSettings" title="项目设置">
@@ -450,6 +455,10 @@ import {
   buildProjectRefreshPlan,
   deriveBranchStatusState
 } from './projectDetailRefresh.mjs'
+import {
+  deriveProjectGitMonitorRefreshRequest,
+  shouldRunProjectGitMonitor
+} from './projectDetailGitMonitor.mjs'
 import { resolveTagsViewState } from './projectDetailTagsState.mjs'
 import {
   useProjectStore,
@@ -509,6 +518,10 @@ const props = defineProps({
   isActive: {
     type: Boolean,
     default: true
+  },
+  showOpenInNewTab: {
+    type: Boolean,
+    default: true
   }
 })
 
@@ -547,6 +560,12 @@ const branchStatus = ref(null)
 const allBranchStatus = ref({})
 const statusLoading = ref(false)
 const hasPendingFiles = ref(false) // 是否有待定文件
+const projectGitMonitorSnapshot = ref(null)
+const isDocumentVisible = ref(typeof document === 'undefined' ? true : document.visibilityState === 'visible')
+
+const PROJECT_GIT_MONITOR_INTERVAL_MS = 2000
+let projectGitMonitorTimer = null
+let projectGitMonitorInFlight = false
 
 // ==================== UI 状态 ====================
 // 从 localStorage 读取项目对应的视图状态，默认为 'ai-sessions'
@@ -780,6 +799,90 @@ const finishOperation = ({ hideDialog = false } = {}) => {
 
 const bumpCommitHistoryRevision = () => {
   commitHistoryRefreshToken.value += 1
+}
+
+const shouldPollProjectGitMonitor = computed(() => shouldRunProjectGitMonitor({
+  path: props.path,
+  isActive: props.isActive,
+  isVisible: isDocumentVisible.value
+}))
+
+const resetProjectGitMonitorState = () => {
+  projectGitMonitorSnapshot.value = null
+  projectGitMonitorInFlight = false
+}
+
+const stopProjectGitMonitor = () => {
+  if (projectGitMonitorTimer != null) {
+    window.clearInterval(projectGitMonitorTimer)
+    projectGitMonitorTimer = null
+  }
+  projectGitMonitorInFlight = false
+}
+
+const pollProjectGitMonitor = async () => {
+  if (
+    !window.electronAPI?.getProjectGitMonitorSnapshot ||
+    !shouldPollProjectGitMonitor.value ||
+    projectGitMonitorInFlight
+  ) {
+    return
+  }
+
+  const currentPath = props.path
+  if (!currentPath) return
+
+  projectGitMonitorInFlight = true
+
+  try {
+    const result = await window.electronAPI.getProjectGitMonitorSnapshot({ path: currentPath })
+
+    if (
+      !isCurrentProjectPath(currentPath) ||
+      !shouldRunProjectGitMonitor({
+        path: currentPath,
+        isActive: props.isActive,
+        isVisible: isDocumentVisible.value
+      })
+    ) {
+      return
+    }
+
+    if (!result?.success || !result.data) {
+      return
+    }
+
+    const previousSnapshot = projectGitMonitorSnapshot.value
+    const nextSnapshot = result.data
+    projectGitMonitorSnapshot.value = nextSnapshot
+
+    const refreshRequest = deriveProjectGitMonitorRefreshRequest(
+      previousSnapshot,
+      nextSnapshot
+    )
+
+    if (refreshRequest) {
+      debugLog('🔄 [ProjectDetailNew] Git monitor detected change:', nextSnapshot.signature)
+      queueProjectRefresh(refreshRequest)
+    }
+  } catch (error) {
+    console.warn('项目 Git 监控轮询失败:', error)
+  } finally {
+    projectGitMonitorInFlight = false
+  }
+}
+
+const startProjectGitMonitor = () => {
+  stopProjectGitMonitor()
+
+  if (!shouldPollProjectGitMonitor.value) {
+    return
+  }
+
+  pollProjectGitMonitor()
+  projectGitMonitorTimer = window.setInterval(() => {
+    pollProjectGitMonitor()
+  }, PROJECT_GIT_MONITOR_INTERVAL_MS)
 }
 
 const queueProjectRefresh = ({
@@ -2062,6 +2165,8 @@ const cancelOperation = () => {
 // ==================== 生命周期 ====================
 watch(() => props.path, (newPath, oldPath) => {
   clearAiSessionsPreload()
+  stopProjectGitMonitor()
+  resetProjectGitMonitorState()
   if (newPath) {
     // 恢复该项目保存的视图状态和展开状态
     currentView.value = getSavedCurrentView(newPath)
@@ -2119,6 +2224,9 @@ watch(() => props.path, (newPath, oldPath) => {
     })
 
     scheduleAiSessionsPreload()
+    if (shouldPollProjectGitMonitor.value) {
+      startProjectGitMonitor()
+    }
   } else {
     projectInfo.value = null
     // 切换项目时重置状态
@@ -2158,6 +2266,14 @@ watch(() => props.isActive, (active) => {
   }
 })
 
+watch(shouldPollProjectGitMonitor, (shouldRun) => {
+  if (shouldRun) {
+    startProjectGitMonitor()
+  } else {
+    stopProjectGitMonitor()
+  }
+})
+
 // 刷新当前项目状态（供外部调用，如标签切换时）
 const refreshCurrentProject = async () => {
   if (!props.path) return
@@ -2190,7 +2306,8 @@ const handleWindowFocus = async () => {
 
 // 窗口焦点变化处理
 const handleVisibilityChange = () => {
-  if (document.visibilityState === 'visible' && props.isActive) {
+  isDocumentVisible.value = document.visibilityState === 'visible'
+  if (isDocumentVisible.value && props.isActive) {
     handleWindowFocus()
   }
 }
@@ -2211,6 +2328,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearAiSessionsPreload()
+  stopProjectGitMonitor()
   window.removeEventListener('focus', handleWindowFocus)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (window.electronAPI?.removeWindowFocusListener) {

@@ -1,3 +1,7 @@
+const fs = require('node:fs')
+const path = require('node:path')
+const { buildProjectGitMonitorSnapshot } = require('./projectGitMonitor')
+
 function registerBranchHandlers({
   ipcMain,
   store,
@@ -240,6 +244,44 @@ function registerBranchHandlers({
       conflictMessage,
       conflictFiles
     }
+  }
+
+  async function getProjectGitMonitorSnapshot(projectPath) {
+    const porcelainResult = await executeGitCommand(
+      ['git', 'status', '--porcelain=v2', '--branch'],
+      projectPath
+    )
+
+    if (!porcelainResult.success) {
+      throw new Error(porcelainResult.error || '获取 Git 快照失败')
+    }
+
+    let isMerging = false
+    let isRebasing = false
+
+    const gitDirResult = await executeGitCommand(
+      ['git', 'rev-parse', '--git-dir'],
+      projectPath
+    )
+
+    if (gitDirResult.success && gitDirResult.stdout?.trim()) {
+      const rawGitDir = gitDirResult.stdout.trim()
+      const gitDirPath = path.isAbsolute(rawGitDir)
+        ? rawGitDir
+        : path.join(projectPath, rawGitDir)
+
+      isMerging = fs.existsSync(path.join(gitDirPath, 'MERGE_HEAD'))
+      isRebasing = (
+        fs.existsSync(path.join(gitDirPath, 'rebase-merge')) ||
+        fs.existsSync(path.join(gitDirPath, 'rebase-apply'))
+      )
+    }
+
+    return buildProjectGitMonitorSnapshot({
+      porcelain: porcelainResult.stdout || '',
+      isMerging,
+      isRebasing
+    })
   }
 
   ipcMain.handle('get-branch-list', async (event, data) => {
@@ -513,6 +555,21 @@ function registerBranchHandlers({
     } catch (error) {
       safeError('❌ 刷新远程失败:', error.message)
       return { success: false, error: `刷新失败: ${error.message}` }
+    }
+  })
+
+  ipcMain.handle('get-project-git-monitor-snapshot', async (event, data) => {
+    try {
+      const projectPath = data?.path || ''
+      if (!projectPath) {
+        return { success: false, message: '项目路径不能为空' }
+      }
+
+      const snapshot = await getProjectGitMonitorSnapshot(projectPath)
+      return { success: true, data: snapshot }
+    } catch (error) {
+      safeError('❌ 获取项目 Git 监控快照失败:', error.message)
+      return { success: false, message: `获取失败: ${error.message}` }
     }
   })
 }
