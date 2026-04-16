@@ -865,6 +865,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     ptyId: null,
     hasUserInput: restoredHasUserInput,
     restoreViewportToBottom: true,
+    viewportDirtyWhileHidden: false,
     _viewportRevealTimerId: null,
     _dropHandlers: null
   }
@@ -951,13 +952,16 @@ const canMeasureTerminal = () => {
 const refreshVisibleTerminal = (term, focus = true) => {
   if (!term) return
   const stickToBottom = !!term.restoreViewportToBottom
+  const forceViewportReconcile = !!term.viewportDirtyWhileHidden
   term.restoreViewportToBottom = false
+  term.viewportDirtyWhileHidden = false
   nextTick(() => {
     scheduleViewportRevealSync({
       term,
       canMeasure: canMeasureTerminal,
       focus,
       stickToBottom,
+      forceViewportReconcile,
       requestFrame: (callback) => requestAnimationFrame(callback),
       setTimer: (callback, delay) => window.setTimeout(callback, delay),
       clearTimer: (timerId) => window.clearTimeout(timerId),
@@ -965,6 +969,9 @@ const refreshVisibleTerminal = (term, focus = true) => {
         if (term.ptyId && term.connected) {
           window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
         }
+      },
+      reconcileViewport(immediate) {
+        term.xterm?._core?.viewport?.syncScrollArea?.(immediate, true)
       }
     })
   })
@@ -1720,6 +1727,9 @@ const ipcHandler = {
   onOutput(data) {
     for (const t of terminals.value) {
       if (t.ptyId === data.id) {
+        if (!props.isActive || t.el.style.display === 'none') {
+          t.viewportDirtyWhileHidden = true
+        }
         t.xterm.write(data.data)
         schedulePersistedSnapshot()
         return
@@ -1728,6 +1738,7 @@ const ipcHandler = {
     for (const [cacheKey, cached] of terminalCache) {
       for (const t of cached.terminals) {
         if (t.ptyId === data.id) {
+          t.viewportDirtyWhileHidden = true
           t.xterm.write(data.data)
           persistSnapshotForPath(cacheKey, cached)
           return
@@ -1789,6 +1800,10 @@ watch(() => props.isActive, (active) => {
   if (active && terminals.value.length > 0) {
     applyLayout(true)
     return
+  }
+
+  if (!active) {
+    rememberVisibleTerminalViewportState()
   }
 
   if (!active && showSearchBar.value) {

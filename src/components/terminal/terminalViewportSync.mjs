@@ -5,8 +5,10 @@ const isPositiveInteger = (value) => Number.isFinite(value) && value > 0
 export const runViewportSyncPass = ({
   term,
   resizePty,
+  reconcileViewport,
   focus = false,
-  stickToBottom = false
+  stickToBottom = false,
+  forceViewportReconcile = false
 } = {}) => {
   if (!term?.fitAddon || !term?.xterm) return false
 
@@ -39,6 +41,12 @@ export const runViewportSyncPass = ({
     } catch {}
   }
 
+  if (forceViewportReconcile && typeof reconcileViewport === 'function') {
+    try {
+      reconcileViewport(true)
+    } catch {}
+  }
+
   if (focus) {
     try {
       term.xterm.focus()
@@ -63,8 +71,10 @@ export const scheduleViewportRevealSync = ({
   term,
   canMeasure,
   resizePty,
+  reconcileViewport,
   focus = false,
   stickToBottom = false,
+  forceViewportReconcile = false,
   requestFrame = (callback) => globalThis.requestAnimationFrame?.(callback) ?? globalThis.setTimeout?.(callback, 0),
   setTimer = (callback, delay) => globalThis.setTimeout?.(callback, delay),
   clearTimer = (timerId) => globalThis.clearTimeout?.(timerId),
@@ -79,8 +89,10 @@ export const scheduleViewportRevealSync = ({
     return runViewportSyncPass({
       term,
       resizePty,
+      reconcileViewport,
       focus: shouldFocus,
-      stickToBottom
+      stickToBottom,
+      forceViewportReconcile
     })
   }
 

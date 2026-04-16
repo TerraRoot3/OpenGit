@@ -96,6 +96,73 @@ const createStubTerm = () => {
 
   scheduleViewportRevealSync({
     term,
+    focus: true,
+    stickToBottom: true,
+    forceViewportReconcile: true,
+    canMeasure: () => true,
+    requestFrame(callback) {
+      pendingFrames.push(callback)
+      return pendingFrames.length
+    },
+    setTimer(callback, delay) {
+      pendingTimers.push({ callback, delay })
+      return pendingTimers.length
+    },
+    clearTimer() {},
+    resizePty({ cols, rows }) {
+      events.push(`resize:${cols}x${rows}`)
+    },
+    reconcileViewport(immediate) {
+      events.push(`syncScrollArea:${immediate}`)
+    },
+    followupDelayMs: 120
+  })
+
+  pendingFrames.shift()()
+  assert.deepEqual(
+    events,
+    [
+      'fit',
+      'refresh:0-23',
+      'resize:80x24',
+      'scrollToBottom',
+      'refresh:0-23',
+      'syncScrollArea:true',
+      'focus'
+    ],
+    'dirty hidden-output restore should force a viewport scroll-area reconcile after redraw'
+  )
+
+  pendingTimers.shift().callback()
+  pendingFrames.shift()()
+  assert.deepEqual(
+    events,
+    [
+      'fit',
+      'refresh:0-23',
+      'resize:80x24',
+      'scrollToBottom',
+      'refresh:0-23',
+      'syncScrollArea:true',
+      'focus',
+      'fit',
+      'refresh:0-23',
+      'resize:80x24',
+      'scrollToBottom',
+      'refresh:0-23',
+      'syncScrollArea:true'
+    ],
+    'follow-up pass should also reconcile the viewport scroll area when hidden output dirtied it'
+  )
+}
+
+{
+  const { term, events } = createStubTerm()
+  const pendingFrames = []
+  const pendingTimers = []
+
+  scheduleViewportRevealSync({
+    term,
     focus: false,
     stickToBottom: false,
     canMeasure: () => false,
