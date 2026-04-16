@@ -159,6 +159,13 @@ const searchQuery = ref('')
 const searchHasMatch = ref(true)
 const searchInputRef = ref(null)
 let ensureDefaultPromise = null
+let persistSnapshotTimer = null
+let hasRestoredInitialSnapshot = false
+
+const TERMINAL_SNAPSHOT_PREFIX = 'terminalSnapshot_v1_'
+const TERMINAL_SNAPSHOT_MAX_LINES = 1200
+const TERMINAL_RESTORE_NOTICE = '\r\n\x1b[33m已恢复上次终端内容，新的终端会话已创建。\x1b[0m\r\n'
+const TERMINAL_RESTORE_EXITED_NOTICE = '\r\n\x1b[33m已恢复上次终端内容，原终端会话已结束。\x1b[0m\r\n'
 const handleDocumentClick = (event) => {
   if (cwdMenuRef.value && !cwdMenuRef.value.contains(event.target)) {
     showCwdMenu.value = false
@@ -543,7 +550,16 @@ const applyLayout = (focusActive = true) => {
 }
 
 const addTerminal = async (cwdOverride = null, options = {}) => {
-  const { autoSwitch = true, tabId = null } = options
+  const {
+    autoSwitch = true,
+    tabId = null,
+    initialTermId = '',
+    initialTermIndex = null,
+    restoredBufferText = '',
+    restoredConnected = true,
+    restoredHasUserInput = false,
+    restoredNotice = ''
+  } = options
   let targetTab = tabId ? findTabById(tabId) : null
   if (!targetTab) {
     const tabIndex = nextTabIndex()
@@ -557,8 +573,8 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     tabs.value.push(targetTab)
   }
 
-  const idx = nextIndex()
-  const termId = `term-${Date.now()}-${idx}`
+  const idx = Number.isInteger(initialTermIndex) && initialTermIndex > 0 ? initialTermIndex : nextIndex()
+  const termId = initialTermId || `term-${Date.now()}-${idx}`
   const explicitCwd = normalizeRequestedCwd(cwdOverride)
   let rawCwd = explicitCwd
     ? explicitCwd
@@ -587,16 +603,26 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     el,
     connected: false,
     ptyId: null,
-    hasUserInput: false,
+    hasUserInput: restoredHasUserInput,
     _dropHandlers: null
   }
 
   bindTerminalDropEvents(term)
 
+  if (restoredBufferText) {
+    xterm.write(restoredBufferText)
+    if (restoredNotice) {
+      xterm.write(restoredNotice)
+    } else if (restoredConnected) {
+      xterm.write(TERMINAL_RESTORE_NOTICE)
+    }
+  }
+
   xterm.onData((data) => {
     if (term.ptyId && term.connected) {
       term.hasUserInput = true
       window.electronAPI.terminal.write({ id: term.ptyId, data })
+      schedulePersistedSnapshot()
     }
   })
   xterm.onResize(({ cols, rows }) => {
@@ -605,23 +631,25 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     }
   })
 
-  try {
-    // 显式传 string：避免 cwd 被省略时主进程误用 ~
-    const res = await window.electronAPI.terminal.create({
-      id: termId,
-      cwd: props.allowFirstTerminalWithoutCwd ? (cwd || undefined) : cwd
-    })
-    if (res.success) {
-      term.ptyId = res.id
-      if (res.resolvedCwd && typeof res.resolvedCwd === 'string') {
-        term.cwd = res.resolvedCwd
+  if (restoredConnected) {
+    try {
+      // 显式传 string：避免 cwd 被省略时主进程误用 ~
+      const res = await window.electronAPI.terminal.create({
+        id: termId,
+        cwd: props.allowFirstTerminalWithoutCwd ? (cwd || undefined) : cwd
+      })
+      if (res.success) {
+        term.ptyId = res.id
+        if (res.resolvedCwd && typeof res.resolvedCwd === 'string') {
+          term.cwd = res.resolvedCwd
+        }
+        term.connected = true
+      } else {
+        xterm.write('\r\n\x1b[31m终端创建失败: ' + res.error + '\x1b[0m\r\n')
       }
-      term.connected = true
-    } else {
-      xterm.write('\r\n\x1b[31m终端创建失败: ' + res.error + '\x1b[0m\r\n')
+    } catch (e) {
+      xterm.write('\r\n\x1b[31m终端创建异常: ' + e.message + '\x1b[0m\r\n')
     }
-  } catch (e) {
-    xterm.write('\r\n\x1b[31m终端创建异常: ' + e.message + '\x1b[0m\r\n')
   }
 
   terminals.value.push(term)
@@ -635,6 +663,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
   } else {
     applyLayout(false)
   }
+  schedulePersistedSnapshot()
   return termId
 }
 
@@ -688,6 +717,7 @@ const switchTab = (tabId) => {
   activeTabId.value = tab.tabId
   activeTermId.value = tab.termIds.includes(activeTermId.value) ? activeTermId.value : (tab.termIds[0] || null)
   applyLayout(true)
+  schedulePersistedSnapshot()
 }
 
 const focusSplitPane = (termId) => {
@@ -695,6 +725,7 @@ const focusSplitPane = (termId) => {
   activeTermId.value = termId
   const term = findTerminalById(termId)
   refreshVisibleTerminal(term, true)
+  schedulePersistedSnapshot()
 }
 
 const toggleSplitTerminal = async () => {
@@ -712,12 +743,14 @@ const toggleSplitTerminal = async () => {
     tab.split = false
     activeTermId.value = keepId
     applyLayout(true)
+    schedulePersistedSnapshot()
     return
   }
 
   if (tab.termIds.length >= 2) {
     tab.split = true
     applyLayout(true)
+    schedulePersistedSnapshot()
     return
   }
 
@@ -730,6 +763,7 @@ const toggleSplitTerminal = async () => {
   activeTabId.value = tab.tabId
   activeTermId.value = newTermId
   applyLayout(true)
+  schedulePersistedSnapshot()
 }
 
 const closeSplitPane = async (termId) => {
@@ -744,6 +778,7 @@ const closeSplitPane = async (termId) => {
     activeTermId.value = keepId
   }
   applyLayout(true)
+  schedulePersistedSnapshot()
 }
 
 const closeTerminalById = async (termId) => {
@@ -762,6 +797,7 @@ const closeTerminalById = async (termId) => {
   if (!tab) return
   tab.termIds = tab.termIds.filter(id => id !== termId)
   if (tab.termIds.length < 2) tab.split = false
+  schedulePersistedSnapshot()
 }
 
 const closeTab = async (tabId) => {
@@ -785,6 +821,7 @@ const closeTab = async (tabId) => {
     }
   }
   applyLayout(true)
+  schedulePersistedSnapshot()
 }
 
 const clearTerminal = () => {
@@ -943,6 +980,7 @@ const restartTerminal = async (cwdOverride = null) => {
       term.connected = true
       term.hasUserInput = false
       applyLayout(true)
+      schedulePersistedSnapshot()
     }
   } catch (e) {
     term.xterm.write('\r\n\x1b[31m重启失败: ' + e.message + '\x1b[0m\r\n')
@@ -957,6 +995,11 @@ const ensureDefaultTerminal = async (cwdOverride = '') => {
   ensureDefaultPromise = (async () => {
     const targetCwd = normalizeIncomingPath(cwdOverride || getProjectRootCwd())
     if (!terminals.value.length) {
+      if (!hasRestoredInitialSnapshot) {
+        hasRestoredInitialSnapshot = true
+        const restored = await restoreState(targetCwd || props.defaultCwd || '__standalone__')
+        if (restored) return
+      }
       await addTerminal(targetCwd || null)
       return
     }
@@ -1028,6 +1071,133 @@ const runCommand = async (command, options = {}) => {
 // ---- 项目切换：缓存 & 恢复 ----
 
 const normalizeCacheKey = (path) => normalizeIncomingPath(path || '')
+const resolveStateCacheKey = (path) => normalizeCacheKey(path) || '__standalone__'
+
+const getSnapshotStorageKey = (path) => {
+  const normalized = resolveStateCacheKey(path)
+  return `${TERMINAL_SNAPSHOT_PREFIX}${normalized.replace(/[^a-zA-Z0-9]/g, '_')}`
+}
+
+const serializeTerminalBuffer = (term) => {
+  const buffer = term?.xterm?.buffer?.active
+  if (!buffer || typeof buffer.length !== 'number' || typeof buffer.getLine !== 'function') return ''
+
+  const start = Math.max(0, buffer.length - TERMINAL_SNAPSHOT_MAX_LINES)
+  const lines = []
+  for (let index = start; index < buffer.length; index += 1) {
+    const line = buffer.getLine(index)
+    if (!line || typeof line.translateToString !== 'function') {
+      lines.push('')
+      continue
+    }
+    lines.push(line.translateToString(true))
+  }
+
+  return lines.join('\r\n').trimEnd()
+}
+
+const buildSnapshotFromState = (path, state = {}) => {
+  const cacheKey = resolveStateCacheKey(path)
+  const tabsState = Array.isArray(state.tabs) ? state.tabs : []
+  const terminalsState = Array.isArray(state.terminals) ? state.terminals : []
+
+  if (!tabsState.length || !terminalsState.length) return null
+
+  return {
+    version: 1,
+    path: cacheKey,
+    savedAt: new Date().toISOString(),
+    activeTabId: state.activeTabId || tabsState[0]?.tabId || null,
+    activeTermId: state.activeTermId || terminalsState[0]?.termId || null,
+    tabs: tabsState.map((tab) => ({
+      tabId: tab.tabId,
+      label: tab.label,
+      split: !!tab.split,
+      tabIndex: tab._tabIndex || 1,
+      termIds: Array.isArray(tab.termIds) ? [...tab.termIds] : []
+    })),
+    terminals: terminalsState.map((term) => ({
+      termId: term.termId,
+      tabId: term.tabId,
+      termIndex: term._termIndex || 1,
+      cwd: normalizeIncomingPath(term.cwd || ''),
+      connected: !!term.connected,
+      hasUserInput: !!term.hasUserInput,
+      bufferText: serializeTerminalBuffer(term)
+    }))
+  }
+}
+
+const persistSnapshotForPath = (path, state = {}) => {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return false
+  const snapshot = buildSnapshotFromState(path, state)
+  const storageKey = getSnapshotStorageKey(path)
+
+  try {
+    if (!snapshot) {
+      window.localStorage.removeItem(storageKey)
+      return true
+    }
+    window.localStorage.setItem(storageKey, JSON.stringify(snapshot))
+    return true
+  } catch (error) {
+    return false
+  }
+}
+
+const readPersistedSnapshot = (path) => {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return null
+  const storageKey = getSnapshotStorageKey(path)
+
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return null
+    const snapshot = JSON.parse(raw)
+    if (snapshot?.version !== 1 || !Array.isArray(snapshot.tabs) || !Array.isArray(snapshot.terminals)) {
+      return null
+    }
+    return snapshot
+  } catch (error) {
+    return null
+  }
+}
+
+const clearPersistedSnapshot = (path) => {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return
+  try {
+    window.localStorage.removeItem(getSnapshotStorageKey(path))
+  } catch (error) {}
+}
+
+const flushPersistedSnapshot = (path = props.defaultCwd, state = null) => {
+  if (persistSnapshotTimer) {
+    window.clearTimeout(persistSnapshotTimer)
+    persistSnapshotTimer = null
+  }
+
+  if (state) {
+    persistSnapshotForPath(path, state)
+    return
+  }
+
+  persistSnapshotForPath(path, {
+    tabs: tabs.value,
+    activeTabId: activeTabId.value,
+    terminals: terminals.value,
+    activeTermId: activeTermId.value
+  })
+}
+
+const schedulePersistedSnapshot = (path = props.defaultCwd, state = null) => {
+  if (typeof window === 'undefined') return
+  if (persistSnapshotTimer) {
+    window.clearTimeout(persistSnapshotTimer)
+  }
+  persistSnapshotTimer = window.setTimeout(() => {
+    persistSnapshotTimer = null
+    flushPersistedSnapshot(path, state)
+  }, 500)
+}
 
 const detachTerminalsFromDom = (terms) => {
   if (!Array.isArray(terms)) return
@@ -1041,21 +1211,102 @@ const detachTerminalsFromDom = (terms) => {
 }
 
 const saveCurrentState = (path) => {
-  const cacheKey = normalizeCacheKey(path)
-  if (!cacheKey || terminals.value.length === 0) return
+  const cacheKey = resolveStateCacheKey(path)
+  if (terminals.value.length === 0) {
+    terminalCache.delete(cacheKey)
+    clearPersistedSnapshot(cacheKey)
+    return
+  }
+
   detachTerminalsFromDom(terminals.value)
-  terminalCache.set(cacheKey, {
+  const state = {
+    path: cacheKey,
     tabs: tabs.value,
     activeTabId: activeTabId.value,
     terminals: terminals.value,
     activeTermId: activeTermId.value
-  })
+  }
+  terminalCache.set(cacheKey, state)
+  persistSnapshotForPath(cacheKey, state)
 }
 
-const restoreState = (path) => {
-  const cacheKey = normalizeCacheKey(path)
+const restorePersistedState = async (path) => {
+  const cacheKey = resolveStateCacheKey(path)
+  const snapshot = readPersistedSnapshot(cacheKey)
+  if (!snapshot) return false
+
+  tabs.value = []
+  activeTabId.value = null
+  terminals.value = []
+  activeTermId.value = null
+
+  for (const tabSnapshot of snapshot.tabs) {
+    tabs.value.push({
+      tabId: tabSnapshot.tabId,
+      label: tabSnapshot.label || `终端 ${tabSnapshot.tabIndex || 1}`,
+      _tabIndex: tabSnapshot.tabIndex || 1,
+      split: false,
+      termIds: []
+    })
+  }
+
+  const terminalsByTab = new Map()
+  for (const terminalSnapshot of snapshot.terminals) {
+    const list = terminalsByTab.get(terminalSnapshot.tabId) || []
+    list.push(terminalSnapshot)
+    terminalsByTab.set(terminalSnapshot.tabId, list)
+  }
+
+  for (const tab of tabs.value) {
+    const termSnapshots = (terminalsByTab.get(tab.tabId) || [])
+      .sort((left, right) => (left.termIndex || 1) - (right.termIndex || 1))
+
+    for (const terminalSnapshot of termSnapshots) {
+      await addTerminal(terminalSnapshot.cwd || null, {
+        autoSwitch: false,
+        tabId: tab.tabId,
+        initialTermId: terminalSnapshot.termId,
+        initialTermIndex: terminalSnapshot.termIndex,
+        restoredBufferText: terminalSnapshot.bufferText || '',
+        restoredConnected: terminalSnapshot.connected !== false,
+        restoredHasUserInput: terminalSnapshot.hasUserInput === true,
+        restoredNotice: terminalSnapshot.connected === false
+          ? TERMINAL_RESTORE_EXITED_NOTICE
+          : TERMINAL_RESTORE_NOTICE
+      })
+    }
+
+    tab.split = !!tabSnapshotHasSplit(tabSnapshotForId(snapshot.tabs, tab.tabId), tab.termIds.length)
+  }
+
+  activeTabId.value = tabs.value.some((tab) => tab.tabId === snapshot.activeTabId)
+    ? snapshot.activeTabId
+    : tabs.value[0]?.tabId || null
+  const allTermIds = new Set(terminals.value.map((term) => term.termId))
+  activeTermId.value = allTermIds.has(snapshot.activeTermId)
+    ? snapshot.activeTermId
+    : (findTabById(activeTabId.value)?.termIds?.[0] || terminals.value[0]?.termId || null)
+  applyLayout(true)
+  schedulePersistedSnapshot(cacheKey)
+  return terminals.value.length > 0
+}
+
+const tabSnapshotHasSplit = (tabSnapshot, termCount) => {
+  if (!tabSnapshot) return termCount > 1
+  if (tabSnapshot.split) return true
+  return termCount > 1
+}
+
+const tabSnapshotForId = (tabSnapshots = [], tabId = '') => {
+  return tabSnapshots.find((tab) => tab.tabId === tabId) || null
+}
+
+const restoreState = async (path) => {
+  const cacheKey = resolveStateCacheKey(path)
   const cached = terminalCache.get(cacheKey)
-  if (!cached) return false
+  if (!cached) {
+    return restorePersistedState(cacheKey)
+  }
 
   tabs.value = Array.isArray(cached.tabs) ? cached.tabs : []
   terminals.value = cached.terminals
@@ -1075,6 +1326,7 @@ const restoreState = (path) => {
     if (!activeTermId.value) activeTermId.value = tab.termIds[0]
   }
   applyLayout(true)
+  schedulePersistedSnapshot(cacheKey, cached)
   return true
 }
 
@@ -1092,11 +1344,19 @@ const destroyTerminals = (terms) => {
 const ipcHandler = {
   onOutput(data) {
     for (const t of terminals.value) {
-      if (t.ptyId === data.id) { t.xterm.write(data.data); return }
+      if (t.ptyId === data.id) {
+        t.xterm.write(data.data)
+        schedulePersistedSnapshot()
+        return
+      }
     }
-    for (const [, cached] of terminalCache) {
+    for (const [cacheKey, cached] of terminalCache) {
       for (const t of cached.terminals) {
-        if (t.ptyId === data.id) { t.xterm.write(data.data); return }
+        if (t.ptyId === data.id) {
+          t.xterm.write(data.data)
+          persistSnapshotForPath(cacheKey, cached)
+          return
+        }
       }
     }
   },
@@ -1105,34 +1365,42 @@ const ipcHandler = {
       if (t.ptyId === data.id) {
         t.connected = false
         t.xterm.write('\r\n\x1b[33m终端已退出 (code: ' + data.exitCode + ')\x1b[0m\r\n')
+        schedulePersistedSnapshot()
         return
       }
     }
-    for (const [, cached] of terminalCache) {
+    for (const [cacheKey, cached] of terminalCache) {
       for (const t of cached.terminals) {
         if (t.ptyId === data.id) {
           t.connected = false
           t.xterm.write('\r\n\x1b[33m终端已退出 (code: ' + data.exitCode + ')\x1b[0m\r\n')
+          persistSnapshotForPath(cacheKey, cached)
           return
         }
       }
     }
   },
   onTitleChange(data) {
-    const updateTabLabel = (term) => {
+    const updateTabLabel = (term, tabList) => {
       if (term.ptyId !== data.id) return false
-      const tab = findTabById(term.tabId)
+      const tab = Array.isArray(tabList) ? tabList.find(item => item.tabId === term.tabId) : null
       if (!tab) return false
       const name = data.title.split('/').pop()
       tab.label = `${name || '终端'} ${tab._tabIndex || 1}`
       return true
     }
     for (const t of terminals.value) {
-      if (updateTabLabel(t)) return
+      if (updateTabLabel(t, tabs.value)) {
+        schedulePersistedSnapshot()
+        return
+      }
     }
-    for (const [, cached] of terminalCache) {
+    for (const [cacheKey, cached] of terminalCache) {
       for (const t of cached.terminals) {
-        if (updateTabLabel(t)) return
+        if (updateTabLabel(t, cached.tabs)) {
+          persistSnapshotForPath(cacheKey, cached)
+          return
+        }
       }
     }
   }
@@ -1167,10 +1435,11 @@ watch(() => currentTerminal.value?.termId, (termId, prevTermId) => {
   })
 })
 
-watch(() => props.defaultCwd, (newCwd, oldCwd) => {
+watch(() => props.defaultCwd, async (newCwd, oldCwd) => {
   if (newCwd === oldCwd) return
+  hasRestoredInitialSnapshot = false
   saveCurrentState(oldCwd)
-  if (!restoreState(newCwd)) {
+  if (!await restoreState(newCwd)) {
     tabs.value = []
     activeTabId.value = null
     terminals.value = []
@@ -1186,8 +1455,13 @@ watch(() => props.defaultCwd, (newCwd, oldCwd) => {
 // about:terminal：无项目路径，allowFirstTerminalWithoutCwd 为 true 时仍可自动建第一个。
 watch(
   () => [props.isActive, projectRootRef.value, props.allowFirstTerminalWithoutCwd],
-  ([active, root, allowEmpty]) => {
+  async ([active, root, allowEmpty]) => {
     if (!active || terminals.value.length > 0) return
+    if (!hasRestoredInitialSnapshot) {
+      hasRestoredInitialSnapshot = true
+      const restored = await restoreState(root || props.defaultCwd || '__standalone__')
+      if (restored) return
+    }
     if (allowEmpty && !root) {
       addTerminal()
     }
@@ -1216,6 +1490,14 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  flushPersistedSnapshot(props.defaultCwd)
+  for (const [cacheKey, cached] of terminalCache) {
+    flushPersistedSnapshot(cacheKey, cached)
+  }
+  if (persistSnapshotTimer) {
+    window.clearTimeout(persistSnapshotTimer)
+    persistSnapshotTimer = null
+  }
   if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null }
   document.removeEventListener('click', handleDocumentClick)
   document.removeEventListener('keydown', handleTerminalKeydown, true)

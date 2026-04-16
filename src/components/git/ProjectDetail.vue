@@ -40,6 +40,9 @@
           <button class="finder-open-btn" @click="openInFinder" title="在访达中打开">
             <FolderOpen :size="14" /> 访达
           </button>
+          <button class="new-tab-btn" @click="openProjectInNewTab" title="在新标签中单独打开项目">
+            <Plus :size="14" /> 新标签
+          </button>
           <button class="settings-btn" @click="openProjectSettings" title="项目设置">
             <Settings :size="14" /> 设置
             </button>
@@ -431,7 +434,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   FolderOpen, GitBranch, Tag, GitPullRequest, ArrowUpCircle, GitMerge,
-  Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot,
+  Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot, Plus,
   Folder, Globe, RefreshCw, Check,   ChevronRight, Settings
 } from 'lucide-vue-next'
 import ProjectFileStatus from './ProjectFileStatus.vue'
@@ -545,7 +548,7 @@ const statusLoading = ref(false)
 const hasPendingFiles = ref(false) // 是否有待定文件
 
 // ==================== UI 状态 ====================
-// 从 localStorage 读取项目对应的视图状态，默认为 'terminal'
+// 从 localStorage 读取项目对应的视图状态，默认为 'ai-sessions'
 const getProjectViewKey = (path) => `projectView_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
 const getExpandStateKey = (path) => `expandState_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
 
@@ -556,7 +559,7 @@ const getSavedCurrentView = (path) => {
       return saved
     }
   } catch (e) {}
-  return 'terminal'
+  return 'ai-sessions'
 }
 
 // 保存展开状态到 localStorage
@@ -595,7 +598,7 @@ const restoreExpandState = (path) => {
   }
 }
 
-const currentView = ref('terminal')
+const currentView = ref('ai-sessions')
 const terminalMounted = ref(false)
 const aiSessionsMounted = ref(false)
 const showLocalBranches = ref(true)
@@ -2016,6 +2019,17 @@ const openInFinder = async () => {
   }
 }
 
+const openProjectInNewTab = () => {
+  const projectPath = terminalProjectPath.value
+  if (!projectPath || !window.electronAPI?.openUrlInNewTab) return
+
+  try {
+    window.electronAPI.openUrlInNewTab(`git:project:${projectPath}`)
+  } catch (error) {
+    console.error('新标签打开项目失败:', error)
+  }
+}
+
 // ==================== 项目设置 ====================
 const openProjectSettings = () => {
   showProjectSettings.value = true
@@ -2349,7 +2363,7 @@ defineExpose({
 }
 
 .create-btn, .pull-single-btn, .push-single-btn, .mr-single-btn,
-.gitlab-open-btn, .finder-open-btn, .settings-btn {
+.gitlab-open-btn, .finder-open-btn, .new-tab-btn, .settings-btn {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2388,6 +2402,12 @@ defineExpose({
   color: white;
 }
 .finder-open-btn:hover { background: #0063CC; }
+
+.new-tab-btn {
+  background: #6f42c1;
+  color: white;
+}
+.new-tab-btn:hover { background: #5a32a3; }
 
 .settings-btn {
   background: rgba(255, 255, 255, 0.1);
