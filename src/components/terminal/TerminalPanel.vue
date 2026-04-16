@@ -89,12 +89,17 @@
         v-if="activeTab?.layout"
         :node="activeTab.layout"
         :active-term-id="activeTermId"
+        :pane-title-resolver="getPaneTitle"
         :closable="activeTabTermIds.length > 1"
+        :dragging-term-id="draggingPaneTermId"
+        :drop-target-term-id="dropTargetPaneTermId"
         @pane-element-change="handlePaneElementChange"
         @pane-focus="focusSplitPane"
         @pane-close="closeSplitPane"
         @pane-drop="handleTerminalDrop"
         @start-resize="startResizeDrag"
+        @pane-drag-start="handlePaneDragStart"
+        @pane-drag-end="handlePaneDragEnd"
       />
     </div>
   </div>
@@ -136,6 +141,10 @@ const searchQuery = ref('')
 const searchHasMatch = ref(true)
 const searchInputRef = ref(null)
 const resizeDragState = ref(null)
+const draggingPaneTermId = ref('')
+const dropTargetPaneTermId = ref('')
+const pendingPaneDrag = ref(null)
+let paneDragPreviewEl = null
 let ensureDefaultPromise = null
 let persistSnapshotTimer = null
 let hasRestoredInitialSnapshot = false
@@ -246,6 +255,23 @@ const collectLayoutTermIds = (node, output = []) => {
   return output
 }
 
+const collectLayoutLeafBindings = (node, output = []) => {
+  if (!node) return output
+  if (node.type === 'leaf') {
+    if (node.nodeId && node.termId) {
+      output.push({
+        nodeId: node.nodeId,
+        termId: node.termId
+      })
+    }
+    return output
+  }
+  for (const child of node.children || []) {
+    collectLayoutLeafBindings(child, output)
+  }
+  return output
+}
+
 const buildLayoutFromTermIds = (termIds = [], split = false) => {
   const ids = [...new Set((Array.isArray(termIds) ? termIds : []).filter(Boolean))]
   if (!ids.length) return null
@@ -319,6 +345,70 @@ const findLayoutNodeById = (node, nodeId) => {
     if (found) return found
   }
   return null
+}
+
+const swapLayoutLeafTermIds = (node, leftTermId, rightTermId) => {
+  if (!node) return
+  if (node.type === 'leaf') {
+    if (node.termId === leftTermId) {
+      node.termId = rightTermId
+    } else if (node.termId === rightTermId) {
+      node.termId = leftTermId
+    }
+    return
+  }
+  for (const child of node.children || []) {
+    swapLayoutLeafTermIds(child, leftTermId, rightTermId)
+  }
+}
+
+const getPaneTitle = (termId) => {
+  const term = findTerminalById(termId)
+  if (!term) return '终端'
+  const cwd = normalizeIncomingPath(term.cwd || '')
+  const name = cwd ? cwd.split('/').filter(Boolean).pop() : ''
+  return name ? `终端 ${term._termIndex} · ${name}` : `终端 ${term._termIndex}`
+}
+
+const createPaneDragPreview = (termId) => {
+  const sourcePane = document.querySelector(`[data-pane-root-term-id="${termId}"]`)
+  if (!sourcePane) return null
+  const clone = sourcePane.cloneNode(true)
+  clone.style.position = 'fixed'
+  clone.style.pointerEvents = 'none'
+  clone.style.margin = '0'
+  clone.style.zIndex = '999999'
+  clone.style.opacity = '0.94'
+  clone.style.transform = 'scale(0.88)'
+  clone.style.transformOrigin = 'top left'
+  clone.style.boxShadow = '0 18px 44px rgba(0, 0, 0, 0.42)'
+  clone.style.backdropFilter = 'blur(2px)'
+  clone.style.transition = 'none'
+  document.body.appendChild(clone)
+  return clone
+}
+
+const destroyPaneDragPreview = () => {
+  if (!paneDragPreviewEl) return
+  paneDragPreviewEl.remove()
+  paneDragPreviewEl = null
+}
+
+const updatePaneDragPreviewPosition = (clientX, clientY) => {
+  const drag = pendingPaneDrag.value
+  if (!drag || !paneDragPreviewEl) return
+  paneDragPreviewEl.style.width = `${drag.rect.width}px`
+  paneDragPreviewEl.style.height = `${drag.rect.height}px`
+  paneDragPreviewEl.style.left = `${clientX - drag.offsetX}px`
+  paneDragPreviewEl.style.top = `${clientY - drag.offsetY}px`
+}
+
+const resolvePaneDropTargetTermId = (clientX, clientY) => {
+  const targetNode = document.elementFromPoint(clientX, clientY)
+  const paneRoot = targetNode?.closest?.('[data-pane-root-term-id]')
+  const termId = paneRoot?.getAttribute?.('data-pane-root-term-id') || ''
+  if (!termId || termId === draggingPaneTermId.value) return ''
+  return termId
 }
 
 const activeTab = computed(() => findTabById(activeTabId.value))
@@ -622,13 +712,13 @@ const mountTermToPane = (term, paneEl) => {
   term.el.style.display = ''
 }
 
-const handlePaneElementChange = ({ termId, el }) => {
-  if (!termId) return
+const handlePaneElementChange = ({ nodeId, el }) => {
+  if (!nodeId) return
   if (el) {
-    paneElements.set(termId, el)
+    paneElements.set(nodeId, el)
     return
   }
-  paneElements.delete(termId)
+  paneElements.delete(nodeId)
 }
 
 const refreshActiveTabTerminals = (focusActive = false) => {
@@ -645,9 +735,10 @@ const applyLayout = (focusActive = true) => {
       t.el.style.display = 'none'
     }
 
-    for (const termId of activeTabTermIds.value) {
+    const leafBindings = collectLayoutLeafBindings(activeTab.value?.layout)
+    for (const { nodeId, termId } of leafBindings) {
       const term = findTerminalById(termId)
-      const paneEl = paneElements.get(termId)
+      const paneEl = paneElements.get(nodeId)
       if (!term || !paneEl) continue
       mountTermToPane(term, paneEl)
     }
@@ -890,6 +981,79 @@ const focusSplitPane = (termId) => {
   const term = findTerminalById(termId)
   refreshVisibleTerminal(term, true)
   schedulePersistedSnapshot()
+}
+
+const removePaneDragListeners = () => {
+  window.removeEventListener('mousemove', handlePaneDragMove)
+  window.removeEventListener('mouseup', handlePaneDragMouseUp)
+}
+
+const handlePaneDragEnd = () => {
+  removePaneDragListeners()
+  pendingPaneDrag.value = null
+  draggingPaneTermId.value = ''
+  dropTargetPaneTermId.value = ''
+  destroyPaneDragPreview()
+}
+
+const handlePaneDragDrop = (sourceTermId, targetTermId) => {
+  const tab = activeTab.value
+  if (!tab || !sourceTermId || !targetTermId || sourceTermId === targetTermId) {
+    return
+  }
+  swapLayoutLeafTermIds(tab.layout, sourceTermId, targetTermId)
+  syncTabTermIds(tab)
+  activeTermId.value = sourceTermId
+  applyLayout(true)
+  schedulePersistedSnapshot()
+}
+
+const handlePaneDragMove = (event) => {
+  const drag = pendingPaneDrag.value
+  if (!drag) return
+
+  const deltaX = event.clientX - drag.startClientX
+  const deltaY = event.clientY - drag.startClientY
+  const distance = Math.hypot(deltaX, deltaY)
+
+  if (!draggingPaneTermId.value) {
+    if (distance < 6) return
+    draggingPaneTermId.value = drag.termId
+    paneDragPreviewEl = createPaneDragPreview(drag.termId)
+    updatePaneDragPreviewPosition(event.clientX, event.clientY)
+  } else {
+    updatePaneDragPreviewPosition(event.clientX, event.clientY)
+  }
+
+  dropTargetPaneTermId.value = resolvePaneDropTargetTermId(event.clientX, event.clientY)
+}
+
+const handlePaneDragMouseUp = (event) => {
+  const sourceTermId = draggingPaneTermId.value
+  const targetTermId = resolvePaneDropTargetTermId(event.clientX, event.clientY)
+  if (sourceTermId && targetTermId) {
+    handlePaneDragDrop(sourceTermId, targetTermId)
+  }
+  handlePaneDragEnd()
+}
+
+const handlePaneDragStart = (payload) => {
+  const termId = payload?.termId || ''
+  const rect = payload?.rect
+  if (!termId || !rect) return
+  focusSplitPane(termId)
+  handlePaneDragEnd()
+  pendingPaneDrag.value = {
+    termId,
+    label: payload?.label || getPaneTitle(termId),
+    rect,
+    startClientX: payload?.clientX || rect.left,
+    startClientY: payload?.clientY || rect.top,
+    offsetX: (payload?.clientX || rect.left) - rect.left,
+    offsetY: (payload?.clientY || rect.top) - rect.top
+  }
+  window.addEventListener('mousemove', handlePaneDragMove)
+  window.addEventListener('mouseup', handlePaneDragMouseUp)
 }
 
 const splitActiveTerminal = async (direction = 'row') => {
@@ -1695,6 +1859,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopResizeDrag()
+  handlePaneDragEnd()
   flushPersistedSnapshot(props.defaultCwd)
   for (const [cacheKey, cached] of terminalCache) {
     flushPersistedSnapshot(cacheKey, cached)
