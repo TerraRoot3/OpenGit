@@ -186,8 +186,8 @@
                 <ChevronRight :size="14" class="expand-arrow" :class="{ expanded: showTags }" />
               </div>
               <div v-if="showTags" class="branch-list">
-                <div v-if="tagsLoading" class="empty-tags">加载中...</div>
-                <div v-else-if="tags.length === 0" class="empty-tags">暂无标签</div>
+                <div v-if="tagsViewState === 'loading'" class="empty-tags">加载中...</div>
+                <div v-else-if="tagsViewState === 'empty'" class="empty-tags">暂无标签</div>
                 <div 
                   v-else
                   v-for="tag in tags" 
@@ -450,6 +450,7 @@ import {
   buildProjectRefreshPlan,
   deriveBranchStatusState
 } from './projectDetailRefresh.mjs'
+import { resolveTagsViewState } from './projectDetailTagsState.mjs'
 import {
   useProjectStore,
   updateProjectDetail,
@@ -711,6 +712,11 @@ const mrBranchOptions = computed(() => {
   const remote = remoteBranches.value.map(b => b.replace('origin/', ''))
   return [...new Set([...branches, ...remote])]
 })
+
+const tagsViewState = computed(() => resolveTagsViewState({
+  tagsLoading: tagsLoading.value,
+  tags: tags.value
+}))
 
 // ==================== 辅助方法 ====================
 const getAllBranchStatus = (branch) => {

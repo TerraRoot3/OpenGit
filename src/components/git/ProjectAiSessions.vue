@@ -104,12 +104,12 @@
             <div class="summary-block-title">对话记录</div>
             <div v-if="detailLoading" class="summary-block-placeholder">正在读取会话记录...</div>
             <div v-else-if="detailError" class="summary-block-placeholder error">{{ detailError }}</div>
-            <div v-else-if="dialogMessages.length === 0" class="summary-block-placeholder">
+            <div v-else-if="displayDialogMessages.length === 0" class="summary-block-placeholder">
               暂无可展示的对话记录
             </div>
             <div v-else class="transcript-list">
               <div
-                v-for="(message, index) in dialogMessages"
+                v-for="(message, index) in displayDialogMessages"
                 :key="`${message.timestamp || 'message'}-${index}`"
                 :class="['transcript-item', message.role]"
               >
@@ -158,6 +158,7 @@
 
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue'
+import { sortMessagesNewestFirst } from './projectAiSessionMessages.mjs'
 
 const props = defineProps({
   projectPath: {
@@ -225,6 +226,8 @@ const selectedProviderSessions = computed(() => {
   const provider = providerSections.value.find((item) => item.key === selectedProvider.value)
   return provider?.sessions || []
 })
+
+const displayDialogMessages = computed(() => sortMessagesNewestFirst(dialogMessages.value))
 
 const selectedProviderLabel = computed(() => {
   const provider = providerSections.value.find((item) => item.key === selectedProvider.value)
