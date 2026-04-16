@@ -277,7 +277,6 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   min-height: 0;
   position: relative;
   box-sizing: border-box;
-  padding-right: 8px;
 }
 
 .terminal-pane.inactive .terminal-pane-content::after {

@@ -115,6 +115,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useTerminalRouter } from '../../composables/useTerminalRouter'
 import { buildDropPayload } from './terminalInteractions.mjs'
 import { isBufferViewportAtBottom } from './terminalViewportState.mjs'
+import { scheduleViewportRevealSync, cancelViewportRevealSync } from './terminalViewportSync.mjs'
 import TerminalSplitNode from './TerminalSplitNode.vue'
 import '@xterm/xterm/css/xterm.css'
 
@@ -864,6 +865,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     ptyId: null,
     hasUserInput: restoredHasUserInput,
     restoreViewportToBottom: true,
+    _viewportRevealTimerId: null,
     _dropHandlers: null
   }
 
@@ -948,41 +950,21 @@ const canMeasureTerminal = () => {
 
 const refreshVisibleTerminal = (term, focus = true) => {
   if (!term) return
+  const stickToBottom = !!term.restoreViewportToBottom
+  term.restoreViewportToBottom = false
   nextTick(() => {
-    requestAnimationFrame(() => {
-      if (!canMeasureTerminal()) return
-      try {
-        term.fitAddon.fit()
-      } catch (error) {}
-      try {
-        if (typeof term.xterm.rows === 'number' && term.xterm.rows > 0) {
-          term.xterm.refresh(0, term.xterm.rows - 1)
-        }
-      } catch (error) {}
-      // 某些 TUI（如 codex/claude）在隐藏后恢复可见时需要一次 resize 才会立即重绘。
-      // 即使 cols/rows 未变化，也主动发一次，等价于你手动按回车触发 redraw。
-      try {
-        const cols = term.xterm.cols
-        const rows = term.xterm.rows
-        if (term.ptyId && term.connected && Number.isFinite(cols) && Number.isFinite(rows) && cols > 0 && rows > 0) {
+    scheduleViewportRevealSync({
+      term,
+      canMeasure: canMeasureTerminal,
+      focus,
+      stickToBottom,
+      requestFrame: (callback) => requestAnimationFrame(callback),
+      setTimer: (callback, delay) => window.setTimeout(callback, delay),
+      clearTimer: (timerId) => window.clearTimeout(timerId),
+      resizePty({ cols, rows }) {
+        if (term.ptyId && term.connected) {
           window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
         }
-      } catch (error) {}
-      if (term.restoreViewportToBottom) {
-        requestAnimationFrame(() => {
-          try {
-            term.xterm.scrollToBottom()
-          } catch (error) {}
-          try {
-            if (typeof term.xterm.rows === 'number' && term.xterm.rows > 0) {
-              term.xterm.refresh(0, term.xterm.rows - 1)
-            }
-          } catch (error) {}
-        })
-      }
-      term.restoreViewportToBottom = false
-      if (focus) {
-        try { term.xterm.focus() } catch (error) {}
       }
     })
   })
@@ -1119,6 +1101,7 @@ const closeTerminalById = async (termId) => {
 
   const term = terminals.value[idx]
   unbindTerminalDropEvents(term)
+  cancelViewportRevealSync(term, (timerId) => window.clearTimeout(timerId))
   if (term.ptyId) {
     await window.electronAPI.terminal.destroy({ id: term.ptyId }).catch(() => {})
   }
@@ -1724,6 +1707,7 @@ const restoreState = async (path) => {
 const destroyTerminals = (terms) => {
   for (const t of terms) {
     unbindTerminalDropEvents(t)
+    cancelViewportRevealSync(t, (timerId) => window.clearTimeout(timerId))
     if (t.ptyId) window.electronAPI.terminal.destroy({ id: t.ptyId }).catch(() => {})
     try { t.xterm.dispose() } catch (e) {}
     t.el.remove()
@@ -2097,7 +2081,6 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
-  padding-right: 8px;
 }
 .terminal-split {
   display: flex;
@@ -2115,10 +2098,6 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   height: 100%;
   position: relative;
   box-sizing: border-box;
-  padding-right: 8px;
-}
-.terminal-pane + .terminal-pane .terminal-pane-content {
-  padding-left: 8px;
 }
 .terminal-pane.inactive .terminal-pane-content::after {
   content: '';
@@ -2158,6 +2137,7 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
 .terminal-body :deep(.xterm) { height: 100%; }
 .terminal-body :deep(.xterm-viewport) {
   overflow-y: scroll !important;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }

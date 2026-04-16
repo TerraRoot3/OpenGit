@@ -28,6 +28,7 @@ const assertNoBroadScrollbarWildcard = (relativePath) => {
 }
 
 const terminalPanel = read('src/components/terminal/TerminalPanel.vue')
+const terminalSplitNode = read('src/components/terminal/TerminalSplitNode.vue')
 
 assertNoBareScrollbarSelectors('src/components/git/ProjectDetail.vue')
 assertNoBroadScrollbarWildcard('src/components/git/ProjectDetail.vue')
@@ -43,6 +44,32 @@ assert(
 assert(
   viewportRule?.[1]?.includes('scrollbar-gutter: stable;'),
   'TerminalPanel should reserve a stable scrollbar gutter for xterm viewport'
+)
+
+const singlePaneRule = terminalPanel.match(/\.terminal-single-pane\s*\{([\s\S]*?)\}/)
+assert(Boolean(singlePaneRule), 'TerminalPanel should declare .terminal-single-pane styles')
+assert(
+  !singlePaneRule?.[1]?.includes('padding-right:'),
+  'TerminalPanel single pane container should not add right padding that skews xterm fit width'
+)
+
+const paneContentRule = terminalPanel.match(/\.terminal-pane-content\s*\{([\s\S]*?)\}/)
+assert(Boolean(paneContentRule), 'TerminalPanel should declare .terminal-pane-content styles')
+assert(
+  !paneContentRule?.[1]?.includes('padding-right:'),
+  'TerminalPanel split pane content should not add right padding that skews xterm fit width'
+)
+
+assert(
+  !/\.terminal-pane\s*\+\s*\.terminal-pane\s+\.terminal-pane-content\s*\{[\s\S]*?padding-left\s*:/m.test(terminalPanel),
+  'TerminalPanel split pane content should not add left padding that changes xterm measurement width'
+)
+
+const splitPaneContentRule = terminalSplitNode.match(/\.terminal-pane-content\s*\{([\s\S]*?)\}/)
+assert(Boolean(splitPaneContentRule), 'TerminalSplitNode should declare .terminal-pane-content styles')
+assert(
+  !splitPaneContentRule?.[1]?.includes('padding-right:'),
+  'TerminalSplitNode split pane content should not add right padding that skews xterm fit width'
 )
 
 const scrollbarWidthRule = terminalPanel.match(
