@@ -1389,11 +1389,6 @@ const selectTerminal = () => {
   terminalMounted.value = true
   currentView.value = 'terminal'
   saveCurrentView('terminal')
-  if (props.isActive) {
-    nextTick(() => {
-      terminalRef.value?.ensureDefaultTerminal?.(terminalProjectPath.value)
-    })
-  }
 }
 
 const handleResumeAiSession = async (session) => {
@@ -2290,9 +2285,6 @@ watch(() => props.path, (newPath, oldPath) => {
 watch(currentView, (view) => {
   if (view === 'terminal' && props.isActive) {
     terminalMounted.value = true
-    nextTick(() => {
-      terminalRef.value?.ensureDefaultTerminal?.(terminalProjectPath.value)
-    })
   }
   if (view === 'ai-sessions') {
     aiSessionsMounted.value = true
@@ -2302,9 +2294,6 @@ watch(currentView, (view) => {
 watch(() => props.isActive, (active) => {
   if (active && currentView.value === 'terminal') {
     terminalMounted.value = true
-    nextTick(() => {
-      terminalRef.value?.ensureDefaultTerminal?.(terminalProjectPath.value)
-    })
   }
 })
 

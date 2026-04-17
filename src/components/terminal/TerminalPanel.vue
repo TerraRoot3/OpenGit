@@ -114,6 +114,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useTerminalRouter } from '../../composables/useTerminalRouter'
 import { buildDropPayload } from './terminalInteractions.mjs'
+import { shouldCreateInitialTerminal } from './terminalInitialBootstrap.mjs'
 import { XTERM_OPTS } from './terminalXtermOptions.mjs'
 import { isBufferViewportAtBottom } from './terminalViewportState.mjs'
 import { scheduleViewportRevealSync, cancelViewportRevealSync } from './terminalViewportSync.mjs'
@@ -1809,12 +1810,21 @@ watch(() => props.defaultCwd, async (newCwd, oldCwd) => {
   if (newCwd === oldCwd) return
   hasRestoredInitialSnapshot = false
   saveCurrentState(oldCwd)
-  if (!await restoreState(newCwd)) {
+  const targetCwd = normalizeIncomingPath(newCwd || '')
+  const restored = await restoreState(newCwd)
+  if (!restored) {
     tabs.value = []
     activeTabId.value = null
     terminals.value = []
     activeTermId.value = null
-    addTerminal()
+    if (shouldCreateInitialTerminal({
+      terminalCount: terminals.value.length,
+      restoredSnapshot: false,
+      projectRoot: targetCwd,
+      allowFirstTerminalWithoutCwd: props.allowFirstTerminalWithoutCwd
+    })) {
+      await addTerminal(targetCwd || null)
+    }
   } else {
     applyLayout(true)
   }
@@ -1827,13 +1837,19 @@ watch(
   () => [props.isActive, projectRootRef.value, props.allowFirstTerminalWithoutCwd],
   async ([active, root, allowEmpty]) => {
     if (!active || terminals.value.length > 0) return
+    let restored = false
     if (!hasRestoredInitialSnapshot) {
       hasRestoredInitialSnapshot = true
-      const restored = await restoreState(root || props.defaultCwd || '__standalone__')
-      if (restored) return
+      restored = await restoreState(root || props.defaultCwd || '__standalone__')
     }
-    if (allowEmpty && !root) {
-      addTerminal()
+    const targetCwd = normalizeIncomingPath(root || props.defaultCwd || '')
+    if (shouldCreateInitialTerminal({
+      terminalCount: terminals.value.length,
+      restoredSnapshot: restored,
+      projectRoot: targetCwd,
+      allowFirstTerminalWithoutCwd: allowEmpty
+    })) {
+      await addTerminal(targetCwd || null)
     }
   },
   { immediate: true }
