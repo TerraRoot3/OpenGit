@@ -597,9 +597,11 @@ const activePipelineSummary = ref(null)
 const PROJECT_GIT_MONITOR_INTERVAL_MS = 2000
 const PIPELINE_SUMMARY_ACTIVE_INTERVAL_MS = 8000
 const PIPELINE_SUMMARY_IDLE_INTERVAL_MS = 20000
+const PIPELINE_SUMMARY_TERMINAL_HOLD_MS = 12000
 let projectGitMonitorTimer = null
 let projectGitMonitorInFlight = false
 let pipelineSummaryTimer = null
+let pipelineSummaryHoldUntil = 0
 
 // ==================== UI 状态 ====================
 // 从 localStorage 读取项目对应的视图状态，默认为 'ai-sessions'
@@ -780,7 +782,11 @@ const pipelineStatusClass = computed(() => `pipeline-status-${activePipelineSumm
 const pipelineStatusText = computed(() => {
   const pipeline = activePipelineSummary.value
   if (!pipeline) return ''
-  return `执行中 · ${pipeline.isTag ? `标签 ${pipeline.ref}` : `分支 ${pipeline.ref}`}`
+  const refText = pipeline.isTag ? `标签 ${pipeline.ref}` : `分支 ${pipeline.ref}`
+  if (pipeline.status === 'success') return `刚刚成功 · ${refText}`
+  if (pipeline.status === 'failed') return `执行失败 · ${refText}`
+  if (pipeline.status === 'canceled') return `已取消 · ${refText}`
+  return `执行中 · ${refText}`
 })
 
 const pipelineStatusTitle = computed(() => {
@@ -828,15 +834,27 @@ const clearPipelineSummaryTimer = () => {
   pipelineSummaryTimer = null
 }
 
+const isActivePipelineStatus = (status) => {
+  return ['running', 'pending', 'preparing', 'waiting_for_resource', 'created'].includes(status)
+}
+
+const isTerminalPipelineStatus = (status) => {
+  return ['success', 'failed', 'canceled'].includes(status)
+}
+
 const schedulePipelineSummaryRefresh = () => {
   clearPipelineSummaryTimer()
   if (!props.isActive || !props.path || isGitRepository.value === false || !isDocumentVisible.value || typeof window === 'undefined') {
     return
   }
 
-  const delay = activePipelineSummary.value
+  let delay = activePipelineSummary.value
     ? PIPELINE_SUMMARY_ACTIVE_INTERVAL_MS
     : PIPELINE_SUMMARY_IDLE_INTERVAL_MS
+
+  if (pipelineSummaryHoldUntil > Date.now()) {
+    delay = Math.min(delay, Math.max(500, pipelineSummaryHoldUntil - Date.now()))
+  }
 
   pipelineSummaryTimer = window.setTimeout(() => {
     pipelineSummaryTimer = null
@@ -861,15 +879,41 @@ const refreshPipelineSummary = async ({ silent = false } = {}) => {
         debugLog('ℹ️ [ProjectDetailNew] GitLab Pipeline 摘要不可用:', result?.message)
       }
       activePipelineSummary.value = null
+      pipelineSummaryHoldUntil = 0
       return
     }
 
-    activePipelineSummary.value = result.data?.currentRunning || null
+    const previousSummary = activePipelineSummary.value
+    const currentRunning = result.data?.currentRunning || null
+    const latestRecent = result.data?.recentPipelines?.[0] || null
+
+    if (currentRunning) {
+      activePipelineSummary.value = currentRunning
+      pipelineSummaryHoldUntil = 0
+    } else if (
+      previousSummary &&
+      isActivePipelineStatus(previousSummary.status) &&
+      isTerminalPipelineStatus(latestRecent?.status)
+    ) {
+      activePipelineSummary.value = latestRecent
+      pipelineSummaryHoldUntil = Date.now() + PIPELINE_SUMMARY_TERMINAL_HOLD_MS
+    } else if (
+      isTerminalPipelineStatus(activePipelineSummary.value?.status) &&
+      pipelineSummaryHoldUntil > Date.now()
+    ) {
+      // 保持结束态直到延迟窗口结束
+    } else {
+      activePipelineSummary.value = null
+      pipelineSummaryHoldUntil = 0
+    }
   } catch (error) {
     if (!silent) {
       debugLog('ℹ️ [ProjectDetailNew] 刷新 GitLab Pipeline 摘要失败:', error.message)
     }
-    activePipelineSummary.value = null
+    if (!(isTerminalPipelineStatus(activePipelineSummary.value?.status) && pipelineSummaryHoldUntil > Date.now())) {
+      activePipelineSummary.value = null
+      pipelineSummaryHoldUntil = 0
+    }
   } finally {
     schedulePipelineSummaryRefresh()
   }
