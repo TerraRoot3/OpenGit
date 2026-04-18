@@ -2700,8 +2700,9 @@ onUnmounted(() => {
 .container {
   display: flex;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
-  flex: 1;
+  flex: 1 1 0%;
   background: #2d2d2d;
 }
 

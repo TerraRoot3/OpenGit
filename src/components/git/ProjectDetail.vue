@@ -81,6 +81,15 @@
               <span>终端</span>
             </div>
 
+            <div
+              class="file-status-button"
+              :class="{ active: currentView === 'workspace' }"
+              @click="selectWorkspace"
+            >
+              <FolderTree :size="16" />
+              <span>工作区</span>
+            </div>
+
             <!-- 文件状态按钮 -->
             <div
               class="file-status-button"
@@ -229,6 +238,12 @@
           <!-- 右侧内容区 -->
           <div class="right-panel">
             <!-- 文件状态 -->
+            <ProjectWorkspace
+              v-if="currentView === 'workspace'"
+              :project-path="path"
+              :is-active="isActive && currentView === 'workspace'"
+            />
+
             <ProjectFileStatus 
               v-show="currentView === 'file-status'"
               :project-path="path"
@@ -464,11 +479,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, defineAsyncComponent } from 'vue'
 import {
   FolderOpen, GitBranch, Tag, GitPullRequest, ArrowUpCircle, GitMerge, Activity,
   Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot,
-  Folder, Globe, RefreshCw, Check,   ChevronRight, Settings
+  Folder, FolderTree, Globe, RefreshCw, Check, ChevronRight, Settings
 } from 'lucide-vue-next'
 import ProjectFileStatus from './ProjectFileStatus.vue'
 import ProjectStashList from './ProjectStashList.vue'
@@ -501,6 +516,8 @@ import {
   getProjectDetail,
   getBranchStatus as getStoreBranchStatus
 } from '../../stores/projectStore'
+
+const ProjectWorkspace = defineAsyncComponent(() => import('./ProjectWorkspace.vue'))
 
 const isDev = import.meta.env.DEV
 const normalizeLogArg = (arg) => {
@@ -611,7 +628,7 @@ const getExpandStateKey = (path) => `expandState_${path?.replace(/[^a-zA-Z0-9]/g
 const getSavedCurrentView = (path) => {
   try {
     const saved = localStorage.getItem(getProjectViewKey(path))
-    if (saved && ['file-status', 'commit-history', 'stash-list', 'terminal', 'ai-sessions', 'pipeline'].includes(saved)) {
+    if (saved && ['file-status', 'commit-history', 'stash-list', 'terminal', 'ai-sessions', 'pipeline', 'workspace'].includes(saved)) {
       return saved === 'terminal' ? 'ai-sessions' : saved
     }
   } catch (e) {}
@@ -1561,6 +1578,11 @@ const selectTerminal = () => {
   terminalMounted.value = true
   currentView.value = 'terminal'
   saveCurrentView('terminal')
+}
+
+const selectWorkspace = () => {
+  currentView.value = 'workspace'
+  saveCurrentView('workspace')
 }
 
 const handleResumeAiSession = async (session) => {
@@ -2576,11 +2598,11 @@ defineExpose({
 
 <style scoped>
 .main-content {
-  flex: 1;
+  flex: 1 1 0%;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  height: 100%;
+  min-width: 0;
   overflow: hidden;
   padding-left: 0;
   box-sizing: border-box;
@@ -2637,9 +2659,10 @@ defineExpose({
 }
 
 .project-detail {
+  flex: 1 1 0%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
   overflow: hidden;
   background: #1b1c1f;
 }
@@ -3062,14 +3085,22 @@ defineExpose({
 }
 
 .right-panel {
-  flex: 1;
+  flex: 1 1 0%;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
   position: relative;
   background: transparent;
   border-radius: 0;
+}
+
+/* 右侧各视图占满剩余高度，避免子组件 height:100% 无参照 */
+.right-panel > * {
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
 }
 
 /* 弹框样式 */

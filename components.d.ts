@@ -33,6 +33,7 @@ declare module 'vue' {
     ProjectSettingsDialog: typeof import('./src/components/dialog/ProjectSettingsDialog.vue')['default']
     ProjectSidebar: typeof import('./src/components/project-sidebar/ProjectSidebar.vue')['default']
     ProjectStashList: typeof import('./src/components/git/ProjectStashList.vue')['default']
+    ProjectWorkspace: typeof import('./src/components/git/ProjectWorkspace.vue')['default']
     RemoteRepo: typeof import('./src/components/git/RemoteRepo.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
