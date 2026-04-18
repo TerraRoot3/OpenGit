@@ -1,3 +1,4 @@
+const fs = require('fs')
 const path = require('path')
 const os = require('os')
 const { URL } = require('url')
@@ -5,17 +6,28 @@ const { URL } = require('url')
 function registerNavigationHandlers({ ipcMain, shell, getMainWindow, safeLog, safeError }) {
   ipcMain.handle('open-in-finder', async (event, data) => {
     try {
-      let filePath = data.path
+      let filePath = data?.path || data?.filePath
       if (filePath && filePath.startsWith('local-resource://')) {
         const url = new URL(filePath)
         const relPath = decodeURIComponent((url.host || '') + url.pathname)
         filePath = path.resolve(os.homedir(), '.gitManager', relPath)
       }
-      safeLog(`📂 在访达中打开: ${filePath}`)
-      await shell.openPath(filePath)
+      if (!filePath) {
+        return { success: false, message: '缺少 path 参数' }
+      }
+      safeLog(`📂 在系统文件管理器中打开: ${filePath}`)
+      const stat = fs.existsSync(filePath) ? fs.statSync(filePath) : null
+      if (stat?.isDirectory()) {
+        const message = await shell.openPath(filePath)
+        if (message) {
+          return { success: false, message }
+        }
+      } else {
+        shell.showItemInFolder(filePath)
+      }
       return { success: true }
     } catch (error) {
-      safeError('❌ 打开访达失败:', error.message)
+      safeError('❌ 打开系统文件管理器失败:', error.message)
       return { success: false, message: `打开失败: ${error.message}` }
     }
   })

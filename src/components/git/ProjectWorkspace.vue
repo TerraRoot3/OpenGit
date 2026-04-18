@@ -6,41 +6,94 @@
       :theme-overrides="themeOverrides"
     >
       <div class="workspace-split">
-        <aside class="tree-pane" :style="{ width: `${treeWidthPx}px` }">
-          <div class="tree-toolbar">项目文件</div>
-          <div ref="treeScrollRef" class="tree-scroll">
-            <div class="workspace-tree-list">
-              <button
-                v-for="item in visibleTreeNodes"
-                :key="item.node.key"
-                type="button"
-                class="workspace-tree-row"
-                :class="[
-                  getNodeStatusClass(item.node),
-                  { selected: selectedKeys[0] === item.node.key }
-                ]"
-                @click="handleTreeRowClick(item.node)"
-                @dblclick="handleTreeRowDoubleClick(item.node)"
-              >
-                <span class="workspace-tree-row__indent" :style="{ width: `${item.depth * 16}px` }"></span>
-                <span
-                  class="workspace-tree-row__toggle"
-                  :class="{ placeholder: !item.node.isDirectory }"
-                  @click.stop="item.node.isDirectory ? toggleDirectory(item.node) : null"
-                >
-                  <component
-                    :is="isExpanded(item.node.key) ? ChevronDown : ChevronRight"
-                    v-if="item.node.isDirectory"
-                    :size="14"
-                  />
-                </span>
-                <component :is="getNodeIconComponent(item.node)" :size="15" class="workspace-tree-row__icon" />
-                <span class="workspace-tree-row__name" :title="item.node.label">{{ item.node.label }}</span>
-                <span v-if="getNodeStatus(item.node)" class="workspace-tree-row__status" :title="`Git 状态 ${getNodeStatus(item.node)}`">
-                  {{ getNodeStatus(item.node) }}
-                </span>
+        <aside
+          ref="treePaneRef"
+          class="tree-pane"
+          :style="{ width: `${treeWidthPx}px` }"
+          tabindex="0"
+          @keydown="handleTreeKeydown"
+          @paste="handleTreePaste"
+        >
+          <div class="tree-toolbar">
+            <span class="tree-toolbar__title">项目文件</span>
+            <div class="tree-toolbar__actions">
+              <button type="button" class="tree-toolbar__action" title="新建文件" @click="startCreate('file')">
+                <FilePlus2 :size="14" />
+              </button>
+              <button type="button" class="tree-toolbar__action" title="新建文件夹" @click="startCreate('directory')">
+                <FolderPlus :size="14" />
+              </button>
+              <button type="button" class="tree-toolbar__action" title="刷新" @click="refreshTree">
+                <RefreshCw :size="14" />
               </button>
             </div>
+          </div>
+          <div ref="treeScrollRef" class="tree-scroll">
+            <div class="workspace-tree-list">
+              <template v-for="item in visibleTreeNodes" :key="item.key">
+                <div
+                  v-if="item.kind === 'draft'"
+                  class="workspace-tree-row workspace-tree-row--draft"
+                  :class="{ selected: true }"
+                >
+                  <span class="workspace-tree-row__indent" :style="{ width: `${item.depth * 16}px` }"></span>
+                  <span class="workspace-tree-row__toggle placeholder"></span>
+                  <component :is="item.type === 'directory' ? FolderPlus : FilePlus2" :size="15" class="workspace-tree-row__icon" />
+                  <input
+                    v-model="draftName"
+                    class="workspace-tree-row__input"
+                    :placeholder="item.type === 'directory' ? '输入文件夹名称' : '输入文件名称'"
+                    @keydown.enter.prevent="commitCreateDraft"
+                    @keydown.esc.prevent="cancelCreateDraft"
+                    @blur="handleDraftBlur"
+                  />
+                </div>
+                <button
+                  v-else
+                  type="button"
+                  class="workspace-tree-row"
+                  :class="[
+                    getNodeStatusClass(item.node),
+                    { selected: selectedKeys[0] === item.node.key }
+                  ]"
+                  @click="handleTreeRowClick(item.node)"
+                  @dblclick="handleTreeRowDoubleClick(item.node)"
+                  @contextmenu.prevent="openTreeContextMenu($event, item.node)"
+                >
+                  <span class="workspace-tree-row__indent" :style="{ width: `${item.depth * 16}px` }"></span>
+                  <span
+                    class="workspace-tree-row__toggle"
+                    :class="{ placeholder: !item.node.isDirectory }"
+                    @click.stop="item.node.isDirectory ? toggleDirectory(item.node) : null"
+                  >
+                    <component
+                      :is="isExpanded(item.node.key) ? ChevronDown : ChevronRight"
+                      v-if="item.node.isDirectory"
+                      :size="14"
+                    />
+                  </span>
+                  <component :is="getNodeIconComponent(item.node)" :size="15" class="workspace-tree-row__icon" />
+                  <span class="workspace-tree-row__name" :title="item.node.label">{{ item.node.label }}</span>
+                  <span v-if="getNodeStatus(item.node)" class="workspace-tree-row__status" :title="`Git 状态 ${getNodeStatus(item.node)}`">
+                    {{ getNodeStatus(item.node) }}
+                  </span>
+                </button>
+              </template>
+            </div>
+          </div>
+          <div
+            v-if="contextMenu.visible"
+            ref="contextMenuRef"
+            class="context-menu"
+            :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+            @click.stop
+          >
+            <div class="context-menu-item" @click="startCreateFromContext('file')">新建文件</div>
+            <div class="context-menu-item" @click="startCreateFromContext('directory')">新建文件夹</div>
+            <div class="context-menu-divider"></div>
+            <div class="context-menu-item" @click="openContextInFinder">{{ systemFileManagerLabel }}</div>
+            <div class="context-menu-divider"></div>
+            <div class="context-menu-item delete" @click="deleteContextNode">删除</div>
           </div>
         </aside>
         <div
@@ -57,10 +110,24 @@
               class="tab-item"
               :class="{ active: tab.id === activeTabId }"
               @click="activateTab(tab.id)"
+              @contextmenu.prevent="openTabContextMenu($event, tab)"
             >
               <span class="tab-title" :title="tab.path">{{ tab.title }}</span>
               <span class="tab-close" @click.stop="closeTab(tab.id)">×</span>
             </button>
+          </div>
+          <div
+            v-if="tabContextMenu.visible"
+            ref="tabContextMenuRef"
+            class="context-menu"
+            :style="{ left: `${tabContextMenu.x}px`, top: `${tabContextMenu.y}px` }"
+            @click.stop
+          >
+            <div class="context-menu-item" @click="closeTabsToLeft">关闭左侧</div>
+            <div class="context-menu-item" @click="closeTabsToRight">关闭右侧</div>
+            <div class="context-menu-item" @click="closeOtherTabs">关闭其他</div>
+            <div class="context-menu-divider"></div>
+            <div class="context-menu-item delete" @click="closeAllTabs">关闭所有</div>
           </div>
           <div ref="previewBodyRef" class="preview-body">
             <div
@@ -99,9 +166,13 @@ import {
   FileTerminal,
   FileText,
   Folder,
-  FolderOpen
+  FolderOpen,
+  FolderPlus,
+  FilePlus2,
+  RefreshCw
 } from 'lucide-vue-next'
 import * as monaco from 'monaco-editor'
+import { useConfirm } from '../../composables/useConfirm'
 
 const props = defineProps({
   projectPath: { type: String, required: true },
@@ -112,11 +183,30 @@ const treeWidthPx = ref(280)
 const treeData = ref([])
 const expandedKeys = ref([])
 const selectedKeys = ref([])
+const treePaneRef = ref(null)
 const treeScrollRef = ref(null)
 const previewBodyRef = ref(null)
+const contextMenuRef = ref(null)
+const tabContextMenuRef = ref(null)
 const gitStatusByPath = ref({})
+const createDraft = ref(null)
+const draftName = ref('')
+const internalClipboard = ref({ mode: null, paths: [] })
+const contextMenu = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  node: null
+})
+const tabContextMenu = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  tabId: null
+})
 let layoutObserver = null
 let gitStatusTimer = null
+const { confirm } = useConfirm()
 
 const tabs = ref([])
 const activeTabId = ref(null)
@@ -148,6 +238,13 @@ const SPREADSHEET_FILE_EXT = new Set(['csv', 'tsv', 'xlsx', 'xls'])
 const ARCHIVE_FILE_EXT = new Set(['zip', 'tar', 'gz', 'tgz', '7z', 'rar', 'bz2', 'xz'])
 const TERMINAL_FILE_EXT = new Set(['sh', 'bash', 'zsh', 'fish'])
 const TEXT_FILE_EXT = new Set(['md', 'txt', 'log', 'yml', 'yaml', 'toml', 'ini', 'conf'])
+const platform = window.electronAPI?.platform || 'darwin'
+
+const systemFileManagerLabel = computed(() => {
+  if (platform === 'win32') return '资源管理器'
+  if (platform === 'darwin') return '访达'
+  return '文件管理器'
+})
 
 function treeWidthStorageKey () {
   const p = props.projectPath || ''
@@ -185,6 +282,13 @@ function joinProjectPath (relativePath) {
   const rel = String(relativePath || '').replace(/^\.?\//, '')
   if (!rel) return base
   return `${base}/${rel}`.replace(/\/+/g, '/')
+}
+
+function relativeToProjectPath(targetPath) {
+  const base = normalizePath(props.projectPath)
+  const target = normalizePath(targetPath)
+  if (!target || target === base) return ''
+  return target.startsWith(`${base}/`) ? target.slice(base.length + 1) : target
 }
 
 const LANG_MAP = {
@@ -434,7 +538,16 @@ const visibleTreeNodes = computed(() => {
 
   const appendNodes = (nodes, depth) => {
     for (const node of nodes) {
-      output.push({ node, depth })
+      output.push({ kind: 'node', key: node.key, node, depth })
+      if (createDraft.value && createDraft.value.parentKey === node.key && node.isDirectory && expandedSet.has(node.key)) {
+        output.push({
+          kind: 'draft',
+          key: `draft:${node.key}:${createDraft.value.type}`,
+          parentKey: node.key,
+          depth: depth + 1,
+          type: createDraft.value.type
+        })
+      }
       if (node.isDirectory && expandedSet.has(node.key) && Array.isArray(node.children) && node.children.length) {
         appendNodes(node.children, depth + 1)
       }
@@ -444,6 +557,269 @@ const visibleTreeNodes = computed(() => {
   appendNodes(treeData.value, 0)
   return output
 })
+
+function findTreeNodeByKey(nodes, key) {
+  for (const node of nodes) {
+    if (node.key === key) return node
+    if (Array.isArray(node.children) && node.children.length) {
+      const found = findTreeNodeByKey(node.children, key)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function findParentDirectoryKey(targetKey) {
+  const normalizedTargetKey = normalizePath(targetKey)
+  const rootKey = normalizePath(props.projectPath)
+  if (!normalizedTargetKey || normalizedTargetKey === rootKey) return rootKey
+  const node = findTreeNodeByKey(treeData.value, normalizedTargetKey)
+  if (node?.isDirectory) return normalizedTargetKey
+  const parentPath = normalizePath(normalizedTargetKey.split('/').slice(0, -1).join('/'))
+  return parentPath || rootKey
+}
+
+function isSamePathOrChildPath(targetPath, parentPath) {
+  const normalizedTarget = normalizePath(targetPath)
+  const normalizedParent = normalizePath(parentPath)
+  if (!normalizedTarget || !normalizedParent) return false
+  return normalizedTarget === normalizedParent || normalizedTarget.startsWith(`${normalizedParent}/`)
+}
+
+async function ensureNodeReady(key) {
+  const node = findTreeNodeByKey(treeData.value, key)
+  if (node?.isDirectory) {
+    if (!isExpanded(key)) {
+      toggleExpandedKey(key)
+    }
+    await ensureDirectoryChildren(node)
+  }
+  return node
+}
+
+function resetCreateDraftState() {
+  createDraft.value = null
+  draftName.value = ''
+}
+
+function closeContextMenu() {
+  contextMenu.value = {
+    visible: false,
+    x: 0,
+    y: 0,
+    node: null
+  }
+}
+
+function closeTabContextMenu() {
+  tabContextMenu.value = {
+    visible: false,
+    x: 0,
+    y: 0,
+    tabId: null
+  }
+}
+
+async function focusDraftInput() {
+  await nextTick()
+  const input = treePaneRef.value?.querySelector?.('.workspace-tree-row__input')
+  if (input && typeof input.focus === 'function') {
+    input.focus()
+    input.select?.()
+  }
+}
+
+async function startCreate(type) {
+  closeContextMenu()
+  closeTabContextMenu()
+  const selectedKey = selectedKeys.value[0] || props.projectPath
+  const parentKey = findParentDirectoryKey(selectedKey)
+  await ensureNodeReady(parentKey)
+  createDraft.value = { type, parentKey }
+  draftName.value = ''
+  await focusDraftInput()
+}
+
+function cancelCreateDraft() {
+  resetCreateDraftState()
+}
+
+async function commitCreateDraft() {
+  if (!createDraft.value) return
+  const name = draftName.value.trim()
+  if (!name) {
+    cancelCreateDraft()
+    return
+  }
+  const draftType = createDraft.value.type
+  const parentKey = createDraft.value.parentKey
+  const parentRelativePath = relativeToProjectPath(parentKey)
+  const targetPath = joinProjectPath(parentRelativePath ? `${parentRelativePath}/${name}` : name)
+
+  const result = draftType === 'directory'
+    ? await window.electronAPI?.createDirectory({ dirPath: targetPath })
+    : await window.electronAPI?.createFile({ filePath: targetPath, content: '' })
+
+  if (!result?.success) {
+    console.warn('创建失败:', result?.error)
+    return
+  }
+
+  resetCreateDraftState()
+  await refreshTree()
+  selectedKeys.value = [targetPath]
+  if (draftType === 'directory') {
+    const node = findTreeNodeByKey(treeData.value, targetPath)
+    if (node?.isDirectory && !isExpanded(targetPath)) {
+      toggleExpandedKey(targetPath)
+    }
+  } else {
+    await openFile(targetPath)
+  }
+}
+
+async function handleDraftBlur() {
+  if (!createDraft.value) return
+  if (!draftName.value.trim()) {
+    cancelCreateDraft()
+    return
+  }
+  await commitCreateDraft()
+}
+
+function handleDocumentPointerDown(event) {
+  const target = event.target
+  if (contextMenu.value.visible) {
+    const menu = treePaneRef.value?.querySelector?.('.context-menu')
+    if (!(target instanceof Node) || !menu || !menu.contains(target)) {
+      closeContextMenu()
+    }
+  }
+  if (tabContextMenu.value.visible) {
+    const menu = tabContextMenuRef.value
+    if (!(target instanceof Node) || !menu || !menu.contains(target)) {
+      closeTabContextMenu()
+    }
+  }
+  if (createDraft.value) {
+    const draftRow = treePaneRef.value?.querySelector?.('.workspace-tree-row--draft')
+    if (!draftRow) {
+      cancelCreateDraft()
+      return
+    }
+    if (target instanceof Node && draftRow.contains(target)) {
+      return
+    }
+    const input = draftRow.querySelector('.workspace-tree-row__input')
+    if (input && typeof input.blur === 'function') {
+      input.blur()
+      return
+    }
+    cancelCreateDraft()
+  }
+}
+
+function getPasteTargetDirectory() {
+  return findParentDirectoryKey(selectedKeys.value[0] || props.projectPath)
+}
+
+async function refreshTree() {
+  closeContextMenu()
+  closeTabContextMenu()
+  const previousExpandedKeys = [...expandedKeys.value]
+  const previousSelectedKey = selectedKeys.value[0] || null
+  resetCreateDraftState()
+  resetTree()
+  await ensureDirectoryChildren(treeData.value[0])
+  for (const key of previousExpandedKeys.filter(key => key !== props.projectPath)) {
+    const parentKey = findParentDirectoryKey(key)
+    await ensureNodeReady(parentKey)
+    const node = findTreeNodeByKey(treeData.value, key)
+    if (node?.isDirectory) {
+      await ensureDirectoryChildren(node)
+      if (!isExpanded(node.key)) {
+        toggleExpandedKey(node.key)
+      }
+    }
+  }
+  if (previousSelectedKey) {
+    selectedKeys.value = [previousSelectedKey]
+  }
+}
+
+function storeInternalClipboard(mode) {
+  const selectedKey = selectedKeys.value[0]
+  if (!selectedKey) return
+  internalClipboard.value = { mode, paths: [selectedKey] }
+}
+
+async function pasteInternalClipboard() {
+  const { mode, paths } = internalClipboard.value
+  if (!mode || !paths.length) return false
+  const targetDirectory = getPasteTargetDirectory()
+  const action = mode === 'cut' ? window.electronAPI?.moveFilesystemItems : window.electronAPI?.copyFilesystemItems
+  const result = await action?.({ sources: paths, targetDirectory })
+  if (!result?.success) {
+    console.warn('粘贴失败:', result?.error)
+    return true
+  }
+  if (mode === 'cut') {
+    internalClipboard.value = { mode: null, paths: [] }
+  }
+  await refreshTree()
+  return true
+}
+
+async function pasteExternalFiles(fileList) {
+  const paths = Array.from(fileList || [])
+    .map(file => window.electronAPI?.getPathForFile?.(file))
+    .filter(Boolean)
+  if (!paths.length) return false
+  const targetDirectory = getPasteTargetDirectory()
+  const result = await window.electronAPI?.copyFilesystemItems({ sources: paths, targetDirectory })
+  if (!result?.success) {
+    console.warn('粘贴系统文件失败:', result?.error)
+    return true
+  }
+  await refreshTree()
+  return true
+}
+
+async function handleTreePaste(event) {
+  if (await pasteInternalClipboard()) {
+    event.preventDefault()
+    return
+  }
+  const pasted = await pasteExternalFiles(event.clipboardData?.files)
+  if (pasted) {
+    event.preventDefault()
+  }
+}
+
+async function handleTreeKeydown(event) {
+  const isMetaKey = event.metaKey || event.ctrlKey
+  if (!isMetaKey) return
+  if (event.key.toLowerCase() === 'c') {
+    event.preventDefault()
+    storeInternalClipboard('copy')
+    return
+  }
+  if (event.key.toLowerCase() === 'x') {
+    event.preventDefault()
+    storeInternalClipboard('cut')
+    return
+  }
+  if (event.key.toLowerCase() === 'v') {
+    if (await pasteInternalClipboard()) {
+      event.preventDefault()
+    }
+    return
+  }
+  if (event.key.toLowerCase() === 'r') {
+    event.preventDefault()
+    await refreshTree()
+  }
+}
 
 watch(
   () => props.projectPath,
@@ -607,6 +983,9 @@ async function toggleDirectory (node) {
 }
 
 async function handleTreeRowClick (node) {
+  closeContextMenu()
+  closeTabContextMenu()
+  treePaneRef.value?.focus?.()
   selectedKeys.value = [node.key]
   if (!node?.isDirectory) {
     await openFile(node.key)
@@ -619,6 +998,112 @@ async function handleTreeRowDoubleClick (node) {
     return
   }
   await handleTreeRowClick(node)
+}
+
+async function openTreeContextMenu(event, node) {
+  closeTabContextMenu()
+  selectedKeys.value = [node.key]
+  treePaneRef.value?.focus?.()
+  const viewportPadding = 8
+  contextMenu.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    node
+  }
+  await nextTick()
+  const menuEl = contextMenuRef.value
+  if (!menuEl) return
+  const menuWidth = menuEl.offsetWidth || 0
+  const menuHeight = menuEl.offsetHeight || 0
+  const maxX = Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding)
+  const maxY = Math.max(viewportPadding, window.innerHeight - menuHeight - viewportPadding)
+  contextMenu.value = {
+    visible: true,
+    x: Math.min(event.clientX, maxX),
+    y: Math.min(event.clientY, maxY),
+    node
+  }
+}
+
+async function openTabContextMenu(event, tab) {
+  closeContextMenu()
+  const viewportPadding = 8
+  tabContextMenu.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    tabId: tab.id
+  }
+  await nextTick()
+  const menuEl = tabContextMenuRef.value
+  if (!menuEl) return
+  const menuWidth = menuEl.offsetWidth || 0
+  const menuHeight = menuEl.offsetHeight || 0
+  const maxX = Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding)
+  const maxY = Math.max(viewportPadding, window.innerHeight - menuHeight - viewportPadding)
+  tabContextMenu.value = {
+    visible: true,
+    x: Math.min(event.clientX, maxX),
+    y: Math.min(event.clientY, maxY),
+    tabId: tab.id
+  }
+}
+
+async function startCreateFromContext(type) {
+  const node = contextMenu.value.node
+  closeContextMenu()
+  if (node) {
+    selectedKeys.value = [node.key]
+  }
+  await startCreate(type)
+}
+
+async function openContextInFinder() {
+  const node = contextMenu.value.node
+  closeContextMenu()
+  if (!node) return
+  await window.electronAPI?.openInFinder({ path: node.key })
+}
+
+async function deleteContextNode() {
+  const node = contextMenu.value.node
+  closeContextMenu()
+  if (!node) return
+  const confirmed = await confirm({
+    title: '确认删除',
+    message: `确认将${node.isDirectory ? '文件夹' : '文件'}移到废纸篓？`,
+    detail: node.label,
+    type: 'danger',
+    confirmText: '删除'
+  })
+  if (!confirmed) return
+  const result = await window.electronAPI?.deleteFilesystemItems({ paths: [node.key] })
+  if (!result?.success) {
+    console.warn('删除失败:', result?.error)
+    return
+  }
+  if (selectedKeys.value[0] === node.key) {
+    selectedKeys.value = []
+  }
+  const deletedPath = normalizePath(node.key)
+  const removedTabs = tabs.value.filter((tab) => isSamePathOrChildPath(tab.path, deletedPath))
+  for (const tab of removedTabs) {
+    if (tab.kind === 'text' && pathToModel.has(tab.path)) {
+      const model = pathToModel.get(tab.path)
+      model?.dispose()
+      pathToModel.delete(tab.path)
+    }
+  }
+  tabs.value = tabs.value.filter((tab) => !isSamePathOrChildPath(tab.path, deletedPath))
+  if (selectedKeys.value[0] && isSamePathOrChildPath(selectedKeys.value[0], deletedPath)) {
+    selectedKeys.value = []
+  }
+  if (activeTabId.value && !tabs.value.some((tab) => tab.id === activeTabId.value)) {
+    activeTabId.value = tabs.value.length ? tabs.value[tabs.value.length - 1].id : null
+  }
+  syncActiveTabContent()
+  await refreshTree()
 }
 
 function syncActiveTabContent () {
@@ -664,6 +1149,7 @@ function syncActiveTabContent () {
 }
 
 function activateTab (id) {
+  closeTabContextMenu()
   activeTabId.value = id
   syncActiveTabContent()
 }
@@ -680,6 +1166,41 @@ function closeTab (id) {
     activeTabId.value = tabs.value.length ? tabs.value[tabs.value.length - 1].id : null
   }
   syncActiveTabContent()
+}
+
+function closeTabsByIds(ids) {
+  const uniqueIds = Array.from(new Set(ids))
+  for (const id of uniqueIds) {
+    closeTab(id)
+  }
+}
+
+function closeTabsToLeft() {
+  const targetId = tabContextMenu.value.tabId
+  const targetIndex = tabs.value.findIndex((tab) => tab.id === targetId)
+  closeTabContextMenu()
+  if (targetIndex <= 0) return
+  closeTabsByIds(tabs.value.slice(0, targetIndex).map((tab) => tab.id))
+}
+
+function closeTabsToRight() {
+  const targetId = tabContextMenu.value.tabId
+  const targetIndex = tabs.value.findIndex((tab) => tab.id === targetId)
+  closeTabContextMenu()
+  if (targetIndex === -1 || targetIndex >= tabs.value.length - 1) return
+  closeTabsByIds(tabs.value.slice(targetIndex + 1).map((tab) => tab.id))
+}
+
+function closeOtherTabs() {
+  const targetId = tabContextMenu.value.tabId
+  closeTabContextMenu()
+  if (!targetId) return
+  closeTabsByIds(tabs.value.filter((tab) => tab.id !== targetId).map((tab) => tab.id))
+}
+
+function closeAllTabs() {
+  closeTabContextMenu()
+  closeTabsByIds(tabs.value.map((tab) => tab.id))
 }
 
 function onSplitterPointerDown (e) {
@@ -712,6 +1233,7 @@ function layoutEditor () {
 }
 
 onMounted(async () => {
+  document.addEventListener('pointerdown', handleDocumentPointerDown, true)
   loadTreeWidth()
   if (props.isActive) {
     startGitStatusPolling()
@@ -741,6 +1263,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
   stopGitStatusPolling()
   layoutObserver?.disconnect()
   layoutObserver = null
@@ -826,6 +1349,7 @@ watch(
   align-self: stretch;
   background: rgba(0, 0, 0, 0.15);
   overflow: hidden;
+  outline: none;
 }
 
 .tree-toolbar {
@@ -839,6 +1363,36 @@ watch(
   font-weight: 600;
   color: rgba(255, 255, 255, 0.45);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tree-toolbar__title {
+  min-width: 0;
+}
+
+.tree-toolbar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tree-toolbar__action {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.48);
+  cursor: pointer;
+}
+
+.tree-toolbar__action:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.84);
 }
 
 .tree-scroll {
@@ -917,6 +1471,64 @@ watch(
   line-height: 1;
   letter-spacing: 0.04em;
   opacity: 0.9;
+}
+
+.workspace-tree-row--draft {
+  padding-right: 10px;
+}
+
+.workspace-tree-row__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  outline: none;
+}
+
+.workspace-tree-row__input:focus {
+  border-color: rgba(77, 135, 255, 0.75);
+}
+
+.context-menu {
+  position: fixed;
+  min-width: 132px;
+  padding: 6px 0;
+  border-radius: 8px;
+  background: #25262b;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 3000;
+}
+
+.context-menu-item {
+  padding: 9px 14px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.86);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.context-menu-item.delete {
+  color: #ff8d8d;
+}
+
+.context-menu-item.delete:hover {
+  background: rgba(255, 108, 108, 0.12);
+}
+
+.context-menu-divider {
+  height: 1px;
+  margin: 6px 0;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .workspace-tree-row--conflict {

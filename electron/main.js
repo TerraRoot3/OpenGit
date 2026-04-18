@@ -1930,6 +1930,7 @@ registerFilesystemHandlers({
   ipcMain,
   getMainWindow: () => mainWindow,
   executeGitCommand,
+  shell,
   safeLog,
   safeError
 })

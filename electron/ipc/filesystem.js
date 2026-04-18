@@ -1,11 +1,32 @@
 const fs = require('fs')
 const path = require('path')
 const { dialog } = require('electron')
+const fsp = fs.promises
+
+async function copyEntry(sourcePath, targetPath) {
+  const stats = await fsp.stat(sourcePath)
+  if (stats.isDirectory()) {
+    await fsp.cp(sourcePath, targetPath, { recursive: true, errorOnExist: true, force: false })
+    return
+  }
+  await fsp.copyFile(sourcePath, targetPath, fs.constants.COPYFILE_EXCL)
+}
+
+async function moveEntry(sourcePath, targetPath) {
+  try {
+    await fsp.rename(sourcePath, targetPath)
+  } catch (error) {
+    if (error?.code !== 'EXDEV') throw error
+    await copyEntry(sourcePath, targetPath)
+    await fsp.rm(sourcePath, { recursive: true, force: true })
+  }
+}
 
 function registerFilesystemHandlers({
   ipcMain,
   getMainWindow,
   executeGitCommand,
+  shell,
   safeLog,
   safeError
 }) {
@@ -78,6 +99,106 @@ function registerFilesystemHandlers({
     } catch (error) {
       safeError('读取文件失败:', error)
       throw error
+    }
+  })
+
+  ipcMain.handle('create-file', async (event, { filePath, content = '' }) => {
+    try {
+      if (!filePath) {
+        return { success: false, error: '缺少 filePath 参数' }
+      }
+      if (fs.existsSync(filePath)) {
+        return { success: false, error: '文件已存在' }
+      }
+      await fsp.mkdir(path.dirname(filePath), { recursive: true })
+      await fsp.writeFile(filePath, content, 'utf-8')
+      return { success: true, path: filePath }
+    } catch (error) {
+      safeError('创建文件失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('create-directory', async (event, { dirPath }) => {
+    try {
+      if (!dirPath) {
+        return { success: false, error: '缺少 dirPath 参数' }
+      }
+      if (fs.existsSync(dirPath)) {
+        return { success: false, error: '文件夹已存在' }
+      }
+      await fsp.mkdir(dirPath, { recursive: false })
+      return { success: true, path: dirPath }
+    } catch (error) {
+      safeError('创建文件夹失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('copy-filesystem-items', async (event, { sources, targetDirectory }) => {
+    try {
+      if (!Array.isArray(sources) || !sources.length || !targetDirectory) {
+        return { success: false, error: '缺少 sources 或 targetDirectory 参数' }
+      }
+      const results = []
+      for (const sourcePath of sources) {
+        const targetPath = path.join(targetDirectory, path.basename(sourcePath))
+        if (targetPath.startsWith(`${sourcePath}${path.sep}`)) {
+          return { success: false, error: `不能复制到自身子目录: ${path.basename(sourcePath)}` }
+        }
+        if (fs.existsSync(targetPath)) {
+          return { success: false, error: `目标已存在: ${path.basename(sourcePath)}` }
+        }
+        await copyEntry(sourcePath, targetPath)
+        results.push(targetPath)
+      }
+      return { success: true, paths: results }
+    } catch (error) {
+      safeError('复制文件系统条目失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('move-filesystem-items', async (event, { sources, targetDirectory }) => {
+    try {
+      if (!Array.isArray(sources) || !sources.length || !targetDirectory) {
+        return { success: false, error: '缺少 sources 或 targetDirectory 参数' }
+      }
+      const results = []
+      for (const sourcePath of sources) {
+        const targetPath = path.join(targetDirectory, path.basename(sourcePath))
+        if (targetPath.startsWith(`${sourcePath}${path.sep}`)) {
+          return { success: false, error: `不能移动到自身子目录: ${path.basename(sourcePath)}` }
+        }
+        if (sourcePath === targetPath) {
+          results.push(targetPath)
+          continue
+        }
+        if (fs.existsSync(targetPath)) {
+          return { success: false, error: `目标已存在: ${path.basename(sourcePath)}` }
+        }
+        await moveEntry(sourcePath, targetPath)
+        results.push(targetPath)
+      }
+      return { success: true, paths: results }
+    } catch (error) {
+      safeError('移动文件系统条目失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('delete-filesystem-items', async (event, { paths }) => {
+    try {
+      if (!Array.isArray(paths) || !paths.length) {
+        return { success: false, error: '缺少 paths 参数' }
+      }
+      for (const targetPath of paths) {
+        await shell.trashItem(targetPath)
+      }
+      return { success: true }
+    } catch (error) {
+      safeError('删除文件系统条目失败:', error)
+      return { success: false, error: error.message }
     }
   })
 

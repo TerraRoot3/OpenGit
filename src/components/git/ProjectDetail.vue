@@ -48,8 +48,8 @@
             <button class="gitlab-open-btn" @click="openWithGitLab" title="打开 GitLab">
             <ExternalLink :size="14" /> GitLab
           </button>
-          <button class="finder-open-btn" @click="openInFinder" title="在访达中打开">
-            <FolderOpen :size="14" /> 访达
+          <button class="finder-open-btn" @click="openInFinder" :title="`在${systemFileManagerLabel}中打开`">
+            <FolderOpen :size="14" /> {{ systemFileManagerLabel }}
           </button>
           <button class="settings-btn" @click="openProjectSettings" title="项目设置">
             <Settings :size="14" /> 设置
@@ -569,6 +569,13 @@ const props = defineProps({
     type: Boolean,
     default: true
   }
+})
+
+const platform = window.electronAPI?.platform || 'darwin'
+const systemFileManagerLabel = computed(() => {
+  if (platform === 'win32') return '资源管理器'
+  if (platform === 'darwin') return '访达'
+  return '文件管理器'
 })
 
 // ==================== Emits ====================

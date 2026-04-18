@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  platform: process.platform,
+
   // Git 操作
   gitClone: (data) => ipcRenderer.invoke('git-clone', data),
   gitStatus: (data) => ipcRenderer.invoke('git-status', data),
@@ -222,6 +224,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 读取文件
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
+  createFile: (data) => ipcRenderer.invoke('create-file', data),
+  createDirectory: (data) => ipcRenderer.invoke('create-directory', data),
+  copyFilesystemItems: (data) => ipcRenderer.invoke('copy-filesystem-items', data),
+  moveFilesystemItems: (data) => ipcRenderer.invoke('move-filesystem-items', data),
+  deleteFilesystemItems: (data) => ipcRenderer.invoke('delete-filesystem-items', data),
   
   // 监听打开 webview DevTools 请求
   onOpenWebviewDevTools: (callback) => {
