@@ -61,6 +61,7 @@
       v-else-if="routeType === 'single-project'"
       :path="routeProps?.path"
       :is-active="isActive"
+      @branch-changed="(payload) => emit('project-branch-changed', payload)"
       @status-updated="(payload) => emit('project-status-updated', payload)"
       @pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
     />
@@ -160,6 +161,7 @@ const emit = defineEmits([
   'navigation-state-changed',
   'title-updated',
   'favicon-updated',
+  'project-branch-changed',
   'project-status-updated',
   'project-pending-status-changed'
 ])

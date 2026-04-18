@@ -37,6 +37,7 @@
       <Browser
         ref="browserRef"
         @project-context-changed="handleProjectContextChanged"
+        @project-branch-changed="handleProjectBranchChanged"
         @project-status-updated="handleProjectStatusUpdated"
         @project-pending-status-changed="handleProjectPendingStatusChanged"
       />
@@ -60,6 +61,7 @@ const repositoryStatusMap = ref({})
 const repositorySignatureMap = ref({})
 let repositoryStatusTimer = null
 const REPOSITORY_STATUS_CACHE_KEY = 'project-sidebar-repository-status-v1'
+const REPOSITORY_STATUS_ELECTRON_STORE_KEY = 'project-sidebar-repository-status-v1'
 const isWindowActive = ref(true)
 
 const sidebarWidth = computed(() => sidebarStore.sidebarWidth.value)
@@ -75,6 +77,20 @@ const filteredGroups = computed(() => {
   }))
 })
 
+const normalizeRepositoryStatusPayload = (value) => {
+  if (!value || typeof value !== 'object') return {}
+
+  return Object.fromEntries(
+    Object.entries(value).map(([repoPath, status]) => {
+      const branch = typeof status?.branch === 'string' ? status.branch.trim() : ''
+      return [repoPath, {
+        ...status,
+        branch: branch && branch !== 'unknown' ? branch : ''
+      }]
+    })
+  )
+}
+
 const loadRepositoryStatusCache = () => {
   if (typeof window === 'undefined' || !window.localStorage) return
   try {
@@ -82,7 +98,7 @@ const loadRepositoryStatusCache = () => {
     if (!raw) return
     const parsed = JSON.parse(raw)
     if (parsed && typeof parsed === 'object') {
-      repositoryStatusMap.value = parsed
+      repositoryStatusMap.value = normalizeRepositoryStatusPayload(parsed)
     }
   } catch (error) {
     console.warn('恢复侧边栏仓库状态缓存失败:', error)
@@ -90,14 +106,52 @@ const loadRepositoryStatusCache = () => {
 }
 
 const persistRepositoryStatusCache = () => {
-  if (typeof window === 'undefined' || !window.localStorage) return
+  if (typeof window === 'undefined') return
+
+  const payload = normalizeRepositoryStatusPayload(repositoryStatusMap.value)
+
   try {
-    window.localStorage.setItem(
-      REPOSITORY_STATUS_CACHE_KEY,
-      JSON.stringify(repositoryStatusMap.value)
-    )
+    if (window.localStorage) {
+      window.localStorage.setItem(
+        REPOSITORY_STATUS_CACHE_KEY,
+        JSON.stringify(payload)
+      )
+    }
   } catch (error) {
     console.warn('保存侧边栏仓库状态缓存失败:', error)
+  }
+
+  if (window.electronAPI?.setConfig) {
+    window.electronAPI.setConfig(REPOSITORY_STATUS_ELECTRON_STORE_KEY, payload).catch((error) => {
+      console.warn('保存侧边栏仓库状态到 electron-store 失败:', error)
+    })
+  }
+}
+
+const hydrateRepositoryStatusCache = async () => {
+  loadRepositoryStatusCache()
+
+  if (typeof window === 'undefined' || !window.electronAPI?.getConfig) return
+
+  try {
+    const payload = await window.electronAPI.getConfig(REPOSITORY_STATUS_ELECTRON_STORE_KEY)
+    if (!payload || typeof payload !== 'object') {
+      if (Object.keys(repositoryStatusMap.value).length > 0) {
+        persistRepositoryStatusCache()
+      }
+      return
+    }
+
+    repositoryStatusMap.value = normalizeRepositoryStatusPayload(payload)
+
+    if (window.localStorage) {
+      window.localStorage.setItem(
+        REPOSITORY_STATUS_CACHE_KEY,
+        JSON.stringify(repositoryStatusMap.value)
+      )
+    }
+  } catch (error) {
+    console.warn('从 electron-store 恢复侧边栏仓库状态失败:', error)
   }
 }
 
@@ -155,24 +209,45 @@ const collectOpenedRepositoryPaths = () => {
   return Array.from(paths)
 }
 
+const collectUnknownRepositoryPaths = () => {
+  return collectAllRepositoryPaths().filter((repoPath) => {
+    const existing = repositoryStatusMap.value?.[repoPath]
+    return !existing?.branch || existing.branch === 'unknown'
+  })
+}
+
+const collectPolledRepositoryPaths = () => {
+  return Array.from(new Set([
+    ...collectOpenedRepositoryPaths(),
+    ...collectUnknownRepositoryPaths()
+  ]))
+}
+
 const needsRepositoryStatusWarmup = (repoPath) => {
   const existing = repositoryStatusMap.value?.[repoPath]
   if (!existing) return true
-  if (!existing.branch || existing.branch === 'unknown') return true
+  if (!existing.branch) return true
   return false
 }
 
 const refreshRepositoryStatus = async (repoPath) => {
+  const existing = repositoryStatusMap.value?.[repoPath] || null
   try {
     const result = await window.electronAPI.getBranchStatus({ path: repoPath })
     const data = result?.success ? result.data : null
     repositoryStatusMap.value = {
       ...repositoryStatusMap.value,
       [repoPath]: {
-        branch: data?.currentBranch || 'unknown',
-        hasPendingFiles: Boolean(data?.hasPendingFiles),
-        remoteAhead: data?.currentBranchStatus?.remoteAhead || 0,
-        localAhead: data?.currentBranchStatus?.localAhead || 0,
+        branch: data?.currentBranch || existing?.branch || '',
+        hasPendingFiles: typeof data?.hasPendingFiles === 'boolean'
+          ? data.hasPendingFiles
+          : Boolean(existing?.hasPendingFiles),
+        remoteAhead: typeof data?.currentBranchStatus?.remoteAhead === 'number'
+          ? data.currentBranchStatus.remoteAhead
+          : (existing?.remoteAhead || 0),
+        localAhead: typeof data?.currentBranchStatus?.localAhead === 'number'
+          ? data.currentBranchStatus.localAhead
+          : (existing?.localAhead || 0),
         isLoading: false
       }
     }
@@ -181,15 +256,34 @@ const refreshRepositoryStatus = async (repoPath) => {
     repositoryStatusMap.value = {
       ...repositoryStatusMap.value,
       [repoPath]: {
-        branch: 'unknown',
-        hasPendingFiles: false,
-        remoteAhead: 0,
-        localAhead: 0,
+        branch: existing?.branch || '',
+        hasPendingFiles: Boolean(existing?.hasPendingFiles),
+        remoteAhead: existing?.remoteAhead || 0,
+        localAhead: existing?.localAhead || 0,
         isLoading: false
       }
     }
     persistRepositoryStatusCache()
   }
+}
+
+const handleProjectBranchChanged = (payload = {}) => {
+  const repoPath = String(payload?.path || '').trim()
+  const branch = String(payload?.branch || '').trim()
+  if (!repoPath || !branch) return
+
+  repositoryStatusMap.value = {
+    ...repositoryStatusMap.value,
+    [repoPath]: {
+      ...(repositoryStatusMap.value[repoPath] || {}),
+      branch,
+      hasPendingFiles: Boolean(repositoryStatusMap.value[repoPath]?.hasPendingFiles),
+      remoteAhead: repositoryStatusMap.value[repoPath]?.remoteAhead || 0,
+      localAhead: repositoryStatusMap.value[repoPath]?.localAhead || 0,
+      isLoading: false
+    }
+  }
+  persistRepositoryStatusCache()
 }
 
 const handleProjectStatusUpdated = async (payload = {}) => {
@@ -200,7 +294,7 @@ const handleProjectStatusUpdated = async (payload = {}) => {
     ...repositoryStatusMap.value,
     [repoPath]: {
       ...(repositoryStatusMap.value[repoPath] || {}),
-      branch: repositoryStatusMap.value[repoPath]?.branch || 'unknown',
+      branch: repositoryStatusMap.value[repoPath]?.branch || '',
       hasPendingFiles: Boolean(repositoryStatusMap.value[repoPath]?.hasPendingFiles),
       remoteAhead: payload?.remoteAhead || 0,
       localAhead: payload?.localAhead || 0,
@@ -219,7 +313,7 @@ const handleProjectPendingStatusChanged = async (payload = {}) => {
     ...repositoryStatusMap.value,
     [repoPath]: {
       ...(repositoryStatusMap.value[repoPath] || {}),
-      branch: repositoryStatusMap.value[repoPath]?.branch || 'unknown',
+      branch: repositoryStatusMap.value[repoPath]?.branch || '',
       hasPendingFiles: Boolean(payload?.hasPendingFiles),
       remoteAhead: repositoryStatusMap.value[repoPath]?.remoteAhead || 0,
       localAhead: repositoryStatusMap.value[repoPath]?.localAhead || 0,
@@ -232,7 +326,7 @@ const handleProjectPendingStatusChanged = async (payload = {}) => {
 
 const pollRepositorySignatures = async ({ force = false } = {}) => {
   if (!isWindowActive.value && !force) return
-  const repoPaths = collectOpenedRepositoryPaths()
+  const repoPaths = collectPolledRepositoryPaths()
   if (!repoPaths.length || !window.electronAPI?.getProjectGitWatchSignature) return
 
   for (const repoPath of repoPaths) {
@@ -302,7 +396,7 @@ const handleVisibilityChange = () => {
 
 onMounted(async () => {
   await sidebarStore.hydrate?.()
-  loadRepositoryStatusCache()
+  await hydrateRepositoryStatusCache()
   await restoreRoots()
   await warmRepositoryStatusCache()
   startRepositoryStatusPolling()

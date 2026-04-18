@@ -338,6 +338,7 @@
               @navigation-state-changed="(state, tabId) => onNavigationStateChanged(state, tabId)"
               @title-updated="(title, tabId) => onTitleUpdatedFromWebView(title, tabId)"
               @favicon-updated="(favicon, tabId) => onFaviconUpdated(favicon, tabId)"
+              @project-branch-changed="(payload) => emit('project-branch-changed', payload)"
               @project-status-updated="(payload) => emit('project-status-updated', payload)"
               @project-pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
             />
@@ -416,6 +417,7 @@ import {
 
 const emit = defineEmits([
   'project-context-changed',
+  'project-branch-changed',
   'project-status-updated',
   'project-pending-status-changed'
 ])
