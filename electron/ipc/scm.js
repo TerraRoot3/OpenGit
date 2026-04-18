@@ -1,5 +1,6 @@
 function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, executeGitCommand, executeGitCommandWithOutput, checkAndFixRemoteUrl, getGitlabProjectId, safeLog, safeError }) {
   const fsp = fs.promises
+  const ACTIVE_PIPELINE_STATUSES = new Set(['running', 'pending', 'preparing', 'waiting_for_resource', 'created'])
   const getMainWindow = () => {
     const windows = BrowserWindow.getAllWindows()
     return windows.find(w => w.webContents.getURL().includes('localhost:5173')) || windows[0]
@@ -12,6 +13,142 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
       output,
       type
     })
+  }
+
+  const parseGitlabRemote = (remoteUrl = '') => {
+    const normalized = typeof remoteUrl === 'string' ? remoteUrl.trim() : ''
+    if (!normalized) return null
+
+    let match = normalized.match(/^git@([^:]+):(.+?)(?:\.git)?$/)
+    if (match) {
+      return {
+        baseUrl: `https://${match[1]}`,
+        projectPath: match[2].replace(/\.git$/, '')
+      }
+    }
+
+    match = normalized.match(/^(https?:\/\/[^/]+)\/(.+?)(?:\.git)?$/)
+    if (match) {
+      return {
+        baseUrl: match[1],
+        projectPath: match[2].replace(/\.git$/, '')
+      }
+    }
+
+    return null
+  }
+
+  const findMatchingGitlabConfig = ({ baseUrl = '', repoPath = '' } = {}) => {
+    if (!baseUrl) return null
+    const projectConfigKey = `gitlab-config-${repoPath.replace(/[^a-zA-Z0-9]/g, '_')}`
+    const projectConfig = store.get(projectConfigKey, null)
+    if (projectConfig?.url === baseUrl && projectConfig?.token) {
+      return projectConfig
+    }
+
+    const currentGitlabConfig = store.get('gitlab-config', null)
+    if (currentGitlabConfig?.url === baseUrl && currentGitlabConfig?.token) {
+      return currentGitlabConfig
+    }
+
+    const gitlabHistory = store.get('gitlabHistory', [])
+    return gitlabHistory.find(config => config?.url === baseUrl && config?.token) || null
+  }
+
+  const resolveGitlabRepoContext = async (repoPath) => {
+    if (!repoPath) {
+      return { success: false, message: '缺少项目路径' }
+    }
+
+    const remoteResult = await executeGitCommand(['git', 'remote', 'get-url', 'origin'], repoPath)
+    if (!remoteResult.success || !remoteResult.stdout?.trim()) {
+      return { success: false, message: '未检测到 origin remote' }
+    }
+
+    const parsedRemote = parseGitlabRemote(remoteResult.stdout.trim())
+    if (!parsedRemote?.baseUrl || !parsedRemote?.projectPath) {
+      return { success: false, message: '无法解析 GitLab remote' }
+    }
+
+    const matchedConfig = findMatchingGitlabConfig({
+      baseUrl: parsedRemote.baseUrl,
+      repoPath
+    })
+
+    if (!matchedConfig?.token) {
+      return { success: false, message: '未找到匹配的 GitLab 配置或 Token' }
+    }
+
+    const projectResult = await getGitlabProjectId(parsedRemote.baseUrl, matchedConfig.token, parsedRemote.projectPath)
+    if (!projectResult.success) {
+      return {
+        success: false,
+        message: projectResult.message || '无法获取 GitLab 项目 ID'
+      }
+    }
+
+    return {
+      success: true,
+      baseUrl: parsedRemote.baseUrl,
+      repoPath,
+      remoteUrl: remoteResult.stdout.trim(),
+      projectPath: parsedRemote.projectPath,
+      projectId: projectResult.projectId,
+      token: matchedConfig.token
+    }
+  }
+
+  const formatPipeline = (pipeline = {}) => ({
+    id: pipeline.id,
+    iid: pipeline.iid,
+    status: pipeline.status || 'unknown',
+    ref: pipeline.ref || '',
+    sha: pipeline.sha || '',
+    source: pipeline.source || '',
+    webUrl: pipeline.web_url || '',
+    createdAt: pipeline.created_at || '',
+    updatedAt: pipeline.updated_at || '',
+    startedAt: pipeline.started_at || '',
+    finishedAt: pipeline.finished_at || '',
+    name: pipeline.name || '',
+    isTag: Boolean(pipeline.tag),
+    coverage: pipeline.coverage ?? null
+  })
+
+  const formatJob = (job = {}) => ({
+    id: job.id,
+    name: job.name || '',
+    stage: job.stage || 'default',
+    status: job.status || 'unknown',
+    allowFailure: Boolean(job.allow_failure),
+    createdAt: job.created_at || '',
+    startedAt: job.started_at || '',
+    finishedAt: job.finished_at || '',
+    duration: typeof job.duration === 'number' ? job.duration : null,
+    queuedDuration: typeof job.queued_duration === 'number' ? job.queued_duration : null,
+    webUrl: job.web_url || '',
+    user: job.user?.name || '',
+    runner: job.runner?.description || ''
+  })
+
+  const groupJobsByStage = (jobs = []) => {
+    const stageMap = new Map()
+    for (const job of jobs) {
+      if (!stageMap.has(job.stage)) {
+        stageMap.set(job.stage, [])
+      }
+      stageMap.get(job.stage).push(job)
+    }
+
+    return Array.from(stageMap.entries()).map(([stage, stageJobs]) => ({
+      stage,
+      jobs: stageJobs,
+      statusSummary: {
+        running: stageJobs.filter(job => ACTIVE_PIPELINE_STATUSES.has(job.status)).length,
+        success: stageJobs.filter(job => job.status === 'success').length,
+        failed: stageJobs.filter(job => ['failed', 'canceled'].includes(job.status)).length
+      }
+    }))
   }
 
   // Git 操作 IPC 处理器
@@ -258,6 +395,130 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
       return {
         success: false,
         message: `获取MR列表失败: ${error.message}`
+      }
+    }
+  })
+
+  ipcMain.handle('gitlab-project-pipelines', async (event, { projectPath, limit = 12 } = {}) => {
+    try {
+      const context = await resolveGitlabRepoContext(projectPath)
+      if (!context.success) {
+        return context
+      }
+
+      const pipelinesUrl = `${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines?per_page=${Math.max(1, Math.min(limit, 30))}&order_by=updated_at&sort=desc`
+      const response = await fetch(pipelinesUrl, {
+        headers: {
+          'Authorization': `Bearer ${context.token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'OpenGit/1.0'
+        }
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        safeError('❌ 获取 GitLab pipelines 失败:', response.status, errorText)
+        return {
+          success: false,
+          message: `获取 GitLab pipelines 失败: ${response.status} ${response.statusText}`
+        }
+      }
+
+      const pipelines = (await response.json()).map(formatPipeline)
+      const activePipelines = pipelines.filter(pipeline => ACTIVE_PIPELINE_STATUSES.has(pipeline.status))
+      const recentPipelines = pipelines.filter(pipeline => !ACTIVE_PIPELINE_STATUSES.has(pipeline.status))
+
+      return {
+        success: true,
+        data: {
+          context: {
+            baseUrl: context.baseUrl,
+            projectPath: context.projectPath,
+            projectId: context.projectId
+          },
+          activePipelines,
+          recentPipelines,
+          currentRunning: activePipelines[0] || null
+        }
+      }
+    } catch (error) {
+      safeError('❌ 获取 GitLab pipelines 异常:', error)
+      return {
+        success: false,
+        message: `获取 GitLab pipelines 失败: ${error.message}`
+      }
+    }
+  })
+
+  ipcMain.handle('gitlab-pipeline-detail', async (event, { projectPath, pipelineId } = {}) => {
+    try {
+      if (!pipelineId) {
+        return { success: false, message: '缺少 pipelineId' }
+      }
+
+      const context = await resolveGitlabRepoContext(projectPath)
+      if (!context.success) {
+        return context
+      }
+
+      const detailUrl = `${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines/${pipelineId}`
+      const jobsUrl = `${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines/${pipelineId}/jobs?per_page=100&include_retried=true`
+      const [detailResponse, jobsResponse] = await Promise.all([
+        fetch(detailUrl, {
+          headers: {
+            'Authorization': `Bearer ${context.token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'OpenGit/1.0'
+          }
+        }),
+        fetch(jobsUrl, {
+          headers: {
+            'Authorization': `Bearer ${context.token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'OpenGit/1.0'
+          }
+        })
+      ])
+
+      if (!detailResponse.ok) {
+        const errorText = await detailResponse.text()
+        safeError('❌ 获取 GitLab pipeline 详情失败:', detailResponse.status, errorText)
+        return {
+          success: false,
+          message: `获取 GitLab pipeline 详情失败: ${detailResponse.status} ${detailResponse.statusText}`
+        }
+      }
+
+      if (!jobsResponse.ok) {
+        const errorText = await jobsResponse.text()
+        safeError('❌ 获取 GitLab pipeline jobs 失败:', jobsResponse.status, errorText)
+        return {
+          success: false,
+          message: `获取 GitLab pipeline jobs 失败: ${jobsResponse.status} ${jobsResponse.statusText}`
+        }
+      }
+
+      const pipeline = formatPipeline(await detailResponse.json())
+      const jobs = (await jobsResponse.json()).map(formatJob)
+
+      return {
+        success: true,
+        data: {
+          context: {
+            baseUrl: context.baseUrl,
+            projectPath: context.projectPath,
+            projectId: context.projectId
+          },
+          pipeline,
+          jobs,
+          stages: groupJobsByStage(jobs)
+        }
+      }
+    } catch (error) {
+      safeError('❌ 获取 GitLab pipeline 详情异常:', error)
+      return {
+        success: false,
+        message: `获取 GitLab pipeline 详情失败: ${error.message}`
       }
     }
   })

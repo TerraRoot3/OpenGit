@@ -15,6 +15,17 @@
                 <span v-if="branchStatus.remoteAhead > 0" class="pull-indicator">↓{{ branchStatus.remoteAhead }}</span>
                 <span v-if="branchStatus.localAhead > 0" class="push-indicator">↑{{ branchStatus.localAhead }}</span>
               </span>
+              <button
+                v-if="activePipelineSummary"
+                class="pipeline-status-pill"
+                :class="pipelineStatusClass"
+                type="button"
+                @click="selectPipeline"
+                :title="pipelineStatusTitle"
+              >
+                <Activity :size="12" />
+                {{ pipelineStatusText }}
+              </button>
               <span v-if="hasPendingFiles" class="pending-indicator" title="有待定文件">
                 <svg width="12" height="12" viewBox="0 0 1024 1024" fill="currentColor">
                   <path d="M526.41 117.029v58.514a7.314 7.314 0 0 1-7.315 7.314H219.429a36.571 36.571 0 0 0-35.987 29.989l-0.585 6.583V804.57a36.571 36.571 0 0 0 29.989 35.987l6.583 0.585H804.57a36.571 36.571 0 0 0 35.987-29.989l0.585-6.583v-317.44a7.314 7.314 0 0 1 7.314-7.314h58.514a7.314 7.314 0 0 1 7.315 7.314v317.44a109.714 109.714 0 0 1-99.182 109.203l-10.533 0.512H219.43a109.714 109.714 0 0 1-109.203-99.182l-0.512-10.533V219.43a109.714 109.714 0 0 1 99.182-109.203l10.533-0.512h299.666a7.314 7.314 0 0 1 7.314 7.315z m307.345 31.817l41.4 41.399a7.314 7.314 0 0 1 0 10.313L419.985 655.726a7.314 7.314 0 0 1-10.313 0l-41.399-41.4a7.314 7.314 0 0 1 0-10.312l455.168-455.168a7.314 7.314 0 0 1 10.313 0z"></path>
@@ -86,6 +97,22 @@
             </div>
 
             <!-- 提交历史按钮 -->
+            <div
+              class="file-status-button"
+              :class="{ active: currentView === 'pipeline' }"
+              @click="selectPipeline"
+            >
+              <Activity :size="16" />
+              <span>流水线</span>
+              <span
+                v-if="activePipelineSummary"
+                class="pipeline-inline-status"
+                :class="pipelineStatusClass"
+              >
+                {{ getPipelineInlineRef(activePipelineSummary) }}
+              </span>
+            </div>
+
             <div
               class="file-status-button"
               :class="{ active: currentView === 'commit-history' }"
@@ -218,6 +245,12 @@
               v-show="currentView === 'ai-sessions'"
               :project-path="path"
               @resume-session="handleResumeAiSession"
+            />
+
+            <ProjectPipeline
+              v-if="currentView === 'pipeline'"
+              :project-path="path"
+              :is-active="isActive && currentView === 'pipeline'"
             />
 
             <!-- 提交历史 -->
@@ -433,7 +466,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
-  FolderOpen, GitBranch, Tag, GitPullRequest, ArrowUpCircle, GitMerge,
+  FolderOpen, GitBranch, Tag, GitPullRequest, ArrowUpCircle, GitMerge, Activity,
   Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot,
   Folder, Globe, RefreshCw, Check,   ChevronRight, Settings
 } from 'lucide-vue-next'
@@ -441,6 +474,7 @@ import ProjectFileStatus from './ProjectFileStatus.vue'
 import ProjectStashList from './ProjectStashList.vue'
 import ProjectCommitHistory from './ProjectCommitHistory.vue'
 import ProjectAiSessions from './ProjectAiSessions.vue'
+import ProjectPipeline from './ProjectPipeline.vue'
 import OperationDialog from '../dialog/OperationDialog.vue'
 import ProjectSettingsDialog from '../dialog/ProjectSettingsDialog.vue'
 import TerminalPanel from '../terminal/TerminalPanel.vue'
@@ -558,10 +592,14 @@ const hasPendingFiles = ref(false) // 是否有待定文件
 const isGitRepository = ref(null)
 const projectGitMonitorSnapshot = ref(null)
 const isDocumentVisible = ref(typeof document === 'undefined' ? true : document.visibilityState === 'visible')
+const activePipelineSummary = ref(null)
 
 const PROJECT_GIT_MONITOR_INTERVAL_MS = 2000
+const PIPELINE_SUMMARY_ACTIVE_INTERVAL_MS = 8000
+const PIPELINE_SUMMARY_IDLE_INTERVAL_MS = 20000
 let projectGitMonitorTimer = null
 let projectGitMonitorInFlight = false
+let pipelineSummaryTimer = null
 
 // ==================== UI 状态 ====================
 // 从 localStorage 读取项目对应的视图状态，默认为 'ai-sessions'
@@ -571,7 +609,7 @@ const getExpandStateKey = (path) => `expandState_${path?.replace(/[^a-zA-Z0-9]/g
 const getSavedCurrentView = (path) => {
   try {
     const saved = localStorage.getItem(getProjectViewKey(path))
-    if (saved && ['file-status', 'commit-history', 'stash-list', 'terminal', 'ai-sessions'].includes(saved)) {
+    if (saved && ['file-status', 'commit-history', 'stash-list', 'terminal', 'ai-sessions', 'pipeline'].includes(saved)) {
       return saved === 'terminal' ? 'ai-sessions' : saved
     }
   } catch (e) {}
@@ -737,6 +775,20 @@ const tagsViewState = computed(() => resolveTagsViewState({
   tags: tags.value
 }))
 
+const pipelineStatusClass = computed(() => `pipeline-status-${activePipelineSummary.value?.status || 'unknown'}`)
+
+const pipelineStatusText = computed(() => {
+  const pipeline = activePipelineSummary.value
+  if (!pipeline) return ''
+  return `执行中 · ${pipeline.isTag ? `标签 ${pipeline.ref}` : `分支 ${pipeline.ref}`}`
+})
+
+const pipelineStatusTitle = computed(() => {
+  const pipeline = activePipelineSummary.value
+  if (!pipeline) return ''
+  return `当前运行中的 GitLab Pipeline：${pipelineStatusText.value}`
+})
+
 // ==================== 辅助方法 ====================
 const getAllBranchStatus = (branch) => {
   return allBranchStatus.value?.[branch] || null
@@ -762,6 +814,65 @@ const emitPendingStatusChanged = (projectPath, hasPending = hasPendingFiles.valu
     path: projectPath,
     hasPendingFiles: !!hasPending
   })
+}
+
+const getPipelineInlineRef = (pipeline) => {
+  if (!pipeline?.ref) return ''
+  return pipeline.isTag ? `标签 ${pipeline.ref}` : pipeline.ref
+}
+
+const clearPipelineSummaryTimer = () => {
+  if (pipelineSummaryTimer != null && typeof window !== 'undefined') {
+    window.clearTimeout(pipelineSummaryTimer)
+  }
+  pipelineSummaryTimer = null
+}
+
+const schedulePipelineSummaryRefresh = () => {
+  clearPipelineSummaryTimer()
+  if (!props.isActive || !props.path || isGitRepository.value === false || !isDocumentVisible.value || typeof window === 'undefined') {
+    return
+  }
+
+  const delay = activePipelineSummary.value
+    ? PIPELINE_SUMMARY_ACTIVE_INTERVAL_MS
+    : PIPELINE_SUMMARY_IDLE_INTERVAL_MS
+
+  pipelineSummaryTimer = window.setTimeout(() => {
+    pipelineSummaryTimer = null
+    refreshPipelineSummary({ silent: true })
+  }, delay)
+}
+
+const refreshPipelineSummary = async ({ silent = false } = {}) => {
+  if (!props.path || isGitRepository.value === false || !window.electronAPI?.gitlabProjectPipelines) {
+    activePipelineSummary.value = null
+    return
+  }
+
+  try {
+    const result = await window.electronAPI.gitlabProjectPipelines({
+      projectPath: props.path,
+      limit: 8
+    })
+
+    if (!result?.success) {
+      if (!silent) {
+        debugLog('ℹ️ [ProjectDetailNew] GitLab Pipeline 摘要不可用:', result?.message)
+      }
+      activePipelineSummary.value = null
+      return
+    }
+
+    activePipelineSummary.value = result.data?.currentRunning || null
+  } catch (error) {
+    if (!silent) {
+      debugLog('ℹ️ [ProjectDetailNew] 刷新 GitLab Pipeline 摘要失败:', error.message)
+    }
+    activePipelineSummary.value = null
+  } finally {
+    schedulePipelineSummaryRefresh()
+  }
 }
 
 const markRefreshSuccess = (target) => {
@@ -1395,6 +1506,11 @@ const selectStashList = () => {
   if (stashListRef.value) {
     stashListRef.value.loadStashList?.()
   }
+}
+
+const selectPipeline = () => {
+  currentView.value = 'pipeline'
+  saveCurrentView('pipeline')
 }
 
 const selectTerminal = () => {
@@ -2203,10 +2319,12 @@ const cancelOperation = () => {
 // ==================== 生命周期 ====================
 watch(() => props.path, (newPath, oldPath) => {
   clearAiSessionsPreload()
+  clearPipelineSummaryTimer()
   stopProjectGitMonitor()
   resetProjectGitMonitorState()
   if (newPath) {
     isGitRepository.value = null
+    activePipelineSummary.value = null
     // 恢复该项目保存的视图状态和展开状态
     currentView.value = getSavedCurrentView(newPath)
     if (currentView.value === 'terminal') {
@@ -2268,6 +2386,7 @@ watch(() => props.path, (newPath, oldPath) => {
       clearProjectBranchStatusCache(newPath).finally(() => {
         if (props.path === newPath && isGitRepository.value !== false) {
           loadProjectInfo()
+          refreshPipelineSummary({ silent: true })
         }
       })
     })
@@ -2279,6 +2398,7 @@ watch(() => props.path, (newPath, oldPath) => {
   } else {
     projectInfo.value = null
     isGitRepository.value = false
+    activePipelineSummary.value = null
     // 切换项目时重置状态
     branchStatus.value = null
     allBranchStatus.value = {}
@@ -2307,6 +2427,11 @@ watch(currentView, (view) => {
 watch(() => props.isActive, (active) => {
   if (active && currentView.value === 'terminal') {
     terminalMounted.value = true
+  }
+  if (active && props.path && isGitRepository.value !== false) {
+    refreshPipelineSummary({ silent: true })
+  } else if (!active) {
+    clearPipelineSummaryTimer()
   }
 })
 
@@ -2345,6 +2470,7 @@ const handleWindowFocus = async () => {
   if (!props.path || !props.isActive || isGitRepository.value === false) return
   
   debugLog('🔄 [ProjectDetailNew] 窗口获得焦点，刷新状态...')
+  refreshPipelineSummary({ silent: true })
   refreshCurrentProject()
 }
 
@@ -2353,6 +2479,8 @@ const handleVisibilityChange = () => {
   isDocumentVisible.value = document.visibilityState === 'visible'
   if (isDocumentVisible.value && props.isActive) {
     handleWindowFocus()
+  } else {
+    clearPipelineSummaryTimer()
   }
 }
 
@@ -2368,6 +2496,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearAiSessionsPreload()
+  clearPipelineSummaryTimer()
   stopProjectGitMonitor()
   window.removeEventListener('focus', handleWindowFocus)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -2820,6 +2949,48 @@ defineExpose({
   display: inline-flex;
   gap: 6px;
   margin-left: 8px;
+}
+
+.pipeline-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(217, 155, 32, 0.14);
+  color: #f4d37d;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pipeline-status-pill:hover {
+  background: rgba(217, 155, 32, 0.2);
+}
+
+.pipeline-inline-status {
+  margin-left: auto;
+  font-size: 11px;
+  color: #f4d37d;
+}
+
+.pipeline-status-running,
+.pipeline-status-pending,
+.pipeline-status-preparing,
+.pipeline-status-waiting_for_resource,
+.pipeline-status-created {
+  color: #f4d37d;
+}
+
+.pipeline-status-failed,
+.pipeline-status-canceled {
+  color: #fca5a5;
+}
+
+.pipeline-status-success {
+  color: #86efac;
 }
 
 .remote-branch { 

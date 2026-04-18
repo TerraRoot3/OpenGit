@@ -29,6 +29,7 @@ declare module 'vue' {
     ProjectDetail: typeof import('./src/components/git/ProjectDetail.vue')['default']
     ProjectFileStatus: typeof import('./src/components/git/ProjectFileStatus.vue')['default']
     ProjectManager: typeof import('./src/components/git/ProjectManager.vue')['default']
+    ProjectPipeline: typeof import('./src/components/git/ProjectPipeline.vue')['default']
     ProjectSettingsDialog: typeof import('./src/components/dialog/ProjectSettingsDialog.vue')['default']
     ProjectSidebar: typeof import('./src/components/project-sidebar/ProjectSidebar.vue')['default']
     ProjectStashList: typeof import('./src/components/git/ProjectStashList.vue')['default']
