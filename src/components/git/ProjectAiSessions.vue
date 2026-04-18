@@ -556,6 +556,10 @@ onUnmounted(() => {
   padding: 0 8px 8px;
 }
 
+.provider-list {
+  padding: 0 0 8px;
+}
+
 .provider-item,
 .session-item {
   display: block;

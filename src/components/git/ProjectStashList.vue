@@ -622,7 +622,7 @@ const escapeHtml = (text) => {
 .stash-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 8px;
+  padding: 0 0 8px;
 }
 
 .stash-item {

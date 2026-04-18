@@ -2644,7 +2644,8 @@ defineExpose({
     "files diff"
     "commit commit";
   min-height: 0;
-  gap: 10px;
+  column-gap: 0;
+  row-gap: 10px;
 }
 
 .file-list-panel {
@@ -2693,8 +2694,11 @@ defineExpose({
 }
 
 .select-all-checkbox {
-  margin-right: 4px;
+  width: 14px;
+  height: 14px;
+  margin: 0 8px 0 -4px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .file-count {
@@ -2706,7 +2710,7 @@ defineExpose({
 .file-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 8px;
+  padding: 0 0 8px;
   background: transparent;
 }
 
@@ -2991,16 +2995,16 @@ defineExpose({
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 8px;
+  padding: 0;
   max-width: 100%;
 }
 
 .diff-block {
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
   max-width: 100%;
-  background: rgba(255, 255, 255, 0.02);
+  background: transparent;
 }
 
 .diff-header {
@@ -3198,8 +3202,11 @@ div.diff-content div.diff-text .diff-context-line {
 
 /* 暂存相关样式 */
 .stage-checkbox {
-  margin-right: 8px;
+  width: 14px;
+  height: 14px;
+  margin: 0 8px 0 0;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 
@@ -3207,7 +3214,7 @@ div.diff-content div.diff-text .diff-context-line {
   grid-area: commit;
   display: flex;
   flex-direction: column;
-  min-height: 160px;
+  min-height: 0;
   flex-shrink: 0;
   background: transparent;
 }
@@ -3222,13 +3229,15 @@ div.diff-content div.diff-text .diff-context-line {
 
 
 .commit-message {
-  flex: 1;
-  min-height: 80px;
+  flex: 0 0 auto;
+  min-height: 76px;
+  height: 76px;
   padding: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
+  line-height: 1.5;
   resize: vertical;
   background: rgba(255, 255, 255, 0.03);
   color: rgba(255, 255, 255, 0.9);
@@ -3555,15 +3564,15 @@ div.diff-content div.diff-text .diff-context-line {
   }
   
   .file-diff-content {
-    padding: 6px;
+    padding: 0;
   }
   
   .diff-content {
-    padding: 6px;
+    padding: 0;
   }
   
   .commit-section {
-    min-height: 140px;
+    min-height: 0;
   }
   
   .commit-content {
@@ -3571,9 +3580,11 @@ div.diff-content div.diff-text .diff-context-line {
   }
   
   .commit-message {
-    min-height: 60px;
+    min-height: 50px;
+    height: 50px;
     padding: 6px;
     font-size: 12px;
+    line-height: 1.5;
   }
 }
 
@@ -3614,15 +3625,15 @@ div.diff-content div.diff-text .diff-context-line {
   }
   
   .file-diff-content {
-    padding: 4px;
+    padding: 0;
   }
   
   .diff-content {
-    padding: 4px;
+    padding: 0;
   }
   
   .commit-section {
-    min-height: 120px;
+    min-height: 0;
   }
   
   .commit-content {
@@ -3631,9 +3642,11 @@ div.diff-content div.diff-text .diff-context-line {
   }
   
   .commit-message {
-    min-height: 50px;
+    min-height: 43px;
+    height: 43px;
     padding: 4px;
     font-size: 11px;
+    line-height: 1.5;
   }
   
   .commit-actions {
