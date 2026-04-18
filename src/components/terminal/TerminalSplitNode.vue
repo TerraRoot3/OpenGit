@@ -218,8 +218,7 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   position: relative;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
+  border: 0;
   overflow: hidden;
   background: rgba(30, 30, 30, 0.5);
 }
@@ -249,7 +248,7 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   gap: 8px;
   padding: 0 6px 0 10px;
   background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .terminal-pane-topbar.draggable {
@@ -339,9 +338,11 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 }
 
 .terminal-split-divider {
-  flex: 0 0 8px;
+  flex: 0 0 2px;
   position: relative;
   z-index: 4;
+  background: transparent;
+  cursor: inherit;
 }
 
 .terminal-split-divider::before {
@@ -357,10 +358,11 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 }
 
 .terminal-split-divider.is-row::before {
-  left: 3px;
+  left: 0;
+  right: 0;
   width: 2px;
-  right: auto;
-  background: rgba(255, 255, 255, 0.12);
+  margin: 0 auto;
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .terminal-split-divider.is-column {
@@ -368,10 +370,11 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 }
 
 .terminal-split-divider.is-column::before {
-  top: 3px;
+  top: 0;
+  bottom: 0;
   height: 2px;
-  bottom: auto;
-  background: rgba(255, 255, 255, 0.12);
+  margin: auto 0;
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .terminal-split-divider:hover::before {

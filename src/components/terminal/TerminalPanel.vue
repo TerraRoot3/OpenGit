@@ -63,11 +63,29 @@
           </button>
         </div>
         <span v-else class="terminal-path" :title="currentCwd">{{ pathDisplay }}</span>
-        <button class="terminal-btn" @mousedown.prevent @click="splitActiveTerminal('row')" title="水平分屏">
-          <span class="split-btn-icon">▥</span>
+        <button class="terminal-btn terminal-btn-split" @mousedown.prevent @click="splitActiveTerminal('row')" title="水平分屏">
+          <svg
+            class="split-btn-icon split-horizontal"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect x="1" y="1" width="6" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="9" y="1" width="6" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
         </button>
-        <button class="terminal-btn" @mousedown.prevent @click="splitActiveTerminal('column')" title="垂直分屏">
-          <span class="split-btn-icon">▤</span>
+        <button class="terminal-btn terminal-btn-split" @mousedown.prevent @click="splitActiveTerminal('column')" title="垂直分屏">
+          <svg
+            class="split-btn-icon split-vertical"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect x="1" y="1" width="14" height="6" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="1" y="9" width="14" height="6" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
         </button>
         <button class="terminal-btn" @mousedown.prevent @click="clearTerminal" title="清屏">
           <Eraser :size="14" />
@@ -1918,7 +1936,7 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 8px;
+  padding: 0;
   height: 36px;
   background: #252526;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -1930,13 +1948,16 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   overflow-x: auto;
   flex: 1;
   min-width: 0;
+  height: 100%;
 }
 .terminal-tabs::-webkit-scrollbar { height: 0; }
 .terminal-tab {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
+  padding: 0 8px;
+  height: 100%;
+  box-sizing: border-box;
   border-radius: 4px 4px 0 0;
   color: #888;
   font-size: 12px;
@@ -1991,7 +2012,7 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   gap: 4px;
   flex-shrink: 0;
   min-width: 0;
-  margin-left: 8px;
+  margin-left: 0;
 }
 .terminal-search {
   display: flex;
@@ -2068,18 +2089,37 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   color: #888;
   cursor: pointer;
   transition: all 0.2s;
+  outline: none;
 }
 .terminal-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #d4d4d4;
 }
+.terminal-btn:focus-visible {
+  outline: 1px solid rgba(125, 211, 252, 0.8);
+  outline-offset: 0;
+}
+.terminal-btn-split {
+  width: 26px;
+  border: 1px solid transparent;
+}
+.terminal-btn-split:hover {
+  background: rgba(96, 165, 250, 0.18);
+  color: #d4d4ff;
+  border-color: rgba(125, 211, 252, 0.45);
+}
 .split-btn-icon {
-  font-size: 12px;
+  width: 14px;
+  height: 14px;
   line-height: 1;
+  transition: transform 0.2s, opacity 0.2s;
+}
+.terminal-btn-split:hover .split-btn-icon {
+  transform: scale(1.05);
 }
 .terminal-body {
   flex: 1;
-  padding: 8px;
+  padding: 0;
   overflow: hidden;
   position: relative;
 }
@@ -2141,9 +2181,6 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
 }
 .pane-close-btn:hover {
   background: rgba(220, 80, 80, 0.85);
-}
-.terminal-pane + .terminal-pane {
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
 }
 .terminal-body :deep(.xterm) { height: 100%; }
 .terminal-body :deep(.xterm-viewport) {
