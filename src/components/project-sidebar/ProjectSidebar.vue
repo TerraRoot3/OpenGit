@@ -38,20 +38,21 @@
       </div>
 
       <div v-for="group in filteredGroups" :key="group.key" class="root-section">
-        <button
-          class="group-row"
-          :class="{ selected: selectedEntryPath === group.path }"
-          type="button"
-          @click="$emit('open-group', group)"
-        >
-          <div class="root-main">
-            <div class="root-text">
-              <div class="root-name">
-                <Folder :size="14" />
-                <span>{{ group.name }}</span>
+        <div class="group-row" :class="{ selected: selectedEntryPath === group.path }">
+          <button
+            class="group-row-main"
+            type="button"
+            @click="$emit('open-group', group)"
+          >
+            <div class="root-main">
+              <div class="root-text">
+                <div class="root-name">
+                  <Folder :size="14" />
+                  <span>{{ group.name }}</span>
+                </div>
               </div>
             </div>
-          </div>
+          </button>
           <button
             class="root-expand-btn"
             type="button"
@@ -60,7 +61,7 @@
           >
             <ChevronRight :size="15" :class="{ rotated: isExpanded(group.key) }" />
           </button>
-        </button>
+        </div>
 
         <div v-if="isExpanded(group.key) && visibleRepositories(group).length > 0" class="child-list">
           <button
@@ -223,6 +224,7 @@ const isExpanded = (path) => {
 .header-title-row,
 .header-actions,
 .group-row,
+.group-row-main,
 .root-main,
 .child-name,
 .repo-name-row,
@@ -235,6 +237,24 @@ const isExpanded = (path) => {
 .header-title-row,
 .group-row {
   justify-content: space-between;
+}
+
+.group-row {
+  gap: 6px;
+}
+
+.group-row-main {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .header-title {

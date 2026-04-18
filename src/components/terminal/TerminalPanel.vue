@@ -2254,7 +2254,7 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(255, 214, 102, 0.12);
+  background: rgba(120, 98, 32, 0.10);
   pointer-events: none;
   z-index: 2;
 }
