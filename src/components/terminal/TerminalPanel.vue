@@ -893,6 +893,9 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
       window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
     }
   })
+  xterm.onFocus(() => {
+    focusSplitPane(term.termId)
+  })
 
   if (restoredConnected) {
     try {
@@ -1068,6 +1071,24 @@ const handlePaneDragStart = (payload) => {
   window.addEventListener('mouseup', handlePaneDragMouseUp)
 }
 
+const resolveSplitCwd = async (terminal) => {
+  const projectRoot = getProjectRootCwd()
+  const cachedCwd = normalizeIncomingPath(terminal?.cwd || '')
+
+  if (terminal?.ptyId) {
+    try {
+      const data = await window.electronAPI?.terminal?.getCwd?.({ id: terminal.ptyId })
+      if (data?.success && typeof data.cwd === 'string' && data.cwd.trim()) {
+        return normalizeIncomingPath(data.cwd)
+      }
+    } catch {
+      // ignore and fallback
+    }
+  }
+
+  return cachedCwd || projectRoot || ''
+}
+
 const splitActiveTerminal = async (direction = 'row') => {
   const tab = activeTab.value
   const active = currentTerminal.value || terminals.value[0]
@@ -1075,7 +1096,7 @@ const splitActiveTerminal = async (direction = 'row') => {
 
   ensureTabLayout(tab)
 
-  const baseCwd = normalizeIncomingPath(active.cwd || getProjectRootCwd() || '')
+  const baseCwd = await resolveSplitCwd(active)
   const newTermId = await addTerminal(baseCwd || null, { autoSwitch: false, tabId: tab.tabId })
   if (!newTermId) return
 

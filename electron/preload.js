@@ -300,6 +300,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== 终端 ====================
   terminal: {
     create: (options) => ipcRenderer.invoke('terminal-create', options),
+    getCwd: (data) => ipcRenderer.invoke('terminal-get-cwd', data),
     write: (data) => ipcRenderer.send('terminal-write', data),
     resize: (data) => ipcRenderer.send('terminal-resize', data),
     destroy: (data) => ipcRenderer.invoke('terminal-destroy', data),

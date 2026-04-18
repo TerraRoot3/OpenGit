@@ -51,6 +51,20 @@ function registerTerminalHandlers({
     })
   }
 
+  const resolveSessionCwd = async (terminalId) => {
+    const session = ptyProcesses.get(terminalId)
+    if (!session?.ptyProcess) return ''
+    try {
+      const pid = session.ptyProcess.pid
+      const resolved = pid ? await resolveProcessCwd(pid) : ''
+      if (resolved) {
+        session.projectPath = resolved
+        return resolved
+      }
+    } catch {}
+    return session.projectPath || ''
+  }
+
   ipcMain.handle('terminal-create', async (event, payload) => {
     try {
       const raw = payload && typeof payload === 'object' ? payload : {}
@@ -253,6 +267,22 @@ function registerTerminalHandlers({
       try {
         session.ptyProcess.resize(cols, rows)
       } catch {}
+    }
+  })
+
+  ipcMain.handle('terminal-get-cwd', async (event, payload) => {
+    const terminalId = payload && payload.id
+    if (!terminalId) {
+      return { success: false, error: 'terminal id required' }
+    }
+    try {
+      const cwd = await resolveSessionCwd(terminalId)
+      if (!cwd) {
+        return { success: false, error: 'cwd unavailable' }
+      }
+      return { success: true, id: terminalId, cwd, projectPath: cwd }
+    } catch (error) {
+      return { success: false, error: error.message }
     }
   })
 
