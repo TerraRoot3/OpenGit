@@ -110,44 +110,41 @@
             请选择一个文件查看详情
           </div>
         </div>
-        
-        <!-- 提交信息区域 -->
-        <div class="commit-section">
-          <div class="commit-header">
-            <span>提交信息</span>
-          </div>
-          <div class="commit-content">
-            <textarea 
-              v-model="commitMessage" 
-              placeholder="请输入提交信息..."
-              class="commit-message"
-              @keydown="handleCommitMessageKeydown"
-            ></textarea>
-            <div class="commit-actions">
-              <div class="batch-actions">
-                <button 
-                  v-if="selectedFiles.length > 0"
-                  class="discard-all-btn"
-                  @click="showDiscardAllDialog"
-                >
-                  放弃全部
-                </button>
-                <button 
-                  v-if="selectedFiles.length > 0"
-                  class="stash-files-btn"
-                  @click="showStashDialog"
-                >
-                  暂存文件
-                </button>
-              </div>
-              <div class="commit-buttons">
-              <button class="commit-btn" @click="commitChanges" :disabled="!commitMessage.trim() || commitLoading || selectedFiles.length === 0">
-                {{ commitLoading ? '提交中...' : `提交 (${selectedFiles.length})` }}
+      </div>
+
+      <!-- 提交信息区域 -->
+      <div class="commit-section">
+        <div class="commit-content">
+          <textarea 
+            v-model="commitMessage" 
+            placeholder="请输入提交信息..."
+            class="commit-message"
+            @keydown="handleCommitMessageKeydown"
+          ></textarea>
+          <div class="commit-actions">
+            <div class="batch-actions">
+              <button 
+                v-if="selectedFiles.length > 0"
+                class="discard-all-btn"
+                @click="showDiscardAllDialog"
+              >
+                放弃全部
               </button>
-              <button class="commit-push-btn" @click="commitAndPush" :disabled="!commitMessage.trim() || commitLoading || selectedFiles.length === 0">
-                {{ commitLoading ? '提交中...' : `提交并推送 (${selectedFiles.length})` }}
+              <button 
+                v-if="selectedFiles.length > 0"
+                class="stash-files-btn"
+                @click="showStashDialog"
+              >
+                暂存文件
               </button>
-              </div>
+            </div>
+            <div class="commit-buttons">
+            <button class="commit-btn" @click="commitChanges" :disabled="!commitMessage.trim() || commitLoading || selectedFiles.length === 0">
+              {{ commitLoading ? '提交中...' : `提交 (${selectedFiles.length})` }}
+            </button>
+            <button class="commit-push-btn" @click="commitAndPush" :disabled="!commitMessage.trim() || commitLoading || selectedFiles.length === 0">
+              {{ commitLoading ? '提交中...' : `提交并推送 (${selectedFiles.length})` }}
+            </button>
             </div>
           </div>
         </div>
@@ -2640,11 +2637,18 @@ defineExpose({
 
 .file-status-content {
   flex: 1;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "files diff"
+    "commit commit";
   min-height: 0;
+  gap: 10px;
 }
 
 .file-list-panel {
+  grid-area: files;
   width: 260px;
   min-width: 220px;
   display: flex;
@@ -2751,6 +2755,7 @@ defineExpose({
 }
 
 .file-detail-panel {
+  grid-area: diff;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -3198,6 +3203,7 @@ div.diff-content div.diff-text .diff-context-line {
 
 
 .commit-section {
+  grid-area: commit;
   display: flex;
   flex-direction: column;
   min-height: 160px;
@@ -3205,21 +3211,9 @@ div.diff-content div.diff-text .diff-context-line {
   background: transparent;
 }
 
-.commit-header {
-  display: flex;
-  align-items: center;
-  padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.025);
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.92);
-  height: 40px;
-  min-height: 40px;
-  box-sizing: border-box;
-}
-
 .commit-content {
   flex: 1;
-  padding: 8px;
+  padding: 0 8px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3576,7 +3570,9 @@ div.diff-content div.diff-text .diff-context-line {
 
 @media (max-width: 768px) {
   .file-status-content {
+    display: flex;
     flex-direction: column;
+    gap: 8px;
   }
   
   .file-list-panel {
