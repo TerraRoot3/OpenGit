@@ -88,6 +88,11 @@
             >
               <FolderTree :size="16" />
               <span>工作区</span>
+              <span v-if="hasPendingFiles" class="pending-icon" title="有待定文件">
+                <svg width="12" height="12" viewBox="0 0 1024 1024" fill="currentColor">
+                  <path d="M526.41 117.029v58.514a7.314 7.314 0 0 1-7.315 7.314H219.429a36.571 36.571 0 0 0-35.987 29.989l-0.585 6.583V804.57a36.571 36.571 0 0 0 29.989 35.987l6.583 0.585H804.57a36.571 36.571 0 0 0 35.987-29.989l0.585-6.583v-317.44a7.314 7.314 0 0 1 7.314-7.314h58.514a7.314 7.314 0 0 1 7.315 7.314v317.44a109.714 109.714 0 0 1-99.182 109.203l-10.533 0.512H219.43a109.714 109.714 0 0 1-109.203-99.182l-0.512-10.533V219.43a109.714 109.714 0 0 1 99.182-109.203l10.533-0.512h299.666a7.314 7.314 0 0 1 7.314 7.315z m307.345 31.817l41.4 41.399a7.314 7.314 0 0 1 0 10.313L419.985 655.726a7.314 7.314 0 0 1-10.313 0l-41.399-41.4a7.314 7.314 0 0 1 0-10.312l455.168-455.168a7.314 7.314 0 0 1 10.313 0z"></path>
+                </svg>
+              </span>
             </div>
 
             <!-- 文件状态按钮 -->
@@ -243,6 +248,8 @@
               v-show="currentView === 'workspace'"
               :project-path="path"
               :is-active="isActive && currentView === 'workspace'"
+              @status-changed="handleFileStatusChanged"
+              @pending-count-changed="handlePendingCountChanged"
             />
 
             <ProjectFileStatus 

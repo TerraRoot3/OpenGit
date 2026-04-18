@@ -9,27 +9,128 @@
         <aside
           ref="treePaneRef"
           class="tree-pane"
+          :class="{ 'tree-pane--modified': isModifiedFilterMode }"
           :style="{ width: `${treeWidthPx}px` }"
           tabindex="0"
           @keydown="handleTreeKeydown"
           @paste="handleTreePaste"
         >
           <div class="tree-toolbar">
-            <span class="tree-toolbar__title">项目文件</span>
-            <div class="tree-toolbar__actions">
-              <button type="button" class="tree-toolbar__action" title="新建文件" @click="startCreate('file')">
-                <FilePlus2 :size="14" />
-              </button>
-              <button type="button" class="tree-toolbar__action" title="新建文件夹" @click="startCreate('directory')">
-                <FolderPlus :size="14" />
-              </button>
-              <button type="button" class="tree-toolbar__action" title="刷新" @click="refreshTree">
-                <RefreshCw :size="14" />
-              </button>
+            <div class="tree-toolbar__header">
+              <span class="tree-toolbar__title">项目文件</span>
+              <div class="tree-toolbar__actions">
+                <button
+                  v-if="!isModifiedFilterMode"
+                  type="button"
+                  class="tree-toolbar__action"
+                  title="新建文件"
+                  @click="startCreate('file')"
+                >
+                  <FilePlus2 :size="14" />
+                </button>
+                <button
+                  v-if="!isModifiedFilterMode"
+                  type="button"
+                  class="tree-toolbar__action"
+                  title="新建文件夹"
+                  @click="startCreate('directory')"
+                >
+                  <FolderPlus :size="14" />
+                </button>
+                <button type="button" class="tree-toolbar__action" title="刷新" @click="refreshTree">
+                  <RefreshCw :size="14" />
+                </button>
+              </div>
+            </div>
+            <div class="tree-toolbar__controls">
+              <div class="tree-filter-wrap">
+                <button
+                  type="button"
+                  class="tree-filter-button"
+                  @click.stop="toggleFilterMenu"
+                >
+                  <span>{{ currentFilterLabel }}</span>
+                  <ChevronDown :size="14" class="tree-filter-button__arrow" />
+                </button>
+                <div
+                  v-if="filterMenuVisible"
+                  ref="filterMenuRef"
+                  class="tree-filter-menu"
+                  @click.stop
+                >
+                  <button
+                    type="button"
+                    class="tree-filter-menu__item"
+                    :class="{ active: treeFilterMode === 'modified' }"
+                    @click="selectFilterMode('modified')"
+                  >
+                    <span>修改文件</span>
+                    <span v-if="treeFilterMode === 'modified'">✓</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="tree-filter-menu__item"
+                    :class="{ active: treeFilterMode === 'all' }"
+                    @click="selectFilterMode('all')"
+                  >
+                    <span>所有文件</span>
+                    <span v-if="treeFilterMode === 'all'">✓</span>
+                  </button>
+                </div>
+              </div>
+              <div class="tree-search" :class="{ 'tree-search--invalid': Boolean(searchPatternError) }">
+                <input
+                  v-model="fileSearchQuery"
+                  type="text"
+                  class="tree-search__input"
+                  placeholder="搜索文件名，支持 /regex/i"
+                />
+              </div>
             </div>
           </div>
           <div ref="treeScrollRef" class="tree-scroll">
-            <div class="workspace-tree-list">
+            <div v-if="isModifiedFilterMode" class="workspace-modified-list">
+              <template v-if="filteredModifiedEntries.length">
+                <div class="workspace-modified-list__header">
+                  <label class="workspace-modified-check">
+                    <input
+                      type="checkbox"
+                      :checked="isAllModifiedSelected"
+                      @change="toggleSelectAllModified"
+                    />
+                    <span>已选 {{ selectedModifiedPaths.length }}/{{ filteredModifiedEntries.length }}</span>
+                  </label>
+                </div>
+                <div v-for="entry in filteredModifiedEntries" :key="entry.path" class="workspace-modified-row-wrap">
+                  <button
+                    type="button"
+                    class="workspace-modified-row"
+                    :class="[
+                      getModifiedEntryStatusClass(entry),
+                      { selected: selectedKeys[0] === entry.path }
+                    ]"
+                    @click="handleModifiedEntryClick(entry)"
+                    @contextmenu.prevent="openModifiedContextMenu($event, entry)"
+                  >
+                    <label class="workspace-modified-check" @click.stop>
+                      <input
+                        type="checkbox"
+                        :checked="selectedModifiedPaths.includes(entry.path)"
+                        @change="toggleModifiedSelection(entry.path)"
+                      />
+                    </label>
+                    <component :is="getModifiedEntryIconComponent(entry)" :size="15" class="workspace-tree-row__icon" :class="getModifiedEntryIconClass(entry)" />
+                    <span class="workspace-modified-row__name" :title="entry.relativePath">{{ basename(entry.relativePath) }}</span>
+                    <span class="workspace-modified-row__path" :title="entry.relativePath">{{ entry.relativePath }}</span>
+                    <span class="workspace-tree-row__status" :title="`Git 状态 ${entry.status}`">{{ entry.status }}</span>
+                  </button>
+                </div>
+              </template>
+              <div v-else class="workspace-modified-empty">
+                {{ fileSearchQuery.trim() ? '没有匹配的修改文件' : '暂无修改文件' }}
+              </div>
+            </div>
+            <div v-else class="workspace-tree-list">
               <template v-for="item in visibleTreeNodes" :key="item.key">
                 <div
                   v-if="item.kind === 'draft'"
@@ -88,12 +189,59 @@
             :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
             @click.stop
           >
-            <div class="context-menu-item" @click="startCreateFromContext('file')">新建文件</div>
-            <div class="context-menu-item" @click="startCreateFromContext('directory')">新建文件夹</div>
-            <div class="context-menu-divider"></div>
+            <template v-if="!isModifiedFilterMode">
+              <div class="context-menu-item" @click="startCreateFromContext('file')">新建文件</div>
+              <div class="context-menu-item" @click="startCreateFromContext('directory')">新建文件夹</div>
+              <div class="context-menu-divider"></div>
+            </template>
             <div class="context-menu-item" @click="openContextInFinder">{{ systemFileManagerLabel }}</div>
             <div class="context-menu-divider"></div>
             <div class="context-menu-item delete" @click="deleteContextNode">删除</div>
+          </div>
+          <div v-if="isModifiedFilterMode" class="workspace-git-actions">
+            <div class="workspace-git-actions__top">
+              <button
+                type="button"
+                class="workspace-git-actions__btn workspace-git-actions__btn--stash"
+                :disabled="gitActionLoading || actionableModifiedPaths.length === 0"
+                @click="stashModifiedFiles"
+              >
+                暂存 ({{ actionableModifiedPaths.length }})
+              </button>
+              <button
+                type="button"
+                class="workspace-git-actions__btn workspace-git-actions__btn--discard"
+                :disabled="gitActionLoading || actionableModifiedPaths.length === 0"
+                @click="discardModifiedFiles"
+              >
+                放弃修改
+              </button>
+            </div>
+            <textarea
+              ref="commitMessageRef"
+              v-model="commitMessage"
+              class="workspace-git-actions__message"
+              placeholder="输入提交信息..."
+              :disabled="gitActionLoading"
+            />
+            <div class="workspace-git-actions__bottom">
+              <button
+                type="button"
+                class="workspace-git-actions__btn workspace-git-actions__btn--commit"
+                :disabled="gitActionLoading || actionableModifiedPaths.length === 0 || !commitMessage.trim()"
+                @click="commitModifiedFiles"
+              >
+                {{ gitActionLoading ? '处理中...' : `提交 (${actionableModifiedPaths.length})` }}
+              </button>
+              <button
+                type="button"
+                class="workspace-git-actions__btn workspace-git-actions__btn--push"
+                :disabled="gitActionLoading || actionableModifiedPaths.length === 0 || !commitMessage.trim()"
+                @click="commitAndPushModifiedFiles"
+              >
+                {{ gitActionLoading ? '处理中...' : `提交并推送 (${actionableModifiedPaths.length})` }}
+              </button>
+            </div>
           </div>
         </aside>
         <div
@@ -148,6 +296,13 @@
         </main>
       </div>
     </n-config-provider>
+    <OperationDialog
+      :show="showOperationDialog"
+      :title="operationType"
+      :output="operationOutput"
+      :in-progress="operationInProgress"
+      @cancel="cancelOperationDialog"
+    />
   </div>
 </template>
 
@@ -172,12 +327,14 @@ import {
   RefreshCw
 } from 'lucide-vue-next'
 import * as monaco from 'monaco-editor'
+import OperationDialog from '../dialog/OperationDialog.vue'
 import { useConfirm } from '../../composables/useConfirm'
 
 const props = defineProps({
   projectPath: { type: String, required: true },
   isActive: { type: Boolean, default: true }
 })
+const emit = defineEmits(['status-changed', 'pending-count-changed'])
 
 const treeWidthPx = ref(280)
 const treeData = ref([])
@@ -186,12 +343,26 @@ const selectedKeys = ref([])
 const treePaneRef = ref(null)
 const treeScrollRef = ref(null)
 const previewBodyRef = ref(null)
+const commitMessageRef = ref(null)
 const contextMenuRef = ref(null)
 const tabContextMenuRef = ref(null)
+const filterMenuRef = ref(null)
 const gitStatusByPath = ref({})
+const modifiedFileEntries = ref([])
+const selectedModifiedPaths = ref([])
 const createDraft = ref(null)
 const draftName = ref('')
 const internalClipboard = ref({ mode: null, paths: [] })
+const treeFilterMode = ref('modified')
+const fileSearchQuery = ref('')
+const searchPatternError = ref('')
+const commitMessage = ref('')
+const gitActionLoading = ref(false)
+const showOperationDialog = ref(false)
+const operationType = ref('')
+const operationOutput = ref('')
+const operationInProgress = ref(false)
+const filterMenuVisible = ref(false)
 const contextMenu = ref({
   visible: false,
   x: 0,
@@ -248,6 +419,8 @@ const systemFileManagerLabel = computed(() => {
   return '文件管理器'
 })
 
+const currentFilterLabel = computed(() => (treeFilterMode.value === 'modified' ? '修改文件' : '所有文件'))
+
 function treeWidthStorageKey () {
   const p = props.projectPath || ''
   return `workspaceTreeWidth_${p.replace(/[^a-zA-Z0-9]/g, '_')}`
@@ -291,6 +464,24 @@ async function loadWorkspaceState() {
     }
   } catch (e) {
     return null
+  }
+}
+
+async function loadCommitTemplate(projectPath) {
+  if (!projectPath) return
+  try {
+    const projectKey = `commit-template-${projectPath.replace(/[^a-zA-Z0-9]/g, '_')}`
+    const projectTemplate = await window.electronAPI?.getConfig?.(projectKey)
+    if (projectTemplate) {
+      commitMessage.value = projectTemplate
+      return
+    }
+    const globalTemplate = await window.electronAPI?.getConfig?.('commit-template-global')
+    if (globalTemplate) {
+      commitMessage.value = globalTemplate
+    }
+  } catch (error) {
+    console.error('加载提交模板失败:', error)
   }
 }
 
@@ -462,6 +653,7 @@ function pickHigherPriorityStatus (current, next) {
 
 function parseGitStatusMap (output) {
   const nextMap = {}
+  const nextEntries = []
   const lines = String(output || '').trim().split('\n').filter(line => line.trim())
 
   for (const line of lines) {
@@ -475,7 +667,20 @@ function parseGitStatusMap (output) {
     if (!relativePath) continue
 
     const absoluteFilePath = joinProjectPath(relativePath)
-    nextMap[absoluteFilePath] = pickHigherPriorityStatus(nextMap[absoluteFilePath], status)
+    const aggregatedStatus = pickHigherPriorityStatus(nextMap[absoluteFilePath], status)
+    nextMap[absoluteFilePath] = aggregatedStatus
+    nextEntries.push({
+      path: absoluteFilePath,
+      relativePath: normalizePath(relativePath),
+      stagedStatus: stagedStatus !== ' ' && stagedStatus !== '?' ? stagedStatus : null,
+      unstagedStatus: unstagedStatus !== ' ' && unstagedStatus !== '?' ? unstagedStatus : null,
+      status: aggregatedStatus,
+      isConflict:
+        (stagedStatus === 'U' && unstagedStatus === 'U') ||
+        (stagedStatus === 'A' && unstagedStatus === 'A') ||
+        (stagedStatus === 'D' && unstagedStatus === 'D'),
+      isUntracked: stagedStatus === '?' && unstagedStatus === '?'
+    })
 
     const segments = normalizePath(relativePath).split('/').filter(Boolean)
     segments.pop()
@@ -488,7 +693,7 @@ function parseGitStatusMap (output) {
     }
   }
 
-  return nextMap
+  return { statusMap: nextMap, entries: nextEntries }
 }
 
 async function refreshGitStatuses () {
@@ -501,12 +706,16 @@ async function refreshGitStatuses () {
     if (Object.keys(gitStatusByPath.value).length) {
       gitStatusByPath.value = {}
     }
+    if (modifiedFileEntries.value.length) {
+      modifiedFileEntries.value = []
+    }
     return
   }
-  const nextMap = parseGitStatusMap(result.output || result.stdout || '')
+  const { statusMap: nextMap, entries: nextEntries } = parseGitStatusMap(result.output || result.stdout || '')
   if (!sameStatusMap(gitStatusByPath.value, nextMap)) {
     gitStatusByPath.value = nextMap
   }
+  modifiedFileEntries.value = nextEntries
 }
 
 function startGitStatusPolling () {
@@ -576,11 +785,19 @@ function resetTree () {
 const visibleTreeNodes = computed(() => {
   const output = []
   const expandedSet = new Set(expandedKeys.value)
+  const nodes = filteredTreeRoots.value
+  const shouldExpandAll = Boolean(fileSearchQuery.value.trim())
 
   const appendNodes = (nodes, depth) => {
     for (const node of nodes) {
       output.push({ kind: 'node', key: node.key, node, depth })
-      if (createDraft.value && createDraft.value.parentKey === node.key && node.isDirectory && expandedSet.has(node.key)) {
+      if (
+        !isModifiedFilterMode.value &&
+        createDraft.value &&
+        createDraft.value.parentKey === node.key &&
+        node.isDirectory &&
+        expandedSet.has(node.key)
+      ) {
         output.push({
           kind: 'draft',
           key: `draft:${node.key}:${createDraft.value.type}`,
@@ -589,15 +806,139 @@ const visibleTreeNodes = computed(() => {
           type: createDraft.value.type
         })
       }
-      if (node.isDirectory && expandedSet.has(node.key) && Array.isArray(node.children) && node.children.length) {
+      if (
+        node.isDirectory &&
+        (shouldExpandAll || expandedSet.has(node.key)) &&
+        Array.isArray(node.children) &&
+        node.children.length
+      ) {
         appendNodes(node.children, depth + 1)
       }
     }
   }
 
-  appendNodes(treeData.value, 0)
+  appendNodes(nodes, 0)
   return output
 })
+
+const isModifiedFilterMode = computed(() => treeFilterMode.value === 'modified')
+
+const modifiedTreeData = computed(() => {
+  const root = {
+    key: props.projectPath,
+    label: basename(props.projectPath),
+    isLeaf: false,
+    isDirectory: true,
+    children: [],
+    childrenLoaded: true,
+    loading: false
+  }
+  const nodeMap = new Map([[normalizePath(props.projectPath), root]])
+
+  const sortedEntries = [...modifiedFileEntries.value].sort((left, right) => left.relativePath.localeCompare(right.relativePath))
+  for (const entry of sortedEntries) {
+    const segments = entry.relativePath.split('/').filter(Boolean)
+    let parentKey = normalizePath(props.projectPath)
+    let parentNode = nodeMap.get(parentKey)
+    for (let index = 0; index < segments.length; index++) {
+      const segment = segments[index]
+      const isLast = index === segments.length - 1
+      const nodeKey = normalizePath(`${parentKey}/${segment}`)
+      let node = nodeMap.get(nodeKey)
+      if (!node) {
+        node = {
+          key: nodeKey,
+          label: segment,
+          isLeaf: isLast,
+          isDirectory: !isLast,
+          children: [],
+          childrenLoaded: true,
+          loading: false
+        }
+        parentNode.children.push(node)
+        nodeMap.set(nodeKey, node)
+      }
+      parentKey = nodeKey
+      parentNode = node
+    }
+  }
+
+  return [root]
+})
+
+const searchState = computed(() => {
+  const raw = fileSearchQuery.value.trim()
+  if (!raw) return { matcher: null, error: '' }
+  const regexMatch = raw.match(/^\/(.+)\/([dgimsuvy]*)$/)
+  if (regexMatch) {
+    try {
+      const regex = new RegExp(regexMatch[1], regexMatch[2])
+      return {
+        matcher: (value) => regex.test(value),
+        error: ''
+      }
+    } catch (error) {
+      return {
+        matcher: () => false,
+        error: '正则无效'
+      }
+    }
+  }
+  const needle = raw.toLowerCase()
+  return {
+    matcher: (value) => String(value || '').toLowerCase().includes(needle),
+    error: ''
+  }
+})
+
+watch(
+  searchState,
+  (state) => {
+    searchPatternError.value = state.error
+  },
+  { immediate: true }
+)
+
+function filterTreeByName(nodes, matcher) {
+  if (!matcher) return nodes
+  const nextNodes = []
+  for (const node of nodes) {
+    const filteredChildren = Array.isArray(node.children) ? filterTreeByName(node.children, matcher) : []
+    const matches = matcher(node.label)
+    if (matches || filteredChildren.length) {
+      nextNodes.push({
+        ...node,
+        children: filteredChildren
+      })
+    }
+  }
+  return nextNodes
+}
+
+const filteredTreeRoots = computed(() => {
+  const roots = isModifiedFilterMode.value ? modifiedTreeData.value : treeData.value
+  const matcher = searchState.value.matcher
+  if (!matcher) return roots
+  return filterTreeByName(roots, matcher)
+})
+
+const filteredModifiedEntries = computed(() => {
+  const matcher = searchState.value.matcher
+  return modifiedFileEntries.value
+    .filter((entry) => {
+      if (!matcher) return true
+      return matcher(basename(entry.relativePath)) || matcher(entry.relativePath)
+    })
+})
+
+const actionableModifiedPaths = computed(() => (
+  selectedModifiedPaths.value.filter((path) => filteredModifiedEntries.value.some((entry) => entry.path === path))
+))
+
+const isAllModifiedSelected = computed(() => (
+  filteredModifiedEntries.value.length > 0 &&
+  filteredModifiedEntries.value.every((entry) => selectedModifiedPaths.value.includes(entry.path))
+))
 
 function findTreeNodeByKey(nodes, key) {
   for (const node of nodes) {
@@ -731,6 +1072,19 @@ function closeTabContextMenu() {
   }
 }
 
+function closeFilterMenu() {
+  filterMenuVisible.value = false
+}
+
+function toggleFilterMenu() {
+  filterMenuVisible.value = !filterMenuVisible.value
+}
+
+function selectFilterMode(mode) {
+  treeFilterMode.value = mode
+  closeFilterMenu()
+}
+
 async function focusDraftInput() {
   await nextTick()
   const input = treePaneRef.value?.querySelector?.('.workspace-tree-row__input')
@@ -741,6 +1095,7 @@ async function focusDraftInput() {
 }
 
 async function startCreate(type) {
+  if (isModifiedFilterMode.value) return
   closeContextMenu()
   closeTabContextMenu()
   const selectedKey = selectedKeys.value[0] || props.projectPath
@@ -801,6 +1156,16 @@ async function handleDraftBlur() {
 
 function handleDocumentPointerDown(event) {
   const target = event.target
+  if (filterMenuVisible.value) {
+    const menu = filterMenuRef.value
+    const trigger = treePaneRef.value?.querySelector?.('.tree-filter-button')
+    if (
+      !(target instanceof Node) ||
+      ((!menu || !menu.contains(target)) && (!trigger || !trigger.contains(target)))
+    ) {
+      closeFilterMenu()
+    }
+  }
   if (contextMenu.value.visible) {
     const menu = treePaneRef.value?.querySelector?.('.context-menu')
     if (!(target instanceof Node) || !menu || !menu.contains(target)) {
@@ -935,6 +1300,7 @@ async function pasteExternalFiles(fileList) {
 }
 
 async function handleTreePaste(event) {
+  if (isModifiedFilterMode.value) return
   if (await pasteInternalClipboard()) {
     event.preventDefault()
     return
@@ -946,6 +1312,13 @@ async function handleTreePaste(event) {
 }
 
 async function handleTreeKeydown(event) {
+  if (isModifiedFilterMode.value) {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
+      event.preventDefault()
+      await refreshTree()
+    }
+    return
+  }
   const isMetaKey = event.metaKey || event.ctrlKey
   if (!isMetaKey) return
   if (event.key.toLowerCase() === 'c') {
@@ -976,16 +1349,19 @@ watch(
     if (!p) return
     isWorkspaceStatePersistenceSuspended.value = true
     try {
+      commitMessage.value = ''
       await loadTreeWidth()
       resetTree()
       tabs.value = []
       activeTabId.value = null
       imageDataUrl.value = ''
       gitStatusByPath.value = {}
+      selectedModifiedPaths.value = []
       disposeAllModels()
       if (editor) {
         editor.setModel(null)
       }
+      await loadCommitTemplate(p)
       await ensureDirectoryChildren(treeData.value[0])
       await restoreWorkspaceState()
       if (props.isActive) {
@@ -1178,6 +1554,63 @@ function getNodeIconClass (node) {
   }
 }
 
+function getModifiedEntryStatusClass(entry) {
+  switch (entry?.status) {
+    case 'U': return 'workspace-tree-row--conflict'
+    case 'D': return 'workspace-tree-row--deleted'
+    case 'R': return 'workspace-tree-row--renamed'
+    case 'A': return 'workspace-tree-row--added'
+    case 'M': return 'workspace-tree-row--modified'
+    case '?': return 'workspace-tree-row--untracked'
+    default: return ''
+  }
+}
+
+function getModifiedEntryIconComponent(entry) {
+  return fileIconForPath(entry?.path || entry?.relativePath || '')
+}
+
+function getModifiedEntryIconClass(entry) {
+  return getNodeIconClass({ key: entry?.path || '' })
+}
+
+function focusCommitMessageInput() {
+  window.requestAnimationFrame(() => {
+    commitMessageRef.value?.focus?.()
+  })
+}
+
+function toggleModifiedSelection(path) {
+  const next = new Set(selectedModifiedPaths.value)
+  if (next.has(path)) next.delete(path)
+  else next.add(path)
+  selectedModifiedPaths.value = Array.from(next)
+}
+
+function toggleSelectAllModified() {
+  if (isAllModifiedSelected.value) {
+    selectedModifiedPaths.value = []
+    return
+  }
+  selectedModifiedPaths.value = filteredModifiedEntries.value.map((entry) => entry.path)
+}
+
+async function handleModifiedEntryClick(entry) {
+  closeContextMenu()
+  closeTabContextMenu()
+  selectedKeys.value = [entry.path]
+  await openFile(entry.path)
+  focusCommitMessageInput()
+}
+
+async function openModifiedContextMenu(event, entry) {
+  openTreeContextMenu(event, {
+    key: entry.path,
+    label: basename(entry.relativePath),
+    isDirectory: false
+  })
+}
+
 async function toggleDirectory (node) {
   if (!node?.isDirectory) return
   if (!isExpanded(node.key)) {
@@ -1307,6 +1740,8 @@ async function deleteContextNode() {
     activeTabId.value = tabs.value.length ? tabs.value[tabs.value.length - 1].id : null
   }
   syncActiveTabContent()
+  await refreshGitStatuses()
+  emit('status-changed')
   await refreshTree()
 }
 
@@ -1439,6 +1874,233 @@ function layoutEditor () {
   }
 }
 
+function escapeForBashCommand(value) {
+  return String(value ?? '').replace(/["\\$`]/g, '\\$&')
+}
+
+function quoteShellPath(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`
+}
+
+function buildSafeGitCommand(baseCommand, filePaths) {
+  const safeFiles = filePaths.map(quoteShellPath).join(' ')
+  return safeFiles ? `${baseCommand} -- ${safeFiles}` : baseCommand
+}
+
+async function executeWorkspaceCommand(command) {
+  return window.electronAPI?.executeCommand?.({
+    command,
+    cwd: props.projectPath
+  })
+}
+
+function closeOperationDialog() {
+  showOperationDialog.value = false
+  operationType.value = ''
+  operationOutput.value = ''
+  operationInProgress.value = false
+}
+
+function cancelOperationDialog() {
+  if (operationInProgress.value) return
+  closeOperationDialog()
+}
+
+async function runGitAction(title, executor) {
+  showOperationDialog.value = true
+  operationType.value = title
+  operationOutput.value = ''
+  operationInProgress.value = true
+  gitActionLoading.value = true
+  try {
+    await executor()
+  } finally {
+    operationInProgress.value = false
+    gitActionLoading.value = false
+  }
+}
+
+async function refreshAfterGitAction({ clearCommit = false } = {}) {
+  if (clearCommit) {
+    commitMessage.value = ''
+    await loadCommitTemplate(props.projectPath)
+  }
+  await refreshGitStatuses()
+  await refreshTree()
+  emit('status-changed')
+}
+
+async function discardModifiedFiles() {
+  const targetPaths = actionableModifiedPaths.value
+  if (!targetPaths.length || !props.projectPath) return
+  const confirmed = await confirm({
+    title: '确认放弃修改',
+    message: `确认放弃当前筛选结果中的 ${targetPaths.length} 个文件修改？`,
+    detail: fileSearchQuery.value.trim() ? '当前搜索结果范围内的修改会被还原。' : '当前所有修改会被还原。',
+    type: 'danger',
+    confirmText: '放弃修改'
+  })
+  if (!confirmed) return
+
+  const targetEntries = modifiedFileEntries.value.filter((entry) => targetPaths.includes(entry.path))
+  await runGitAction('放弃修改', async () => {
+    const untrackedFiles = targetEntries.filter((entry) => entry.isUntracked).map((entry) => entry.relativePath)
+    const stagedFiles = targetEntries.filter((entry) => entry.stagedStatus).map((entry) => entry.relativePath)
+    const modifiedFiles = targetEntries
+      .filter((entry) => !entry.isUntracked && !entry.stagedStatus && entry.unstagedStatus)
+      .map((entry) => entry.relativePath)
+
+    if (untrackedFiles.length) {
+      operationOutput.value += `删除 ${untrackedFiles.length} 个未跟踪文件...\n`
+      const result = await executeWorkspaceCommand(`rm -f ${untrackedFiles.map(quoteShellPath).join(' ')}`)
+      if (!result?.success) {
+        throw new Error(result?.error || result?.output || '删除未跟踪文件失败')
+      }
+    }
+
+    if (stagedFiles.length) {
+      operationOutput.value += `取消暂存 ${stagedFiles.length} 个文件...\n`
+      const resetResult = await executeWorkspaceCommand(buildSafeGitCommand('git reset HEAD', stagedFiles))
+      if (!resetResult?.success && !String(resetResult?.output || '').includes('Unstaged')) {
+        throw new Error(resetResult?.error || resetResult?.output || '取消暂存失败')
+      }
+      operationOutput.value += `还原 ${stagedFiles.length} 个暂存文件...\n`
+      const checkoutResult = await executeWorkspaceCommand(buildSafeGitCommand('git checkout', stagedFiles))
+      if (!checkoutResult?.success) {
+        throw new Error(checkoutResult?.error || checkoutResult?.output || '还原暂存文件失败')
+      }
+    }
+
+    if (modifiedFiles.length) {
+      operationOutput.value += `还原 ${modifiedFiles.length} 个修改文件...\n`
+      const result = await executeWorkspaceCommand(buildSafeGitCommand('git checkout', modifiedFiles))
+      if (!result?.success) {
+        throw new Error(result?.error || result?.output || '还原文件失败')
+      }
+    }
+
+    operationOutput.value += '\n✅ 放弃修改完成'
+    await refreshAfterGitAction()
+    window.setTimeout(closeOperationDialog, 300)
+  }).catch((error) => {
+    operationOutput.value += `\n\n❌ ${error.message}`
+  })
+}
+
+async function stashModifiedFiles() {
+  const targetPaths = actionableModifiedPaths.value
+  if (!targetPaths.length || !props.projectPath) return
+  const branchResult = await executeWorkspaceCommand('git branch --show-current')
+  const branchName = branchResult?.success ? (branchResult.output || '').trim() || 'stash' : 'stash'
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const stashMessage = `${branchName}-${timestamp}`
+  const targetEntries = modifiedFileEntries.value.filter((entry) => targetPaths.includes(entry.path))
+
+  await runGitAction('暂存文件', async () => {
+    const hasUntrackedFiles = targetEntries.some((entry) => entry.isUntracked)
+    const safeRelativePaths = targetEntries.map((entry) => entry.relativePath)
+    let stashCommand = ''
+
+    if (hasUntrackedFiles) {
+      operationOutput.value += '检测到未跟踪文件，先加入暂存区...\n'
+      const addResult = await executeWorkspaceCommand(buildSafeGitCommand('git add', safeRelativePaths))
+      if (!addResult?.success) {
+        throw new Error(addResult?.error || addResult?.output || '添加文件失败')
+      }
+      stashCommand = `git stash push --staged -m "${escapeForBashCommand(stashMessage)}"`
+    } else {
+      stashCommand = `${buildSafeGitCommand(`git stash push -m "${escapeForBashCommand(stashMessage)}"`, safeRelativePaths)}`
+    }
+
+    operationOutput.value += `暂存 ${safeRelativePaths.length} 个文件...\n`
+    const stashResult = await executeWorkspaceCommand(stashCommand)
+    if (!stashResult?.success) {
+      throw new Error(stashResult?.error || stashResult?.output || '暂存失败')
+    }
+    operationOutput.value += `${stashResult.output || ''}\n\n✅ 暂存完成`
+    await refreshAfterGitAction()
+    window.setTimeout(closeOperationDialog, 300)
+  }).catch((error) => {
+    operationOutput.value += `\n\n❌ ${error.message}`
+  })
+}
+
+async function commitModifiedFiles() {
+  const targetPaths = actionableModifiedPaths.value
+  if (!targetPaths.length || !commitMessage.value.trim() || !props.projectPath) return
+  const safeRelativePaths = modifiedFileEntries.value
+    .filter((entry) => targetPaths.includes(entry.path))
+    .map((entry) => entry.relativePath)
+
+  await runGitAction('提交更改', async () => {
+    operationOutput.value += `暂存 ${safeRelativePaths.length} 个文件...\n`
+    const addResult = await executeWorkspaceCommand(buildSafeGitCommand('git add', safeRelativePaths))
+    if (!addResult?.success) {
+      throw new Error(addResult?.error || addResult?.output || '暂存文件失败')
+    }
+    operationOutput.value += '创建提交...\n'
+    const commitResult = await executeWorkspaceCommand(`git commit -m "${escapeForBashCommand(commitMessage.value.trim())}"`)
+    if (!commitResult?.success) {
+      throw new Error(commitResult?.error || commitResult?.output || '提交失败')
+    }
+    operationOutput.value += `${commitResult.output || ''}\n\n✅ 提交完成`
+    await refreshAfterGitAction({ clearCommit: true })
+    window.setTimeout(closeOperationDialog, 300)
+  }).catch((error) => {
+    operationOutput.value += `\n\n❌ ${error.message}`
+  })
+}
+
+async function commitAndPushModifiedFiles() {
+  const targetPaths = actionableModifiedPaths.value
+  if (!targetPaths.length || !commitMessage.value.trim() || !props.projectPath) return
+  const safeRelativePaths = modifiedFileEntries.value
+    .filter((entry) => targetPaths.includes(entry.path))
+    .map((entry) => entry.relativePath)
+
+  await runGitAction('提交并推送', async () => {
+    operationOutput.value += '检查远程状态...\n'
+    await executeWorkspaceCommand('git fetch')
+    const statusResult = await executeWorkspaceCommand('git status -uno')
+    const statusOutput = String(statusResult?.output || '')
+    if (statusOutput.includes('Your branch is behind') || statusOutput.includes('have diverged')) {
+      operationOutput.value += '检测到远程有更新，先拉取...\n'
+      const pullResult = await executeWorkspaceCommand('git pull --no-rebase')
+      if (!pullResult?.success && /CONFLICT|冲突/.test(`${pullResult?.output || ''}${pullResult?.error || ''}`)) {
+        throw new Error('拉取远程更新时发生冲突，请先解决冲突')
+      }
+    }
+
+    operationOutput.value += `暂存 ${safeRelativePaths.length} 个文件...\n`
+    const addResult = await executeWorkspaceCommand(buildSafeGitCommand('git add', safeRelativePaths))
+    if (!addResult?.success) {
+      throw new Error(addResult?.error || addResult?.output || '暂存文件失败')
+    }
+
+    const commitResult = await executeWorkspaceCommand(`git commit -m "${escapeForBashCommand(commitMessage.value.trim())}"`)
+    if (!commitResult?.success) {
+      throw new Error(commitResult?.error || commitResult?.output || '提交失败')
+    }
+    operationOutput.value += `${commitResult.output || ''}\n`
+
+    const remoteResult = await executeWorkspaceCommand('git remote -v')
+    if (remoteResult?.success && String(remoteResult.output || '').trim()) {
+      operationOutput.value += '推送到远程仓库...\n'
+      const pushResult = await executeWorkspaceCommand('git push')
+      if (!pushResult?.success) {
+        throw new Error(pushResult?.error || pushResult?.output || '推送失败')
+      }
+      operationOutput.value += `${pushResult.output || ''}\n`
+    }
+
+    operationOutput.value += '\n✅ 提交并推送完成'
+    await refreshAfterGitAction({ clearCommit: true })
+    window.setTimeout(closeOperationDialog, 300)
+  }).catch((error) => {
+    operationOutput.value += `\n\n❌ ${error.message}`
+  })
+}
+
 onMounted(async () => {
   document.addEventListener('pointerdown', handleDocumentPointerDown, true)
   await loadTreeWidth()
@@ -1494,6 +2156,33 @@ watch(
       stopGitStatusPolling()
     }
   }
+)
+
+watch(
+  filteredModifiedEntries,
+  (entries) => {
+    const allowed = new Set(entries.map((entry) => entry.path))
+    selectedModifiedPaths.value = selectedModifiedPaths.value.filter((path) => allowed.has(path))
+  },
+  { immediate: true }
+)
+
+watch(
+  () => selectedModifiedPaths.value.length,
+  (count, previousCount) => {
+    if (!isModifiedFilterMode.value) return
+    if (count > 0 && count !== previousCount) {
+      focusCommitMessageInput()
+    }
+  }
+)
+
+watch(
+  () => modifiedFileEntries.value.length,
+  (count) => {
+    emit('pending-count-changed', count)
+  },
+  { immediate: true }
 )
 
 watch(
@@ -1572,19 +2261,38 @@ watch(
   outline: none;
 }
 
+.tree-pane--modified {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
 .tree-toolbar {
-  padding: 0 12px;
-  height: v-bind(WORKSPACE_HEADER_HEIGHT);
-  min-height: v-bind(WORKSPACE_HEADER_HEIGHT);
+  padding: 0;
   box-sizing: border-box;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   font-size: 12px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.45);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tree-toolbar__header {
+  height: v-bind(WORKSPACE_HEADER_HEIGHT);
+  min-height: v-bind(WORKSPACE_HEADER_HEIGHT);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.tree-toolbar__controls {
+  position: relative;
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 8px;
+  padding: 0 12px 10px;
 }
 
 .tree-toolbar__title {
@@ -1615,6 +2323,97 @@ watch(
   color: rgba(255, 255, 255, 0.84);
 }
 
+.tree-filter-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.tree-filter-button {
+  width: 100%;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tree-filter-button__arrow {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.tree-filter-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 100%;
+  min-width: 148px;
+  padding: 8px 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: #2d2d30;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+}
+
+.tree-filter-menu__item {
+  width: 100%;
+  height: 38px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tree-filter-menu__item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tree-filter-menu__item.active {
+  color: #fff;
+}
+
+.tree-search {
+  min-width: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tree-search--invalid {
+  border-color: rgba(255, 123, 123, 0.7);
+}
+
+.tree-search__input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12px;
+  outline: none;
+}
+
+.tree-search__input::placeholder {
+  color: rgba(255, 255, 255, 0.32);
+}
+
 .tree-scroll {
   min-height: 0;
   min-width: 0;
@@ -1629,6 +2428,76 @@ watch(
   display: flex;
   flex-direction: column;
   min-width: max-content;
+}
+
+.workspace-modified-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.workspace-modified-list__header {
+  padding: 0 10px 8px;
+}
+
+.workspace-modified-row-wrap {
+  min-width: 0;
+}
+
+.workspace-modified-row {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 10px;
+  display: grid;
+  grid-template-columns: 20px 16px minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.76);
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-modified-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.workspace-modified-row.selected {
+  background: rgba(77, 135, 255, 0.14);
+}
+
+.workspace-modified-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+}
+
+.workspace-modified-check input {
+  margin: 0;
+}
+
+.workspace-modified-row__name {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.workspace-modified-row__path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.36);
+  font-size: 11px;
+}
+
+.workspace-modified-empty {
+  padding: 16px 12px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12px;
 }
 
 .workspace-tree-row {
@@ -1789,6 +2658,79 @@ watch(
 
 .workspace-tree-row__input:focus {
   border-color: rgba(77, 135, 255, 0.75);
+}
+
+.workspace-git-actions {
+  padding: 10px 12px 12px;
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.workspace-git-actions__top,
+.workspace-git-actions__bottom {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.workspace-git-actions__message {
+  min-height: 56px;
+  max-height: 88px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.workspace-git-actions__message::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.workspace-git-actions__btn {
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+
+.workspace-git-actions__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.workspace-git-actions__btn--stash {
+  background: rgba(106, 141, 255, 0.18);
+  color: #adc2ff;
+}
+
+.workspace-git-actions__btn--discard {
+  background: rgba(255, 116, 116, 0.15);
+  color: #ffb0b0;
+}
+
+.workspace-git-actions__btn--commit {
+  background: #5c8dff;
+  color: #fff;
+}
+
+.workspace-git-actions__btn--push {
+  background: rgba(101, 205, 150, 0.18);
+  color: #b7f0cb;
+}
+
+.workspace-git-actions__btn:not(:disabled):hover {
+  filter: brightness(1.08);
 }
 
 .context-menu {
