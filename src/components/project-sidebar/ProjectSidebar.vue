@@ -45,22 +45,21 @@
           @click="$emit('open-group', group)"
         >
           <div class="root-main">
-            <button
-              class="root-expand-btn"
-              type="button"
-              :title="isExpanded(group.key) ? '收起' : '展开'"
-              @click.stop="$emit('toggle-root', group.key)"
-            >
-              <ChevronRight :size="15" :class="{ rotated: isExpanded(group.key) }" />
-            </button>
             <div class="root-text">
               <div class="root-name">
                 <Folder :size="14" />
                 <span>{{ group.name }}</span>
               </div>
-              <div class="root-path">{{ group.path }}</div>
             </div>
           </div>
+          <button
+            class="root-expand-btn"
+            type="button"
+            :title="isExpanded(group.key) ? '收起' : '展开'"
+            @click.stop="$emit('toggle-root', group.key)"
+          >
+            <ChevronRight :size="15" :class="{ rotated: isExpanded(group.key) }" />
+          </button>
         </button>
 
         <div v-if="isExpanded(group.key) && visibleRepositories(group).length > 0" class="child-list">
@@ -342,7 +341,6 @@ const isExpanded = (path) => {
   cursor: pointer;
 }
 
-.root-expand-btn,
 .icon-btn {
   display: inline-flex;
   align-items: center;
@@ -357,6 +355,23 @@ const isExpanded = (path) => {
 .root-expand-btn:hover,
 .icon-btn:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+.root-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.root-expand-btn:hover {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .action-btn {
@@ -421,7 +436,6 @@ const isExpanded = (path) => {
   line-height: 1.2;
 }
 
-.root-path,
 .child-path {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -449,9 +463,7 @@ const isExpanded = (path) => {
 .child-list {
   margin-top: 4px;
   min-width: 0;
-  padding-left: 18px;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
-  margin-left: 14px;
+  padding-left: 12px;
 }
 
 .child-row {
