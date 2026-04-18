@@ -242,6 +242,7 @@
               v-show="currentView === 'workspace'"
               :project-path="path"
               :is-active="isActive && currentView === 'workspace'"
+              :git-signature="projectGitMonitorSnapshot?.signature || ''"
               @status-changed="handleFileStatusChanged"
               @pending-count-changed="handlePendingCountChanged"
             />

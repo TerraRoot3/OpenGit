@@ -67,8 +67,11 @@ let repositoryStatusTimer = null
 const REPOSITORY_STATUS_CACHE_KEY = 'project-sidebar-repository-status-v1'
 const REPOSITORY_STATUS_ELECTRON_STORE_KEY = 'project-sidebar-repository-status-v1'
 const FAVORITES_UPDATED_EVENT = 'browser-favorites-updated'
+const ROOT_SCAN_CONCURRENCY = 3
+const REPOSITORY_WARMUP_CONCURRENCY = 4
 const isWindowActive = ref(true)
 const favoriteProjectPaths = ref([])
+let postMountWarmupHandle = null
 
 const sidebarWidth = computed(() => sidebarStore.sidebarWidth.value)
 const sidebarCollapsed = computed(() => sidebarStore.sidebarCollapsed.value)
@@ -245,11 +248,27 @@ const refreshRoot = async (rootPath) => {
   }
 }
 
+const runWithConcurrency = async (items, concurrency, worker) => {
+  const queue = Array.isArray(items) ? [...items] : []
+  if (!queue.length) return
+
+  const limit = Math.max(1, Number(concurrency) || 1)
+  const runners = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) {
+      const nextItem = queue.shift()
+      if (nextItem == null) continue
+      await worker(nextItem)
+    }
+  })
+
+  await Promise.all(runners)
+}
+
 const restoreRoots = async () => {
   const roots = [...sidebarStore.scanRoots.value]
-  for (const root of roots) {
+  await runWithConcurrency(roots, ROOT_SCAN_CONCURRENCY, async (root) => {
     await refreshRoot(root.path)
-  }
+  })
 }
 
 const collectAllRepositoryPaths = () => {
@@ -257,23 +276,6 @@ const collectAllRepositoryPaths = () => {
   for (const group of sidebarStore.repositoryGroups.value) {
     for (const repo of group.repositories || []) {
       if (repo?.path) {
-        paths.add(repo.path)
-      }
-    }
-  }
-  return Array.from(paths)
-}
-
-const collectOpenedRepositoryPaths = () => {
-  const openedPaths = new Set(browserRef.value?.getOpenedProjectPaths?.() || [])
-  if (openedPaths.size === 0) {
-    return []
-  }
-
-  const paths = new Set()
-  for (const group of sidebarStore.repositoryGroups.value) {
-    for (const repo of group.repositories || []) {
-      if (repo?.path && openedPaths.has(repo.path)) {
         paths.add(repo.path)
       }
     }
@@ -289,10 +291,7 @@ const collectUnknownRepositoryPaths = () => {
 }
 
 const collectPolledRepositoryPaths = () => {
-  return Array.from(new Set([
-    ...collectOpenedRepositoryPaths(),
-    ...collectUnknownRepositoryPaths()
-  ]))
+  return collectUnknownRepositoryPaths()
 }
 
 const needsRepositoryStatusWarmup = (repoPath) => {
@@ -425,10 +424,10 @@ const warmRepositoryStatusCache = async ({ force = false } = {}) => {
   const repoPaths = collectAllRepositoryPaths()
   if (!repoPaths.length) return
 
-  for (const repoPath of repoPaths) {
-    if (!force && !needsRepositoryStatusWarmup(repoPath)) continue
+  const targets = repoPaths.filter((repoPath) => force || needsRepositoryStatusWarmup(repoPath))
+  await runWithConcurrency(targets, REPOSITORY_WARMUP_CONCURRENCY, async (repoPath) => {
     await refreshRepositoryStatus(repoPath)
-  }
+  })
 }
 
 const startRepositoryStatusPolling = () => {
@@ -471,13 +470,32 @@ const handleFavoritesUpdated = () => {
   refreshFavoriteProjectPaths()
 }
 
+const runPostMountWarmup = async () => {
+  try {
+    await restoreRoots()
+    await warmRepositoryStatusCache()
+    if (isWindowActive.value) {
+      await pollRepositorySignatures({ force: true })
+    }
+  } catch (error) {
+    console.warn('侧边栏后台预热失败:', error)
+  }
+}
+
+const schedulePostMountWarmup = () => {
+  if (postMountWarmupHandle != null || typeof window === 'undefined') return
+  postMountWarmupHandle = window.setTimeout(() => {
+    postMountWarmupHandle = null
+    void runPostMountWarmup()
+  }, 0)
+}
+
 onMounted(async () => {
   await sidebarStore.hydrate?.()
   await refreshFavoriteProjectPaths()
   await hydrateRepositoryStatusCache()
-  await restoreRoots()
-  await warmRepositoryStatusCache()
   startRepositoryStatusPolling()
+  schedulePostMountWarmup()
   window.addEventListener('focus', handleWindowFocus)
   window.addEventListener('blur', handleWindowBlur)
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -600,6 +618,10 @@ const startResize = (event) => {
 onBeforeUnmount(() => {
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
+  if (postMountWarmupHandle != null && typeof window !== 'undefined') {
+    window.clearTimeout(postMountWarmupHandle)
+    postMountWarmupHandle = null
+  }
   stopRepositoryStatusPolling()
   window.removeEventListener('focus', handleWindowFocus)
   window.removeEventListener('blur', handleWindowBlur)

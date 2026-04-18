@@ -337,7 +337,8 @@ import { useConfirm } from '../../composables/useConfirm'
 
 const props = defineProps({
   projectPath: { type: String, required: true },
-  isActive: { type: Boolean, default: true }
+  isActive: { type: Boolean, default: true },
+  gitSignature: { type: String, default: '' }
 })
 const emit = defineEmits(['status-changed', 'pending-count-changed'])
 
@@ -381,7 +382,6 @@ const tabContextMenu = ref({
   tabId: null
 })
 let layoutObserver = null
-let gitStatusTimer = null
 const { confirm } = useConfirm()
 
 const tabs = ref([])
@@ -409,7 +409,6 @@ const themeOverrides = {
 }
 
 const WORKSPACE_HEADER_HEIGHT = '37px'
-const GIT_STATUS_POLL_MS = 5000
 const STATUS_PRIORITY = ['U', 'D', 'R', 'A', 'M', '?']
 const IMAGE_FILE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg'])
 const JSON_FILE_EXT = new Set(['json', 'jsonc'])
@@ -420,6 +419,7 @@ const TEXT_FILE_EXT = new Set(['md', 'txt', 'log', 'yml', 'yaml', 'toml', 'ini',
 const platform = window.electronAPI?.platform || 'darwin'
 const isRestoringWorkspaceState = ref(false)
 const isWorkspaceStatePersistenceSuspended = ref(false)
+const lastAppliedGitSignature = ref('')
 
 const systemFileManagerLabel = computed(() => {
   if (platform === 'win32') return '资源管理器'
@@ -724,21 +724,6 @@ async function refreshGitStatuses () {
     gitStatusByPath.value = nextMap
   }
   modifiedFileEntries.value = nextEntries
-}
-
-function startGitStatusPolling () {
-  stopGitStatusPolling()
-  void refreshGitStatuses()
-  gitStatusTimer = window.setInterval(() => {
-    void refreshGitStatuses()
-  }, GIT_STATUS_POLL_MS)
-}
-
-function stopGitStatusPolling () {
-  if (gitStatusTimer != null) {
-    window.clearInterval(gitStatusTimer)
-    gitStatusTimer = null
-  }
 }
 
 function sameStatusMap (left, right) {
@@ -1373,7 +1358,8 @@ watch(
       await ensureDirectoryChildren(treeData.value[0])
       await restoreWorkspaceState()
       if (props.isActive) {
-        startGitStatusPolling()
+        await refreshGitStatuses()
+        lastAppliedGitSignature.value = props.gitSignature || ''
       }
     } finally {
       isWorkspaceStatePersistenceSuspended.value = false
@@ -2315,7 +2301,8 @@ onMounted(async () => {
   document.addEventListener('pointerdown', handleDocumentPointerDown, true)
   await loadTreeWidth()
   if (props.isActive) {
-    startGitStatusPolling()
+    await refreshGitStatuses()
+    lastAppliedGitSignature.value = props.gitSignature || ''
   }
   await nextTick()
   layoutObserver = new ResizeObserver(() => {
@@ -2345,7 +2332,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   saveWorkspaceState()
   document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
-  stopGitStatusPolling()
   layoutObserver?.disconnect()
   layoutObserver = null
   disposeAllModels()
@@ -2358,15 +2344,25 @@ onBeforeUnmount(() => {
 
 watch(
   () => props.isActive,
-  (active) => {
+  async (active) => {
     if (active) {
-      startGitStatusPolling()
+      await refreshGitStatuses()
+      lastAppliedGitSignature.value = props.gitSignature || ''
       if (editor) {
         nextTick(() => layoutEditor())
       }
-    } else {
-      stopGitStatusPolling()
     }
+  }
+)
+
+watch(
+  () => props.gitSignature,
+  async (signature) => {
+    if (!props.isActive || !props.projectPath) return
+    const normalizedSignature = String(signature || '')
+    if (!normalizedSignature || normalizedSignature === lastAppliedGitSignature.value) return
+    await refreshGitStatuses()
+    lastAppliedGitSignature.value = normalizedSignature
   }
 )
 
