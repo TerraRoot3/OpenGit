@@ -21,6 +21,12 @@ export function useTerminalRouter() {
           if (h.onTitleChange) h.onTitleChange(data)
         }
       })
+
+      window.electronAPI.terminal.onCwdChange((data) => {
+        for (const h of handlers) {
+          if (h.onCwdChange) h.onCwdChange(data)
+        }
+      })
     }
   }
 

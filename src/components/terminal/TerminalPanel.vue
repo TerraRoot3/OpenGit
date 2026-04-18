@@ -109,6 +109,7 @@
         :active-term-id="activeTermId"
         :pane-title-resolver="getPaneTitle"
         :closable="activeTabTermIds.length > 1"
+        :show-pane-topbar="activeTabTermIds.length > 1"
         :dragging-term-id="draggingPaneTermId"
         :drop-target-term-id="dropTargetPaneTermId"
         @pane-element-change="handlePaneElementChange"
@@ -389,7 +390,7 @@ const getPaneTitle = (termId) => {
   if (!term) return '终端'
   const cwd = normalizeIncomingPath(term.cwd || '')
   const name = cwd ? cwd.split('/').filter(Boolean).pop() : ''
-  return name ? `终端 ${term._termIndex} · ${name}` : `终端 ${term._termIndex}`
+  return name || '终端'
 }
 
 const createPaneDragPreview = (termId) => {
@@ -1739,6 +1740,32 @@ const ipcHandler = {
         if (t.ptyId === data.id) {
           t.viewportDirtyWhileHidden = true
           t.xterm.write(data.data)
+          persistSnapshotForPath(cacheKey, cached)
+          return
+        }
+      }
+    }
+  },
+  onCwdChange(data) {
+    if (!data || typeof data.id !== 'string') return
+    const updateTermCwd = (term) => {
+      if (term.ptyId !== data.id) return false
+      if (typeof data.cwd === 'string' && data.cwd.trim()) {
+        term.cwd = normalizeIncomingPath(data.cwd)
+      }
+      return true
+    }
+
+    for (const t of terminals.value) {
+      if (updateTermCwd(t)) {
+        schedulePersistedSnapshot()
+        return
+      }
+    }
+
+    for (const [cacheKey, cached] of terminalCache) {
+      for (const t of cached.terminals) {
+        if (updateTermCwd(t)) {
           persistSnapshotForPath(cacheKey, cached)
           return
         }

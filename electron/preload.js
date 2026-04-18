@@ -320,6 +320,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     removeTitleChangeListener: () => {
       ipcRenderer.removeAllListeners('terminal-title')
+    },
+    onCwdChange: (callback) => {
+      ipcRenderer.on('terminal-cwd', (event, data) => callback(data))
+    },
+    removeCwdChangeListener: () => {
+      ipcRenderer.removeAllListeners('terminal-cwd')
     }
   },
 

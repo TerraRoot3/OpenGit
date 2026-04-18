@@ -12,6 +12,7 @@
     }"
   >
     <div
+      v-if="showPaneTopbar"
       class="terminal-pane-topbar"
       :class="{ draggable: closable }"
       @mousedown="emit('pane-focus', node.termId)"
@@ -48,6 +49,7 @@
         :node="node.children[0]"
         :active-term-id="activeTermId"
         :pane-title-resolver="paneTitleResolver"
+        :show-pane-topbar="showPaneTopbar"
         :closable="closable"
         :dragging-term-id="draggingTermId"
         :drop-target-term-id="dropTargetTermId"
@@ -70,6 +72,7 @@
         :node="node.children[1]"
         :active-term-id="activeTermId"
         :pane-title-resolver="paneTitleResolver"
+        :show-pane-topbar="showPaneTopbar"
         :closable="closable"
         :dragging-term-id="draggingTermId"
         :drop-target-term-id="dropTargetTermId"
@@ -101,6 +104,10 @@ const props = defineProps({
   paneTitleResolver: {
     type: Function,
     default: null
+  },
+  showPaneTopbar: {
+    type: Boolean,
+    default: true
   },
   closable: {
     type: Boolean,

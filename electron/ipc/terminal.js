@@ -11,6 +11,45 @@ function registerTerminalHandlers({
   getMainWindow
 }) {
   const ptyProcesses = new Map()
+  const { execFile } = require('child_process')
+
+  const resolveProcessCwd = (pid) => {
+    if (!pid) return Promise.resolve('')
+
+    return new Promise((resolve) => {
+      if (process.platform === 'linux') {
+        try {
+          resolve(fs.realpathSync(`/proc/${pid}/cwd`))
+        } catch {
+          resolve('')
+        }
+        return
+      }
+
+      if (process.platform === 'darwin') {
+        execFile(
+          'lsof',
+          ['-a', '-p', String(pid), '-d', 'cwd', '-F', 'n'],
+          { timeout: 600 },
+          (error, stdout) => {
+            if (error || !stdout) {
+              resolve('')
+              return
+            }
+            const line = stdout.split('\n').find((item) => item.startsWith('n'))
+            if (!line) {
+              resolve('')
+              return
+            }
+            resolve(line.slice(1).trim())
+          }
+        )
+        return
+      }
+
+      resolve('')
+    })
+  }
 
   ipcMain.handle('terminal-create', async (event, payload) => {
     try {
@@ -99,7 +138,6 @@ function registerTerminalHandlers({
             return
           }
 
-          const { execFile } = require('child_process')
           execFile(
             'sh',
             ['-c', `pgrep -P ${ptyProcess.pid} | head -1 | xargs -I{} ps -o args= -p {} 2>/dev/null`],
@@ -142,6 +180,16 @@ function registerTerminalHandlers({
             lastTitle = title
             const wc = getSenderWindow()
             if (wc) wc.send('terminal-title', { id: terminalId, title })
+          }
+
+          const sessionInfo = ptyProcesses.get(terminalId)
+          if (sessionInfo) {
+            const cwd = await resolveProcessCwd(ptyProcess.pid)
+            if (cwd && cwd !== sessionInfo.projectPath) {
+              sessionInfo.projectPath = cwd
+              const wc = getSenderWindow()
+              if (wc) wc.send('terminal-cwd', { id: terminalId, cwd })
+            }
           }
         } catch {
           titleResolving = false
