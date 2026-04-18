@@ -72,7 +72,7 @@
                       :size="14"
                     />
                   </span>
-                  <component :is="getNodeIconComponent(item.node)" :size="15" class="workspace-tree-row__icon" />
+                  <component :is="getNodeIconComponent(item.node)" :size="15" class="workspace-tree-row__icon" :class="getNodeIconClass(item.node)" />
                   <span class="workspace-tree-row__name" :title="item.node.label">{{ item.node.label }}</span>
                   <span v-if="getNodeStatus(item.node)" class="workspace-tree-row__status" :title="`Git 状态 ${getNodeStatus(item.node)}`">
                     {{ getNodeStatus(item.node) }}
@@ -974,6 +974,51 @@ function getNodeIconComponent (node) {
   return fileIconForPath(node?.key || node?.label || '')
 }
 
+function getNodeIconClass (node) {
+  if (node?.isDirectory) {
+    return isExpanded(node.key) ? 'workspace-tree-row__icon--folder-open' : 'workspace-tree-row__icon--folder'
+  }
+
+  const ext = extname(node?.key || '').slice(1)
+  if (IMAGE_FILE_EXT.has(ext)) return 'workspace-tree-row__icon--image'
+  if (JSON_FILE_EXT.has(ext)) return 'workspace-tree-row__icon--json'
+  if (SPREADSHEET_FILE_EXT.has(ext)) return 'workspace-tree-row__icon--sheet'
+  if (ARCHIVE_FILE_EXT.has(ext)) return 'workspace-tree-row__icon--archive'
+  if (TERMINAL_FILE_EXT.has(ext)) return 'workspace-tree-row__icon--terminal'
+  if (TEXT_FILE_EXT.has(ext)) return 'workspace-tree-row__icon--text'
+
+  switch (languageForPath(node?.key || '')) {
+    case 'javascript':
+    case 'typescript':
+      return 'workspace-tree-row__icon--script'
+    case 'html':
+    case 'css':
+    case 'scss':
+    case 'less':
+      return 'workspace-tree-row__icon--web'
+    case 'python':
+      return 'workspace-tree-row__icon--python'
+    case 'go':
+      return 'workspace-tree-row__icon--go'
+    case 'rust':
+      return 'workspace-tree-row__icon--rust'
+    case 'java':
+    case 'kotlin':
+      return 'workspace-tree-row__icon--java'
+    case 'swift':
+      return 'workspace-tree-row__icon--swift'
+    case 'cpp':
+    case 'csharp':
+      return 'workspace-tree-row__icon--native'
+    case 'sql':
+      return 'workspace-tree-row__icon--sql'
+    case 'markdown':
+      return 'workspace-tree-row__icon--markdown'
+    default:
+      return 'workspace-tree-row__icon--file'
+  }
+}
+
 async function toggleDirectory (node) {
   if (!node?.isDirectory) return
   if (!isExpanded(node.key)) {
@@ -1401,19 +1446,22 @@ watch(
   padding: 6px 0 12px;
   box-sizing: border-box;
   overflow: auto;
+  overflow-y: auto;
+  overflow-x: auto;
 }
 
 .workspace-tree-list {
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-width: max-content;
 }
 
 .workspace-tree-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   min-height: 28px;
   padding: 0 10px 0 0;
   border: none;
@@ -1456,11 +1504,85 @@ watch(
   opacity: 0.9;
 }
 
+.workspace-tree-row__icon--folder {
+  color: #d8b15c;
+}
+
+.workspace-tree-row__icon--folder-open {
+  color: #f0c96a;
+}
+
+.workspace-tree-row__icon--image {
+  color: #db7ef2;
+}
+
+.workspace-tree-row__icon--json {
+  color: #7ed9a6;
+}
+
+.workspace-tree-row__icon--sheet {
+  color: #63d18b;
+}
+
+.workspace-tree-row__icon--archive {
+  color: #d9a564;
+}
+
+.workspace-tree-row__icon--terminal {
+  color: #65c4ff;
+}
+
+.workspace-tree-row__icon--text {
+  color: #b8c0cf;
+}
+
+.workspace-tree-row__icon--script {
+  color: #f2d06b;
+}
+
+.workspace-tree-row__icon--web {
+  color: #72c3ff;
+}
+
+.workspace-tree-row__icon--python {
+  color: #7cc7ff;
+}
+
+.workspace-tree-row__icon--go {
+  color: #6ed3d8;
+}
+
+.workspace-tree-row__icon--rust {
+  color: #d48c62;
+}
+
+.workspace-tree-row__icon--java {
+  color: #ff9b7a;
+}
+
+.workspace-tree-row__icon--swift {
+  color: #ff9968;
+}
+
+.workspace-tree-row__icon--native {
+  color: #8eb1ff;
+}
+
+.workspace-tree-row__icon--sql {
+  color: #79b8ff;
+}
+
+.workspace-tree-row__icon--markdown {
+  color: #8fb7ff;
+}
+
+.workspace-tree-row__icon--file {
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .workspace-tree-row__name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 0 0 auto;
+  min-width: max-content;
   white-space: nowrap;
 }
 
