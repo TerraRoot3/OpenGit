@@ -2466,10 +2466,17 @@ onUnmounted(() => {
 .scope-select {
   min-width: 128px;
   height: 32px;
-  padding: 0 10px;
+  padding: 0 34px 0 10px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(20, 21, 24, 0.86);
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: rgba(20, 21, 24, 0.86);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='rgba(255,255,255,0.72)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
   color: rgba(255, 255, 255, 0.92);
   outline: none;
 }
