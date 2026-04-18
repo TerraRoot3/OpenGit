@@ -2827,9 +2827,9 @@ defineExpose({
 }
 
 .discard-changes-btn {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(239, 68, 68, 0.14);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.22);
   padding: 6px 12px;
   border-radius: 8px;
   font-size: 12px;
@@ -2838,7 +2838,8 @@ defineExpose({
 }
 
 .discard-changes-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .discard-changes-btn:disabled {
@@ -3276,12 +3277,14 @@ div.diff-content div.diff-text .diff-context-line {
 }
 
 .commit-btn {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.88);
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.24);
+  color: #86efac;
 }
 
 .commit-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(34, 197, 94, 0.24);
+  border-color: rgba(34, 197, 94, 0.32);
 }
 
 .commit-btn:disabled {
@@ -3292,12 +3295,14 @@ div.diff-content div.diff-text .diff-context-line {
 }
 
 .commit-push-btn {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.92);
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.28);
+  color: #93c5fd;
 }
 
 .commit-push-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(59, 130, 246, 0.26);
+  border-color: rgba(59, 130, 246, 0.36);
 }
 
 .commit-push-btn:disabled {
@@ -3374,21 +3379,25 @@ div.diff-content div.diff-text .diff-context-line {
 }
 
 .discard-all-btn {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.86);
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.22);
+  color: #fca5a5;
 }
 
 .discard-all-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .stash-files-btn {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.86);
+  background: rgba(217, 155, 32, 0.16);
+  border-color: rgba(217, 155, 32, 0.24);
+  color: #f4d37d;
 }
 
 .stash-files-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(217, 155, 32, 0.24);
+  border-color: rgba(217, 155, 32, 0.32);
 }
 
 /* 对话框样式 */

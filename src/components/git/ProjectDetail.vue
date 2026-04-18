@@ -2561,28 +2561,83 @@ defineExpose({
 .mr-single-btn,
 .gitlab-open-btn,
 .finder-open-btn {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.create-btn {
   background: rgba(255, 255, 255, 0.055);
   color: rgba(255, 255, 255, 0.84);
 }
 
-.create-btn:hover,
-.pull-single-btn:hover,
-.push-single-btn:hover,
-.mr-single-btn:hover,
-.gitlab-open-btn:hover,
-.finder-open-btn:hover {
+.create-btn:hover {
   background: rgba(255, 255, 255, 0.09);
   border-color: rgba(255, 255, 255, 0.06);
 }
 
+.pull-single-btn {
+  background: rgba(217, 155, 32, 0.18);
+  border-color: rgba(217, 155, 32, 0.26);
+  color: #f4d37d;
+}
+
+.pull-single-btn:hover {
+  background: rgba(217, 155, 32, 0.26);
+  border-color: rgba(217, 155, 32, 0.34);
+}
+
+.push-single-btn {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.28);
+  color: #93c5fd;
+}
+
+.push-single-btn:hover {
+  background: rgba(59, 130, 246, 0.26);
+  border-color: rgba(59, 130, 246, 0.36);
+}
+
+.mr-single-btn {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.28);
+  color: #c4b5fd;
+}
+
+.mr-single-btn:hover {
+  background: rgba(139, 92, 246, 0.26);
+  border-color: rgba(139, 92, 246, 0.36);
+}
+
+.gitlab-open-btn {
+  background: rgba(249, 115, 22, 0.18);
+  border-color: rgba(249, 115, 22, 0.28);
+  color: #fdba74;
+}
+
+.gitlab-open-btn:hover {
+  background: rgba(249, 115, 22, 0.26);
+  border-color: rgba(249, 115, 22, 0.36);
+}
+
+.finder-open-btn {
+  background: rgba(20, 184, 166, 0.18);
+  border-color: rgba(20, 184, 166, 0.28);
+  color: #99f6e4;
+}
+
+.finder-open-btn:hover {
+  background: rgba(20, 184, 166, 0.26);
+  border-color: rgba(20, 184, 166, 0.36);
+}
+
 .settings-btn {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.82);
   padding: 8px;
 }
 .settings-btn:hover { 
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
 
