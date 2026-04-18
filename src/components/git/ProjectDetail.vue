@@ -831,6 +831,40 @@ const tagsViewState = computed(() => resolveTagsViewState({
   tags: tags.value
 }))
 
+const STABLE_SEMVER_TAG_PATTERN = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[\da-zA-Z-]+(?:\.[\da-zA-Z-]+)*)?$/
+
+const parseStableSemverTag = (tagName) => {
+  if (typeof tagName !== 'string') return null
+  const normalized = tagName.trim()
+  const match = normalized.match(STABLE_SEMVER_TAG_PATTERN)
+  if (!match) return null
+
+  return {
+    raw: tagName,
+    normalized,
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3])
+  }
+}
+
+const compareStableSemverTag = (left, right) => {
+  if (left.major !== right.major) return left.major - right.major
+  if (left.minor !== right.minor) return left.minor - right.minor
+  return left.patch - right.patch
+}
+
+const getLargestStableSemverTagName = () => {
+  const candidates = tags.value
+    .map(tag => parseStableSemverTag(tag?.name || ''))
+    .filter(Boolean)
+
+  if (candidates.length === 0) return ''
+
+  candidates.sort(compareStableSemverTag)
+  return candidates[candidates.length - 1]?.normalized || ''
+}
+
 const pipelineStatusClass = computed(() => `pipeline-status-${activePipelineSummary.value?.status || 'unknown'}`)
 
 const pipelineStatusText = computed(() => {
@@ -874,6 +908,16 @@ const emitPendingStatusChanged = (projectPath, hasPending = hasPendingFiles.valu
     path: projectPath,
     hasPendingFiles: !!hasPending
   })
+}
+
+const syncHasPendingFiles = (nextValue, { emitWhenChanged = true } = {}) => {
+  const normalized = Boolean(nextValue)
+  const changed = hasPendingFiles.value !== normalized
+  hasPendingFiles.value = normalized
+  if (changed && emitWhenChanged) {
+    emitPendingStatusChanged(props.path, normalized)
+  }
+  return changed
 }
 
 const getPipelineInlineRef = (pipeline) => {
@@ -1086,6 +1130,12 @@ const pollProjectGitMonitor = async () => {
     const previousSnapshot = projectGitMonitorSnapshot.value
     const nextSnapshot = result.data
     projectGitMonitorSnapshot.value = nextSnapshot
+    syncHasPendingFiles(
+      (nextSnapshot.changedCount || 0) > 0 ||
+      (nextSnapshot.stagedCount || 0) > 0 ||
+      (nextSnapshot.untrackedCount || 0) > 0 ||
+      (nextSnapshot.conflictedCount || 0) > 0
+    )
 
     const refreshRequest = deriveProjectGitMonitorRefreshRequest(
       previousSnapshot,
@@ -1356,7 +1406,7 @@ const checkPendingFiles = async () => {
     
     if (result.success) {
       const output = result.output?.trim() || ''
-      hasPendingFiles.value = output.length > 0
+      syncHasPendingFiles(output.length > 0)
     }
   } catch (error) {
     console.error('检查待定文件失败:', error)
@@ -1583,12 +1633,7 @@ const handleFileStatusChanged = async () => {
 
 // 处理待定文件数量变化
 const handlePendingCountChanged = (count) => {
-  const changed = hasPendingFiles.value !== (count > 0)
-  hasPendingFiles.value = count > 0
-  // 状态变化时通知父组件刷新项目列表的待定文件图标
-  if (changed) {
-    emitPendingStatusChanged(props.path, count > 0)
-  }
+  syncHasPendingFiles(count > 0)
 }
 
 const selectCommitHistory = () => {
@@ -1971,14 +2016,10 @@ const createBranchFromContext = () => {
   showCreateBranchDialog.value = true
 }
 
-const createTagFromRemoteBranch = () => {
+const createTagFromRemoteBranch = async () => {
   if (!branchContextMenuBranch.value) return
   showBranchContextMenuModal.value = false
-  newTagName.value = ''
-  newTagMessage.value = ''
-  tagCommit.value = `origin/${branchContextMenuBranch.value}`
-  pushTagAfterCreate.value = true
-  showCreateTagDialog.value = true
+  await openCreateTagDialog(`origin/${branchContextMenuBranch.value}`)
 }
 
 const mergeBranchAction = () => {
@@ -2217,10 +2258,18 @@ const deleteTagAction = () => {
 }
 
 // ==================== 创建标签 ====================
-const openCreateTagDialog = () => {
-  newTagName.value = ''
+const openCreateTagDialog = async (commitRef = '') => {
+  if (props.path && tags.value.length === 0 && !tagsLoading.value) {
+    try {
+      await loadTags()
+    } catch (error) {
+      console.error('预加载标签失败:', error)
+    }
+  }
+
+  newTagName.value = getLargestStableSemverTagName()
   newTagMessage.value = ''
-  tagCommit.value = ''
+  tagCommit.value = commitRef
   pushTagAfterCreate.value = true
   showCreateTagDialog.value = true
 }
