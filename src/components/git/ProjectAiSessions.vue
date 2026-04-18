@@ -499,9 +499,9 @@ onUnmounted(() => {
 <style scoped>
 .ai-sessions-section {
   flex: 1;
-  background: #2d2d2d;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 14px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -516,11 +516,10 @@ onUnmounted(() => {
 .provider-panel {
   width: 260px;
   min-width: 220px;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #2d2d2d;
+  background: transparent;
 }
 
 .provider-header,
@@ -528,13 +527,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.9);
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(255, 255, 255, 0.92);
   font-size: 13px;
   font-weight: 500;
+  height: 40px;
   min-height: 40px;
+  box-sizing: border-box;
 }
 
 .header-left {
@@ -553,29 +553,35 @@ onUnmounted(() => {
 .session-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: 0 8px 8px;
 }
 
 .provider-item,
 .session-item {
   display: block;
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 12px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: background-color 0.18s ease, color 0.18s ease;
   border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   background: transparent;
   text-align: left;
+  border-radius: 10px;
+  margin-bottom: 4px;
+}
+
+.provider-list > :first-child,
+.session-list > :first-child {
+  margin-top: 0 !important;
 }
 
 .provider-item:hover,
 .session-item:hover {
-  background: rgba(102, 126, 234, 0.15);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .provider-item.active {
-  background: rgba(102, 126, 234, 0.25);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .provider-item-main,
@@ -606,8 +612,8 @@ onUnmounted(() => {
   min-width: 22px;
   padding: 1px 8px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.68);
   font-size: 11px;
   text-align: center;
 }
@@ -619,7 +625,7 @@ onUnmounted(() => {
   min-height: 0;
   max-width: 100%;
   overflow: hidden;
-  background: #2d2d2d;
+  background: transparent;
 }
 
 .session-tip {
@@ -692,9 +698,9 @@ onUnmounted(() => {
   flex-shrink: 0;
   height: 28px;
   padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
   color: rgba(255, 255, 255, 0.82);
   font-size: 12px;
   cursor: pointer;
@@ -704,19 +710,19 @@ onUnmounted(() => {
 .resume-btn:hover,
 .refresh-btn:hover:not(:disabled),
 .delete-btn-inline:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
 
 .delete-btn-inline {
-  color: #ffb1b7;
-  border-color: rgba(220, 53, 69, 0.28);
-  background: rgba(220, 53, 69, 0.12);
+  color: rgba(255, 255, 255, 0.84);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .delete-btn-inline:hover {
-  background: rgba(220, 53, 69, 0.2);
-  color: #ffd6da;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .refresh-btn:disabled {
@@ -738,8 +744,9 @@ onUnmounted(() => {
 }
 
 .dialog-content {
-  background: #2d2d2d;
-  border-radius: 8px;
+  background: #26272b;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
   min-width: 420px;
   max-width: 720px;
   width: min(720px, calc(100vw - 32px));
@@ -748,7 +755,7 @@ onUnmounted(() => {
 
 .dialog-header-simple {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .dialog-header-simple h3 {
@@ -760,7 +767,7 @@ onUnmounted(() => {
 
 .dialog-body {
   padding: 20px;
-  background: #2d2d2d;
+  background: transparent;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -798,16 +805,17 @@ onUnmounted(() => {
 }
 
 .summary-block {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
   overflow: hidden;
   margin-top: 4px;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .summary-block-title {
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 12px;
   color: rgba(255, 255, 255, 0.8);
   font-weight: 500;
@@ -849,15 +857,15 @@ onUnmounted(() => {
 }
 
 .transcript-item {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
   padding: 10px 12px;
   background: rgba(255, 255, 255, 0.03);
 }
 
 .transcript-item.user {
-  border-color: rgba(102, 126, 234, 0.28);
-  background: rgba(102, 126, 234, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .transcript-item.assistant {
@@ -897,20 +905,20 @@ onUnmounted(() => {
 
 .dialog-footer {
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  background: #2d2d2d;
-  border-radius: 0 0 8px 8px;
+  background: transparent;
+  border-radius: 0 0 14px 14px;
 }
 
 .cancel-btn-large,
 .confirm-btn-large,
 .delete-btn-large {
   padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
@@ -918,30 +926,30 @@ onUnmounted(() => {
 }
 
 .cancel-btn-large {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .cancel-btn-large:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .confirm-btn-large {
-  background: #667eea;
-  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .confirm-btn-large:hover {
-  background: #5a6fd6;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .delete-btn-large {
-  background: rgba(220, 53, 69, 0.92);
-  color: white;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .delete-btn-large:hover:not(:disabled) {
-  background: #c82333;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .delete-btn-large:disabled,
@@ -960,16 +968,16 @@ onUnmounted(() => {
   font-size: 13px;
   line-height: 1.6;
   padding: 10px 12px;
-  border-radius: 6px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .warning-text {
   color: #ffc107 !important;
-  background: rgba(255, 193, 7, 0.15);
+  background: rgba(255, 193, 7, 0.1);
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 193, 7, 0.3);
   font-size: 13px;
 }
@@ -1003,7 +1011,7 @@ onUnmounted(() => {
     min-width: 0;
     max-height: 220px;
     border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   }
 
   .session-row,

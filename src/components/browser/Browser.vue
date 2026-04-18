@@ -3995,14 +3995,13 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  background: #1e1e1e;
+  background: #1b1c1f;
 }
 
 .browser-tabs-bar {
   display: flex;
   align-items: center;
-  background: #3d3d40; /* 浅一档的深色背景 */
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.025);
   padding: 0 0 0 0;
   padding-top: 4px; /* 顶部预留空间 */
   gap: 0;
@@ -4062,7 +4061,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   height: 32px;
   box-sizing: border-box;
   position: relative;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.68);
   font-size: 13px;
   font-weight: 500;
   -webkit-app-region: no-drag; /* 标签不可拖拽窗口 */
@@ -4070,23 +4069,6 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   user-select: none; /* 标签项本身不可选中，保持可点击 */
   z-index: 20; /* 确保在拖拽区域上方 */
   pointer-events: auto; /* 确保可以点击 */
-}
-
-/* 标签页之间的分隔线 */
-.browser-tab-item::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1px;
-  height: 14px;
-  background: rgba(255, 255, 255, 0.2);
-}
-
-/* 隐藏分隔线（通过 JS 计算视觉顺序来控制） */
-.browser-tab-item.hide-separator::after {
-  display: none;
 }
 
 /* 标签拖拽样式 - 非首页标签可拖拽 */
@@ -4099,14 +4081,14 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-item.drag-over {
-  background: rgba(102, 126, 234, 0.3);
-  border-radius: 4px;
+  background: rgba(77, 135, 255, 0.18);
+  border-radius: 10px;
 }
 
 /* 拖拽克隆元素样式 */
 .drag-clone {
-  background: #3c3c3c;
-  border-radius: 6px 6px 0 0;
+  background: #2a2b2f;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   padding: 0 8px;
@@ -4159,26 +4141,26 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-item.active {
-  background: rgba(255, 255, 255, 0.15); /* 稍微亮一点的深灰色背景 */
-  color: rgba(255, 255, 255, 0.95); /* 浅色文字 */
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.95);
   font-weight: 500; /* 保持与未选中状态相同的字重，避免视觉上的放大效果 */
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border-top-left-radius: 8px; /* 上边圆角 */
-  border-top-right-radius: 8px; /* 上边圆角 */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
   position: relative;
   z-index: 1;
 }
 
-/* 选中态下边的贝塞尔曲线效果 */
+/* 选中态下边的柔和衔接 */
 .browser-tab-item.active::before {
   content: '';
   position: absolute;
-  bottom: -6px;
-  left: -2px;
-  right: -2px;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.15); /* 和选中tab背景色一致 */
-  border-radius: 0 0 50% 50% / 0 0 100% 100%;
+  bottom: -4px;
+  left: 6px;
+  right: 6px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
   z-index: 0;
 }
 
@@ -4260,7 +4242,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 .browser-tab-close:hover {
   color: #dc2626;
-  background: rgba(220, 38, 38, 0.1);
+  background: rgba(220, 38, 38, 0.08);
   opacity: 1;
   transform: scale(1.1);
 }
@@ -4286,7 +4268,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-new:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -4294,8 +4276,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   display: flex;
   align-items: center;
   padding: 6px 12px;
-  background: #3d3d40; /* 和子标签背景色一样 */
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
   gap: 8px;
   flex-shrink: 0;
   min-height: 44px;
@@ -4345,10 +4326,10 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 .toolbar-menu {
   position: fixed; /* 使用 fixed 定位，不受父容器影响 */
-  background: #2d2d2d;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: #2a2b2f;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
   min-width: 160px;
   z-index: 99999; /* 最高层级 */
   overflow: hidden;
@@ -4374,12 +4355,12 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .menu-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .menu-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
   margin: 4px 0;
 }
 
@@ -4404,11 +4385,11 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   flex: 1;
   width: 100%;
   padding: 6px 104px 6px 12px; /* 右侧留出空间给地址栏动作按钮组 */
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   font-size: 14px;
   outline: none;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
   color: rgba(255, 255, 255, 0.9);
   -webkit-app-region: no-drag; /* URL输入框不可拖拽窗口 */
 }
@@ -4420,10 +4401,10 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   left: 0;
   right: 0;
   margin-top: 4px;
-  background: #2d2d2d;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: #2a2b2f;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
   z-index: 1000;
   overflow: hidden;
 }
@@ -4439,7 +4420,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 .suggestion-item:hover,
 .suggestion-item.active {
-  background: rgba(102, 126, 234, 0.2);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .suggestion-icon {
@@ -4517,8 +4498,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .url-input:focus {
-  border-color: rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .toolbar-btn {
@@ -4537,7 +4518,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .toolbar-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -4549,7 +4530,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 .toolbar-btn.active {
   color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .browser-content {
@@ -4571,9 +4552,9 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   gap: 16px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: linear-gradient(90deg, rgba(94, 68, 22, 0.95), rgba(61, 46, 19, 0.95));
-  border: 1px solid rgba(234, 197, 117, 0.28);
-  color: #f5e7c5;
+  background: rgba(52, 46, 33, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 244, 220, 0.92);
 }
 
 .permission-main {
@@ -4602,34 +4583,33 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .permission-btn {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
   border-radius: 8px;
   color: inherit;
   padding: 8px 12px;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .permission-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .permission-btn.primary {
-  background: rgba(234, 197, 117, 0.18);
-  border-color: rgba(234, 197, 117, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
 .permission-btn.primary:hover {
-  background: rgba(234, 197, 117, 0.28);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .permission-btn.danger {
-  background: rgba(128, 34, 34, 0.22);
-  border-color: rgba(198, 106, 106, 0.28);
+  background: rgba(109, 42, 42, 0.2);
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
 .permission-btn.danger:hover {
@@ -4648,8 +4628,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   gap: 8px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: rgba(111, 29, 29, 0.92);
-  border: 1px solid rgba(255, 130, 130, 0.35);
+  background: rgba(76, 33, 33, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   color: #ffd7d7;
 }
 
@@ -4678,8 +4658,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .error-retry-btn {
-  border: 1px solid rgba(255, 199, 199, 0.4);
-  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
   border-radius: 6px;
   padding: 4px 10px;
@@ -4689,7 +4669,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .error-retry-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.11);
 }
 
 .download-status-panel {
@@ -4709,8 +4689,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   justify-content: space-between;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(24, 24, 24, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(42, 43, 47, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.94);
   font-size: 12px;
   font-weight: 600;
@@ -4730,14 +4710,14 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .download-close:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .download-empty {
   padding: 12px;
   border-radius: 8px;
-  background: rgba(24, 24, 24, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(42, 43, 47, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.72);
   font-size: 12px;
   text-align: center;
@@ -4750,8 +4730,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   align-items: center;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(24, 24, 24, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(42, 43, 47, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(8px);
 }
@@ -4775,6 +4755,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  background: #1b1c1f;
 }
 
 /* 内容容器样式 - 使用绝对定位覆盖整个区域 */
@@ -4798,7 +4779,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #1e1e1e;
+  background: #1b1c1f;
 }
 
 
@@ -4809,7 +4790,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1e1e1e;
+  background: #1b1c1f;
   color: rgba(255, 255, 255, 0.5);
 }
 
@@ -4827,7 +4808,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #1e1e1e;
+  background: #1b1c1f;
   display: flex;
   flex-direction: column;
 }
@@ -4859,7 +4840,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   height: 100%;
   overflow: hidden;
   z-index: 10;
-  background: #1e1e1e;
+  background: #1b1c1f;
 }
 
 /* 特殊页面容器样式 */
@@ -4872,7 +4853,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   width: 100%;
   height: 100%;
   overflow: auto;
-  background: #1e1e1e;
+  background: #1b1c1f;
   z-index: 10;
 }
 

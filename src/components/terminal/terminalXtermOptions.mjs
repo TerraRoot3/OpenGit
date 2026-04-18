@@ -20,10 +20,10 @@ export const XTERM_OPTS = {
   fontFamily: TERMINAL_FONT_FAMILY,
   rescaleOverlappingGlyphs: true,
   theme: {
-    background: '#1e1e1e',
+    background: '#1b1c1f',
     foreground: '#d4d4d4',
     cursor: '#d4d4d4',
-    cursorAccent: '#1e1e1e',
+    cursorAccent: '#1b1c1f',
     selectionBackground: 'rgba(255, 255, 255, 0.3)',
     black: '#000000',
     red: '#cd3131',

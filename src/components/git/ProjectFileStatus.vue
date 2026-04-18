@@ -2629,9 +2629,9 @@ defineExpose({
 /* 文件状态面板 */
 .file-status-section {
   flex: 1;
-  background: #2d2d2d;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 14px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -2647,11 +2647,10 @@ defineExpose({
 .file-list-panel {
   width: 260px;
   min-width: 220px;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #2d2d2d;
+  background: transparent;
 }
 
 .file-list-section {
@@ -2673,13 +2672,14 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.025);
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.92);
   font-size: 13px;
+  height: 40px;
   min-height: 40px;
+  box-sizing: border-box;
 }
 
 .header-left {
@@ -2702,26 +2702,31 @@ defineExpose({
 .file-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
-  background: #2d2d2d;
+  padding: 0 8px 8px;
+  background: transparent;
 }
 
 .file-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 12px;
+  padding: 8px 10px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background-color 0.18s ease, color 0.18s ease;
+  border-radius: 10px;
+  margin-bottom: 4px;
+}
+
+.file-list > :first-child {
+  margin-top: 0 !important;
 }
 
 .file-item:hover {
-  background: rgba(102, 126, 234, 0.15);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .file-item.active {
-  background: rgba(102, 126, 234, 0.25);
+  background: rgba(255, 255, 255, 0.09);
   font-weight: 500;
 }
 
@@ -2753,6 +2758,7 @@ defineExpose({
   max-width: 100%;
   overflow: hidden;
   height: 100%;
+  background: transparent;
 }
 
 .file-diff-section {
@@ -2764,18 +2770,19 @@ defineExpose({
 }
 
 .file-diff-header {
-  padding: 5px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.025);
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.92);
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  height: 40px;
   min-height: 40px;
   line-height: 1.4;
+  box-sizing: border-box;
 }
 
 .file-diff-header span {
@@ -2793,42 +2800,46 @@ defineExpose({
 }
 
 .resolve-conflict-btn {
-  background: #ff9800;
-  color: white;
-  border: none;
+  background: rgba(251, 191, 36, 0.18);
+  color: #f8d98b;
+  border: 1px solid rgba(251, 191, 36, 0.2);
   padding: 6px 12px;
-  border-radius: 4px;
+  border-radius: 8px;
   font-size: 12px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
 }
 
 .resolve-conflict-btn:hover:not(:disabled) {
-  background: #e68900;
+  background: rgba(251, 191, 36, 0.24);
 }
 
 .resolve-conflict-btn:disabled {
-  background: #6c757d;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.38);
   cursor: not-allowed;
 }
 
 .discard-changes-btn {
-  background: #dc3545;
-  color: white;
-  border: none;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 6px 12px;
-  border-radius: 4px;
+  border-radius: 8px;
   font-size: 12px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
 }
 
 .discard-changes-btn:hover:not(:disabled) {
-  background: #c82333;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .discard-changes-btn:disabled {
-  background: #6c757d;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.38);
   cursor: not-allowed;
 }
 
@@ -2836,7 +2847,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #2d2d2d;
+  background: #1b1c1f;
 }
 
 .conflict-resolver-header {
@@ -2844,8 +2855,8 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   padding: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(251, 191, 36, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(251, 191, 36, 0.1);
 }
 
 .conflict-resolver-header h4 {
@@ -2870,7 +2881,7 @@ defineExpose({
 }
 
 .close-btn:hover {
-  background: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.18);
 }
 
 .conflict-sections {
@@ -2881,9 +2892,10 @@ defineExpose({
 
 .conflict-section {
   margin-bottom: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .conflict-section-header {
@@ -2891,8 +2903,8 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background: #2d2d2d;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .conflict-marker {
@@ -2903,17 +2915,17 @@ defineExpose({
 }
 
 .use-version-btn {
-  background: #28a745;
-  color: white;
-  border: none;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 4px 12px;
-  border-radius: 4px;
+  border-radius: 8px;
   font-size: 11px;
   cursor: pointer;
 }
 
 .use-version-btn:hover {
-  background: #218838;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .conflict-section.selected {
@@ -2927,7 +2939,7 @@ defineExpose({
   font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
   font-size: 12px;
   white-space: pre-wrap;
-  background: #2d2d2d;
+  background: rgba(255, 255, 255, 0.015);
   color: rgba(255, 255, 255, 0.9);
   max-height: 300px;
   overflow-y: auto;
@@ -2935,11 +2947,11 @@ defineExpose({
 
 .conflict-resolver-actions {
   padding: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  background: #2d2d2d;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .conflict-resolver-actions .cancel-btn,
@@ -2952,21 +2964,21 @@ defineExpose({
 }
 
 .conflict-resolver-actions .cancel-btn {
-  background: #6c757d;
-  color: white;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .conflict-resolver-actions .cancel-btn:hover {
-  background: #545b62;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .conflict-resolver-actions .confirm-btn {
-  background: #007bff;
-  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .conflict-resolver-actions .confirm-btn:hover {
-  background: #0056b3;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .file-diff-content {
@@ -2978,10 +2990,11 @@ defineExpose({
 }
 
 .diff-block {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
   overflow: hidden;
   max-width: 100%;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .diff-header {
@@ -2995,7 +3008,7 @@ defineExpose({
 
 .diff-content {
   padding: 0;
-  background: #2d2d2d;
+  background: transparent;
   max-width: 100%;
   overflow-x: auto;
   overflow-y: auto;
@@ -3026,7 +3039,7 @@ defineExpose({
   max-width: 100%;
   overflow-x: auto;
   padding: 0;
-  background: #2d2d2d;
+  background: transparent;
 }
 
 /* 确保span之间没有间隙，背景撑满整行 */
@@ -3135,37 +3148,37 @@ div.diff-content div.diff-text .diff-context-line {
 
 .diff-actions {
   padding: 8px 12px;
-  background: #2d2d2d;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   gap: 8px;
 }
 
 .stage-block-btn, .discard-block-btn {
   padding: 4px 8px;
-  border: none;
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   cursor: pointer;
   font-size: 11px;
   transition: background-color 0.2s ease;
 }
 
 .stage-block-btn {
-  background: #007bff;
-  color: white;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .stage-block-btn:hover {
-  background: #0056b3;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .discard-block-btn {
-  background: #dc3545;
-  color: white;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .discard-block-btn:hover {
-  background: #c82333;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .no-file-selected {
@@ -3173,7 +3186,7 @@ div.diff-content div.diff-text .diff-context-line {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6c757d;
+  color: rgba(255, 255, 255, 0.42);
   font-size: 14px;
 }
 
@@ -3185,22 +3198,23 @@ div.diff-content div.diff-text .diff-context-line {
 
 
 .commit-section {
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   min-height: 160px;
   flex-shrink: 0;
-  background: #2d2d2d;
+  background: transparent;
 }
 
 .commit-header {
   display: flex;
   align-items: center;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.025);
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.92);
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
 }
 
 .commit-content {
@@ -3216,19 +3230,19 @@ div.diff-content div.diff-text .diff-context-line {
   flex: 1;
   min-height: 80px;
   padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
   resize: vertical;
-  background: #2d2d2d;
+  background: rgba(255, 255, 255, 0.03);
   color: rgba(255, 255, 255, 0.9);
 }
 
 .commit-message:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
 }
 
 .commit-options {
@@ -3260,51 +3274,53 @@ div.diff-content div.diff-text .diff-context-line {
 
 .commit-btn, .commit-push-btn {
   padding: 6px 12px;
-  border: none;
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
-  transition: background-color 0.2s ease;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
 }
 
 .commit-btn {
-  background: #4a5568;
-  color: white;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .commit-btn:hover:not(:disabled) {
-  background: #2d3748;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .commit-btn:disabled {
-  background: #4a5568;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.05);
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .commit-push-btn {
-  background: #667eea;
-  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .commit-push-btn:hover:not(:disabled) {
-  background: #5a67d8;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .commit-push-btn:disabled {
-  background: #667eea;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.05);
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 /* 冲突文件样式 */
 .conflict-file {
-  background-color: rgba(239, 68, 68, 0.2) !important;
+  background-color: rgba(239, 68, 68, 0.14) !important;
   border-left: 3px solid #ef4444 !important;
 }
 
 .conflict-file:hover {
-  background-color: rgba(239, 68, 68, 0.3) !important;
+  background-color: rgba(239, 68, 68, 0.2) !important;
 }
 
 .conflict-indicator {
@@ -3355,8 +3371,8 @@ div.diff-content div.diff-text .diff-context-line {
 
 .discard-all-btn, .stash-files-btn {
   padding: 6px 16px;
-  border: none;
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
@@ -3364,21 +3380,21 @@ div.diff-content div.diff-text .diff-context-line {
 }
 
 .discard-all-btn {
-  background: #dc3545;
-  color: white;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .discard-all-btn:hover {
-  background: #c82333;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .stash-files-btn {
-  background: #007bff;
-  color: white;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .stash-files-btn:hover {
-  background: #0056b3;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* 对话框样式 */
@@ -3396,8 +3412,9 @@ div.diff-content div.diff-text .diff-context-line {
 }
 
 .dialog-content {
-  background: #2d2d2d !important;
-  border-radius: 8px;
+  background: #26272b !important;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
   min-width: 400px;
   max-width: 600px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
@@ -3406,7 +3423,7 @@ div.diff-content div.diff-text .diff-context-line {
 
 .dialog-header-simple {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .dialog-header-simple h3 {
@@ -3428,9 +3445,9 @@ div.diff-content div.diff-text .diff-context-line {
 
 .warning-text {
   color: #fbbf24;
-  background: rgba(251, 191, 36, 0.15);
+  background: rgba(251, 191, 36, 0.1);
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: 8px;
   border: 1px solid rgba(251, 191, 36, 0.3);
   font-size: 13px;
 }
@@ -3450,18 +3467,18 @@ div.diff-content div.diff-text .diff-context-line {
 .stash-input {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
   font-size: 13px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  background: #2d2d2d;
+  background: rgba(255, 255, 255, 0.03);
   color: rgba(255, 255, 255, 0.9);
 }
 
 .stash-input:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
 }
 
 .stash-input::placeholder {
@@ -3470,7 +3487,7 @@ div.diff-content div.diff-text .diff-context-line {
 
 .dialog-footer {
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
@@ -3478,8 +3495,8 @@ div.diff-content div.diff-text .diff-context-line {
 
 .cancel-btn-large, .confirm-btn-large {
   padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
@@ -3487,29 +3504,29 @@ div.diff-content div.diff-text .diff-context-line {
 }
 
 .cancel-btn-large {
-  background: #6c757d;
-  color: white;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .cancel-btn-large:hover {
-  background: #545b62;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .confirm-btn-large {
-  background: #007bff;
-  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .confirm-btn-large:hover {
-  background: #0056b3;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .confirm-btn-large.danger {
-  background: #dc3545;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .confirm-btn-large.danger:hover {
-  background: #c82333;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* 响应式设计 - 小屏幕优化 */
@@ -3566,7 +3583,7 @@ div.diff-content div.diff-text .diff-context-line {
     width: 100%;
     min-width: unset;
     border-right: none;
-    border-bottom: 1px solid #dee2e6;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     max-height: 300px;
   }
   
@@ -3629,9 +3646,9 @@ div.diff-content div.diff-text .diff-context-line {
 /* 文件右键菜单样式 */
 .context-menu {
   position: fixed;
-  background: #2d2d2d;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
+  background: #26272b;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
   padding: 6px 0;
   min-width: 180px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -3650,7 +3667,7 @@ div.diff-content div.diff-text .diff-context-line {
 }
 
 .context-menu-item:hover {
-  background: rgba(102, 126, 234, 0.2);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .context-menu-item .menu-icon {

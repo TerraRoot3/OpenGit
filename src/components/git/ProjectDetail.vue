@@ -2409,9 +2409,9 @@ defineExpose({
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  padding-left: 12px;
+  padding-left: 0;
   box-sizing: border-box;
-  background: #2d2d2d;
+  background: #1b1c1f;
 }
 
 .empty-state {
@@ -2468,25 +2468,36 @@ defineExpose({
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  background: #1b1c1f;
 }
 
 .header {
-  padding: 12px 0 12px 8px;
-  background: #2d2d2d;
-  border-bottom: 1px solid;
-  border-image: linear-gradient(to right, transparent 8px, rgba(255, 255, 255, 0.1) 8px) 1;
-  border-radius: 8px 8px 0 0;
-  min-height: 60px;
+  height: 34px;
+  padding: 0 16px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  box-sizing: border-box;
+}
+
+.project-info {
+  display: flex;
+  align-items: center;
+  min-height: 100%;
+  padding-top: 2px;
+  box-sizing: border-box;
 }
 
 .header h1 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.92);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2497,7 +2508,7 @@ defineExpose({
   align-items: center;
   gap: 4px;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.58);
   font-size: 13px;
 }
 
@@ -2523,7 +2534,8 @@ defineExpose({
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  padding-right: 0;
 }
 
 .create-btn, .pull-single-btn, .push-single-btn, .mr-single-btn,
@@ -2531,9 +2543,9 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 11px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
@@ -2543,37 +2555,34 @@ defineExpose({
   box-sizing: border-box;
 }
 
-.create-btn { background: #6c757d; color: white; }
-.create-btn:hover { background: #5a6268; }
-
-.pull-single-btn { background: #28a745; color: white; }
-.pull-single-btn:hover { background: #218838; }
-
-.push-single-btn { background: #007bff; color: white; }
-.push-single-btn:hover { background: #0056b3; }
-
-.mr-single-btn { background: #17a2b8; color: white; }
-.mr-single-btn:hover { background: #138496; }
-
-.gitlab-open-btn {
-  background: #fc6d26;
-  color: white;
-}
-.gitlab-open-btn:hover { background: #e24329; }
-
+.create-btn,
+.pull-single-btn,
+.push-single-btn,
+.mr-single-btn,
+.gitlab-open-btn,
 .finder-open-btn {
-  background: #007AFF;
-  color: white;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.84);
 }
-.finder-open-btn:hover { background: #0063CC; }
+
+.create-btn:hover,
+.pull-single-btn:hover,
+.push-single-btn:hover,
+.mr-single-btn:hover,
+.gitlab-open-btn:hover,
+.finder-open-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.06);
+}
 
 .settings-btn {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.055);
   color: rgba(255, 255, 255, 0.8);
   padding: 8px;
 }
 .settings-btn:hover { 
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.06);
   color: #fff;
 }
 
@@ -2599,20 +2608,21 @@ defineExpose({
   display: flex;
   min-height: 0;
   overflow: hidden;
-  gap: 8px;
-  padding-left: 8px;
-  background: #2d2d2d;
+  gap: 0;
+  padding: 0;
+  background: #1b1c1f;
 }
 
 .branches-panel {
   width: 240px;
   min-width: 220px;
-  background: #2d2d2d;
+  background: transparent;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
+  padding: 0 0 6px;
 }
 
 .file-status-button {
@@ -2622,21 +2632,22 @@ defineExpose({
   padding: 10px 12px;
   cursor: pointer;
   transition: background-color 0.2s;
-  color: rgba(255, 255, 255, 0.7);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 13px;
   user-select: none;
+  margin: 0 8px 2px;
+  border-radius: 11px;
 }
 
 .file-status-button:hover { background: rgba(255, 255, 255, 0.05); }
 .file-status-button.active {
-  background: rgba(102, 126, 234, 0.2);
-  color: #8b9eff;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.94);
   font-weight: 500;
 }
 
 .branch-section {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 0 0 6px;
 }
 
 .branch-section-header {
@@ -2649,6 +2660,8 @@ defineExpose({
   color: rgba(255, 255, 255, 0.7);
   font-size: 13px;
   user-select: none;
+  margin: 0 8px 2px;
+  border-radius: 11px;
 }
 
 .branch-section-header:hover { background: rgba(255, 255, 255, 0.05); }
@@ -2666,10 +2679,11 @@ defineExpose({
 
 .branch-count {
   margin-left: auto;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 2px 8px;
-  border-radius: 10px;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
   font-size: 11px;
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .refresh-btn {
@@ -2684,12 +2698,12 @@ defineExpose({
   justify-content: center;
 }
 
-.refresh-btn:hover { background: rgba(255, 255, 255, 0.1); color: white; }
+.refresh-btn:hover { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.88); }
 .refresh-btn.refreshing { animation: spin 1s linear infinite; }
 .refresh-btn.success { color: #28a745; }
 
 .branch-list {
-  padding: 4px 0;
+  padding: 0 0 4px;
 }
 
 .branch-item {
@@ -2702,12 +2716,19 @@ defineExpose({
   color: rgba(255, 255, 255, 0.8);
   font-size: 11px;
   user-select: none;
+  margin: 1px 8px;
+  border-radius: 9px;
+}
+
+.branches-panel > :first-child,
+.branch-list > :first-child {
+  margin-top: 0 !important;
 }
 
 .branch-item:hover { background: rgba(255, 255, 255, 0.05); }
 .branch-item.active {
-  background: rgba(102, 126, 234, 0.15);
-  color: #8b9eff;
+  background: rgba(255, 255, 255, 0.075);
+  color: rgba(255, 255, 255, 0.94);
 }
 
 .branch-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
@@ -2758,6 +2779,8 @@ defineExpose({
   transition: background-color 0.2s;
   color: rgba(255, 255, 255, 0.7);
   user-select: none;
+  margin: 1px 8px;
+  border-radius: 9px;
 }
 
 .tag-item:hover { background: rgba(255, 255, 255, 0.05); }
@@ -2775,7 +2798,8 @@ defineExpose({
   min-height: 0;
   overflow: hidden;
   position: relative;
-  background: #2d2d2d;
+  background: transparent;
+  border-radius: 0;
 }
 
 /* 弹框样式 */
@@ -2793,7 +2817,7 @@ defineExpose({
 }
 
 .dialog-content {
-  background: #1e1e1e;
+  background: #2a2b2f;
   border-radius: 12px;
   padding: 0;
   min-width: 450px;
@@ -2804,7 +2828,7 @@ defineExpose({
 
 .dialog-header-simple {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .dialog-header-simple h3 {
@@ -2844,9 +2868,9 @@ defineExpose({
   width: 100%;
   padding: 10px 12px;
   font-size: 13px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background: #2a2a2a;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
   color: #fff;
   box-sizing: border-box;
 }
@@ -2869,18 +2893,18 @@ defineExpose({
 
 .branch-select:focus, .branch-input:focus {
   outline: none;
-  border-color: #0066ff;
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .mr-description {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   font-size: 13px;
   resize: vertical;
   min-height: 60px;
-  background: #2a2a2a;
+  background: rgba(255, 255, 255, 0.06);
   color: #fff;
   box-sizing: border-box;
   font-family: inherit;
@@ -2888,7 +2912,7 @@ defineExpose({
 
 .mr-description:focus {
   outline: none;
-  border-color: #0066ff;
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .dialog-footer {
@@ -2896,7 +2920,7 @@ defineExpose({
   justify-content: flex-end;
   gap: 10px;
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .cancel-btn-large {
@@ -2947,12 +2971,12 @@ defineExpose({
 /* 右键菜单 */
 .context-menu {
   position: fixed;
-  background: #2d2d2d;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #2a2b2f;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   padding: 6px 0;
   min-width: 160px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
   z-index: 1000;
 }
 

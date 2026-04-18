@@ -570,9 +570,9 @@ const escapeHtml = (text) => {
 <style scoped>
 .stash-list-section {
   flex: 1;
-  background: #2d2d2d;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 14px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -587,24 +587,24 @@ const escapeHtml = (text) => {
 .stash-list-panel {
   width: 260px;
   min-width: 220px;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #2d2d2d;
+  background: transparent;
 }
 
 .stash-list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.025);
   font-weight: 500;
   color: rgba(255, 255, 255, 0.9);
   font-size: 13px;
+  height: 40px;
   min-height: 40px;
+  box-sizing: border-box;
 }
 
 .header-left {
@@ -622,22 +622,27 @@ const escapeHtml = (text) => {
 .stash-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: 0 8px 8px;
 }
 
 .stash-item {
-  padding: 8px 12px;
+  padding: 10px 12px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background-color 0.18s ease;
+  border-radius: 10px;
+  margin-bottom: 4px;
+}
+
+.stash-list > :first-child {
+  margin-top: 0 !important;
 }
 
 .stash-item:hover {
-  background: rgba(102, 126, 234, 0.15);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .stash-item.active {
-  background: rgba(102, 126, 234, 0.25);
+  background: rgba(255, 255, 255, 0.09);
   font-weight: 500;
 }
 
@@ -675,7 +680,7 @@ const escapeHtml = (text) => {
   min-height: 0;
   max-width: 100%;
   overflow: hidden;
-  background: #2d2d2d;
+  background: transparent;
 }
 
 .stash-diff-section {
@@ -686,17 +691,18 @@ const escapeHtml = (text) => {
 }
 
 .stash-diff-header {
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.025);
   font-weight: 500;
   color: rgba(255, 255, 255, 0.9);
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
+  height: 40px;
   min-height: 40px;
   line-height: 1.4;
   display: flex;
   align-items: center;
+  box-sizing: border-box;
 }
 
 .stash-diff-content {
@@ -708,15 +714,15 @@ const escapeHtml = (text) => {
 }
 
 .diff-block {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
   overflow: hidden;
   max-width: 100%;
 }
 
 .diff-content {
   padding: 8px;
-  background: #2d2d2d;
+  background: rgba(255, 255, 255, 0.02);
   max-width: 100%;
   overflow: hidden;
 }
@@ -759,8 +765,9 @@ const escapeHtml = (text) => {
 }
 
 .dialog-content {
-  background: #2d2d2d;
-  border-radius: 8px;
+  background: #26272b;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
   min-width: 400px;
   max-width: 600px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
@@ -768,7 +775,7 @@ const escapeHtml = (text) => {
 
 .dialog-header-simple {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .dialog-header-simple h3 {
@@ -780,7 +787,7 @@ const escapeHtml = (text) => {
 
 .dialog-body {
   padding: 20px;
-  background: #2d2d2d;
+  background: transparent;
 }
 
 .dialog-body p {
@@ -796,27 +803,27 @@ const escapeHtml = (text) => {
 
 .warning-text {
   color: #ffc107;
-  background: rgba(255, 193, 7, 0.15);
+  background: rgba(255, 193, 7, 0.1);
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 193, 7, 0.3);
   font-size: 13px;
 }
 
 .dialog-footer {
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  background: #2d2d2d;
-  border-radius: 0 0 8px 8px;
+  background: transparent;
+  border-radius: 0 0 14px 14px;
 }
 
 .cancel-btn-large, .confirm-btn-large, .delete-btn-large {
   padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
@@ -824,38 +831,38 @@ const escapeHtml = (text) => {
 }
 
 .cancel-btn-large {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .cancel-btn-large:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .confirm-btn-large {
-  background: #667eea;
-  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .confirm-btn-large:hover {
-  background: #5a6fd6;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .delete-btn-large {
-  background: #dc3545;
-  color: white;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .delete-btn-large:hover {
-  background: #c82333;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* 右键菜单样式 */
 .context-menu {
   position: fixed;
-  background: #2d2d2d;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
+  background: #26272b;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
   padding: 6px 0;
   min-width: 150px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -871,7 +878,7 @@ const escapeHtml = (text) => {
 }
 
 .context-menu-item:hover {
-  background: rgba(102, 126, 234, 0.2);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .context-menu-item.delete {
@@ -879,7 +886,7 @@ const escapeHtml = (text) => {
 }
 
 .context-menu-item.delete:hover {
-  background: rgba(220, 53, 69, 0.2);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .context-menu-divider {
@@ -943,7 +950,7 @@ const escapeHtml = (text) => {
     width: 100%;
     min-width: unset;
     border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     max-height: 300px;
   }
   

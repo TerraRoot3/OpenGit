@@ -507,7 +507,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  background: #1f2023;
+  background: #1b1c1f;
   overflow: hidden;
 }
 
@@ -528,7 +528,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   height: 100%;
   position: relative;
-  background: #1f2023;
+  background: #1b1c1f;
   overflow: hidden;
 }
 

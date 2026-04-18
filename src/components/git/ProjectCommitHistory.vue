@@ -1939,12 +1939,12 @@ onUnmounted(() => {
   --detail-right-min-width: clamp(420px, 40vw, 960px);
   display: flex;
   flex-direction: column;
-  background-color: #2d2d2d;
+  background-color: transparent;
   color: rgba(255, 255, 255, 0.9);
   flex: 1;
   height: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border: none;
+  border-radius: 14px;
   overflow: hidden;
 }
 
@@ -1966,7 +1966,7 @@ onUnmounted(() => {
   flex-shrink: 0;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
-    #252526;
+    transparent;
 }
 
 /* 
@@ -2016,7 +2016,7 @@ onUnmounted(() => {
 
 .git-log tbody {
   height: auto !important;
-  background: #2d2d2d;
+  background: transparent;
 }
 
 .git-log * {
@@ -2034,11 +2034,10 @@ onUnmounted(() => {
 .git-log th {
   text-align: left;
   padding: 6px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 13px;
   position: sticky;
   top: 0;
-  background-color: rgba(32, 33, 36, 0.96);
+  background-color: rgba(39, 40, 45, 0.96);
   backdrop-filter: blur(6px);
   z-index: 20;
   user-select: none;
@@ -2066,15 +2065,15 @@ onUnmounted(() => {
   width: 4px;
   height: 100%;
   cursor: col-resize;
-  background: rgba(0, 123, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
   z-index: 30;
-  border-right: 2px solid #cbd5e0;
+  border-right: 2px solid rgba(255, 255, 255, 0.08);
   transition: all 0.2s;
 }
 
 .git-log th .resizer:hover {
-  border-right-color: #007bff;
-  background: rgba(0, 123, 255, 0.2);
+  border-right-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .git-log th p {
@@ -2121,7 +2120,7 @@ onUnmounted(() => {
 
 .git-log .log-highlight {
   background:
-    linear-gradient(90deg, rgba(79, 140, 255, 0.2), rgba(79, 140, 255, 0.06));
+    linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
 }
 
 .git-log tbody tr {
@@ -2195,34 +2194,33 @@ onUnmounted(() => {
   height: 5px;
   min-height: 5px;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
   cursor: ns-resize;
   position: relative;
   transition: background 0.2s;
 }
 
 .resizer-horizontal:hover {
-  background: #667eea;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .resizer-vertical {
   width: 5px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
   cursor: ew-resize;
   position: relative;
   transition: background 0.2s;
 }
 
 .resizer-vertical:hover {
-  background: #667eea;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* 详情区域（固定高度，不随上方拖拽变化） */
 .detail-section {
   display: flex;
   overflow: hidden;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  background: #2d2d2d;
+  background: transparent;
   flex: 1;
   min-height: 150px;
 }
@@ -2230,16 +2228,16 @@ onUnmounted(() => {
 .detail-left {
   display: flex;
   flex-direction: column;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
   min-width: min(var(--detail-left-min-width), 100%);
   height: 100%;
+  background: transparent;
 }
 
 .file-list-panel, .commit-info-panel {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
 }
 
 .file-list-expanded {
@@ -2256,15 +2254,17 @@ onUnmounted(() => {
 }
 
 .panel-header {
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.025);
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 13px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.9);
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
 }
 
 .file-count {
@@ -2275,21 +2275,26 @@ onUnmounted(() => {
 .file-list, .commit-info {
   flex: 1;
   overflow-y: auto;
-  padding: 4px;
+  padding: 0 8px 8px;
   display: flex;
   flex-direction: column;
 }
 
 .file-item {
-  padding: 6px 8px;
+  padding: 8px 10px;
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
   font-size: 12px;
-  border-radius: 4px;
-  margin: 2px 0;
+  border-radius: 10px;
+  margin: 0 0 4px;
   color: rgba(255, 255, 255, 0.9);
+}
+
+.file-list > :first-child,
+.commit-info > :first-child {
+  margin-top: 0 !important;
 }
 
 .file-item:hover {
@@ -2297,7 +2302,7 @@ onUnmounted(() => {
 }
 
 .file-item.active {
-  background: rgba(102, 126, 234, 0.2);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .file-icon {
@@ -2369,9 +2374,8 @@ onUnmounted(() => {
 .search-bar {
   padding: 12px 16px;
   background:
-    linear-gradient(180deg, rgba(79, 140, 255, 0.08), rgba(79, 140, 255, 0.02)),
-    rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)),
+    rgba(255, 255, 255, 0.02);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2394,17 +2398,17 @@ onUnmounted(() => {
 .search-input {
   width: 100%;
   padding: 8px 32px 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
   font-size: 13px;
   outline: none;
-  background: #2d2d2d;
+  background: rgba(255, 255, 255, 0.03);
   color: rgba(255, 255, 255, 0.9);
 }
 
 .search-input:focus {
-  border-color: #667eea;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.25);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
 }
 
 .clear-search-btn {
@@ -2471,8 +2475,8 @@ onUnmounted(() => {
 }
 
 .scope-select:focus {
-  border-color: rgba(79, 140, 255, 0.75);
-  box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
 }
 
 .filter-checkbox {
@@ -2494,7 +2498,7 @@ onUnmounted(() => {
   font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
   font-size: 12px;
   line-height: 1.5;
-  background: #2d2d2d;
+  background: transparent;
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -2613,9 +2617,9 @@ onUnmounted(() => {
 /* 右键菜单 */
 .context-menu {
   position: fixed;
-  background: #2d2d2d;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
+  background: #26272b;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
   padding: 6px 0;
   min-width: 160px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -2630,7 +2634,7 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, 0.9);
 }
 
-.context-menu-item:hover { background: rgba(102, 126, 234, 0.2); }
+.context-menu-item:hover { background: rgba(255, 255, 255, 0.06); }
 
 .context-menu-divider {
   height: 1px;

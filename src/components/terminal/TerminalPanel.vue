@@ -2024,19 +2024,20 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #1e1e1e;
-  border-radius: 8px;
+  background: transparent;
+  border-radius: 14px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: none;
 }
 .terminal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0;
-  height: 36px;
-  background: #252526;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.025);
 }
 .terminal-tabs {
   display: flex;
@@ -2055,8 +2056,8 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   padding: 0 8px;
   height: 100%;
   box-sizing: border-box;
-  border-radius: 4px 4px 0 0;
-  color: #888;
+  border-radius: 8px 8px 0 0;
+  color: rgba(255, 255, 255, 0.5);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -2066,12 +2067,13 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
 }
 .terminal-tab:hover {
   background: rgba(255, 255, 255, 0.05);
-  color: #ccc;
+  color: rgba(255, 255, 255, 0.82);
 }
 .terminal-tab.active {
-  background: #1e1e1e;
-  color: #d4d4d4;
-  border-bottom-color: #007acc;
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.92);
+  border-bottom-color: transparent;
+  border-radius: 8px 8px 0 0;
 }
 .tab-label {
   max-width: 120px;
@@ -2119,9 +2121,9 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   min-width: 220px;
   max-width: 280px;
   padding: 0 6px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 6px;
-  background: rgba(30, 30, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
 }
 .terminal-search.is-not-found {
   border-color: rgba(239, 68, 68, 0.85);
@@ -2167,7 +2169,7 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   color: #fecaca;
 }
 .terminal-path {
-  color: #888;
+  color: rgba(255, 255, 255, 0.5);
   font-size: 11px;
   max-width: 160px;
   overflow: hidden;
@@ -2183,14 +2185,14 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: #888;
+  color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
   transition: all 0.2s;
   outline: none;
 }
 .terminal-btn:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: #d4d4d4;
+  color: rgba(255, 255, 255, 0.9);
 }
 .terminal-btn:focus-visible {
   outline: 1px solid rgba(125, 211, 252, 0.8);
@@ -2201,9 +2203,9 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   border: 1px solid transparent;
 }
 .terminal-btn-split:hover {
-  background: rgba(96, 165, 250, 0.18);
-  color: #d4d4ff;
-  border-color: rgba(125, 211, 252, 0.45);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 .split-btn-icon {
   width: 14px;
@@ -2219,6 +2221,7 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   padding: 0;
   overflow: hidden;
   position: relative;
+  background: #1b1c1f;
 }
 .terminal-body.drag-over {
   background: rgba(14, 116, 144, 0.14);
@@ -2280,6 +2283,11 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   background: rgba(220, 80, 80, 0.85);
 }
 .terminal-body :deep(.xterm) { height: 100%; }
+.terminal-body :deep(.xterm-screen),
+.terminal-body :deep(.xterm-rows) {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
 .terminal-body :deep(.xterm-viewport) {
   overflow-y: scroll !important;
   scrollbar-gutter: stable;
@@ -2297,9 +2305,9 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   position: absolute;
   top: 100%;
   left: 0;
-  background: #252526;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 4px;
+  background: #26272b;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
   min-width: 140px;
   z-index: 100;
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
