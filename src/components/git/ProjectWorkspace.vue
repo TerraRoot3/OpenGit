@@ -88,7 +88,7 @@
               </div>
             </div>
           </div>
-          <div ref="treeScrollRef" class="tree-scroll">
+          <div class="tree-scroll">
             <div v-if="isModifiedFilterMode" class="workspace-modified-list">
               <template v-if="filteredModifiedEntries.length">
                 <div class="workspace-modified-list__header">
@@ -277,16 +277,14 @@
             <div class="context-menu-divider"></div>
             <div class="context-menu-item delete" @click="closeAllTabs">关闭所有</div>
           </div>
-          <div ref="previewBodyRef" class="preview-body">
-            <div v-if="activeTab?.kind === 'text' && changeNavigationLines.length" class="editor-change-nav">
-              <button type="button" class="editor-change-nav__btn" @click="goToPreviousChange">上一个</button>
-              <span class="editor-change-nav__meta">{{ currentChangeIndexLabel }}</span>
-              <button type="button" class="editor-change-nav__btn" @click="goToNextChange">下一个</button>
-            </div>
-            <div
-              ref="editorContainerRef"
-              class="monaco-container"
-              v-show="tabs.length > 0 && activeTab?.kind === 'text'"
+          <div class="preview-body">
+            <WorkspaceTextEditor
+              v-if="activeTab?.kind === 'text'"
+              :project-path="projectPath"
+              :tabs="tabs"
+              :active-tab="activeTab"
+              :modified-file-entries="modifiedFileEntries"
+              :is-active="isActive"
             />
             <div v-if="!tabs.length" class="preview-empty">在左侧选择文件预览</div>
             <template v-else-if="activeTab">
@@ -312,7 +310,7 @@
 </template>
 
 <script setup>
-import { computed, ref, shallowRef, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed, defineAsyncComponent, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { NConfigProvider, darkTheme } from 'naive-ui'
 import {
   ChevronDown,
@@ -331,9 +329,9 @@ import {
   FilePlus2,
   RefreshCw
 } from 'lucide-vue-next'
-import * as monaco from 'monaco-editor'
 import OperationDialog from '../dialog/OperationDialog.vue'
 import { useConfirm } from '../../composables/useConfirm'
+const WorkspaceTextEditor = defineAsyncComponent(() => import('./WorkspaceTextEditor.vue'))
 
 const props = defineProps({
   projectPath: { type: String, required: true },
@@ -347,8 +345,6 @@ const treeData = ref([])
 const expandedKeys = ref([])
 const selectedKeys = ref([])
 const treePaneRef = ref(null)
-const treeScrollRef = ref(null)
-const previewBodyRef = ref(null)
 const commitMessageRef = ref(null)
 const contextMenuRef = ref(null)
 const tabContextMenuRef = ref(null)
@@ -381,20 +377,11 @@ const tabContextMenu = ref({
   y: 0,
   tabId: null
 })
-let layoutObserver = null
 const { confirm } = useConfirm()
 
 const tabs = ref([])
 const activeTabId = ref(null)
-const editorContainerRef = ref(null)
 const imageDataUrl = ref('')
-
-let editor = null
-/** @type {Map<string, import('monaco-editor').editor.ITextModel>} */
-const pathToModel = new Map()
-let gitDiffDecorationIds = []
-const changeNavigationLines = ref([])
-const currentChangeLine = ref(null)
 
 const themeOverrides = {
   common: {
@@ -531,7 +518,8 @@ function relativeToProjectPath(targetPath) {
   return target.startsWith(`${base}/`) ? target.slice(base.length + 1) : target
 }
 
-const LANG_MAP = {
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.svg'])
+const LANGUAGE_ICON_MAP = {
   js: 'javascript',
   mjs: 'javascript',
   cjs: 'javascript',
@@ -539,23 +527,14 @@ const LANG_MAP = {
   ts: 'typescript',
   tsx: 'typescript',
   vue: 'html',
-  json: 'json',
-  md: 'markdown',
-  css: 'css',
-  scss: 'scss',
-  sass: 'scss',
-  less: 'less',
   html: 'html',
   htm: 'html',
-  xml: 'xml',
-  yml: 'yaml',
-  yaml: 'yaml',
-  sh: 'shell',
-  bash: 'shell',
-  zsh: 'shell',
+  css: 'css',
+  scss: 'scss',
+  less: 'less',
   py: 'python',
-  rs: 'rust',
   go: 'go',
+  rs: 'rust',
   java: 'java',
   kt: 'kotlin',
   swift: 'swift',
@@ -565,16 +544,9 @@ const LANG_MAP = {
   cpp: 'cpp',
   hpp: 'cpp',
   cs: 'csharp',
-  rb: 'ruby',
-  php: 'php',
   sql: 'sql',
-  toml: 'ini',
-  ini: 'ini',
-  gitignore: 'plaintext',
-  env: 'plaintext'
+  md: 'markdown'
 }
-
-const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.svg'])
 
 function extname (p) {
   const base = basename(p)
@@ -583,13 +555,13 @@ function extname (p) {
   return base.slice(i).toLowerCase()
 }
 
-function languageForPath (p) {
-  const ext = extname(p).slice(1)
-  return LANG_MAP[ext] || 'plaintext'
-}
-
 function isImagePath (p) {
   return IMAGE_EXT.has(extname(p))
+}
+
+function languageForPath (p) {
+  const ext = extname(p).slice(1)
+  return LANGUAGE_ICON_MAP[ext] || 'plaintext'
 }
 
 function fileIconForPath (filePath) {
@@ -600,7 +572,7 @@ function fileIconForPath (filePath) {
   if (ARCHIVE_FILE_EXT.has(ext)) return FileArchive
   if (TERMINAL_FILE_EXT.has(ext)) return FileTerminal
   if (TEXT_FILE_EXT.has(ext)) return FileText
-  if (LANG_MAP[ext]) return FileCode
+  if (LANGUAGE_ICON_MAP[ext]) return FileCode
   return File
 }
 
@@ -1350,10 +1322,6 @@ watch(
       imageDataUrl.value = ''
       gitStatusByPath.value = {}
       selectedModifiedPaths.value = []
-      disposeAllModels()
-      if (editor) {
-        editor.setModel(null)
-      }
       await loadCommitTemplate(p)
       await ensureDirectoryChildren(treeData.value[0])
       await restoreWorkspaceState()
@@ -1369,224 +1337,7 @@ watch(
   { immediate: true }
 )
 
-const activeTab = shallowRef(null)
-
-watch(
-  [tabs, activeTabId],
-  () => {
-    syncActiveTabContent()
-  },
-  { immediate: true, deep: true }
-)
-
-function disposeAllModels () {
-  for (const m of pathToModel.values()) {
-    m.dispose()
-  }
-  pathToModel.clear()
-}
-
-function uriForPath (filePath) {
-  return monaco.Uri.file(filePath)
-}
-
-function getModifiedEntryByPath(filePath) {
-  return modifiedFileEntries.value.find((entry) => normalizePath(entry.path) === normalizePath(filePath)) || null
-}
-
-function clearGitDiffDecorations() {
-  if (editor) {
-    gitDiffDecorationIds = editor.deltaDecorations(gitDiffDecorationIds, [])
-  } else {
-    gitDiffDecorationIds = []
-  }
-  changeNavigationLines.value = []
-  currentChangeLine.value = null
-}
-
-function parseDiffRange(fragment) {
-  if (!fragment) return { start: 0, count: 1 }
-  const [startText, countText] = fragment.split(',')
-  const start = Number(startText)
-  const count = countText == null ? 1 : Number(countText)
-  return {
-    start: Number.isFinite(start) ? start : 0,
-    count: Number.isFinite(count) ? count : 1
-  }
-}
-
-function parseUnifiedDiffHunks(diffText) {
-  const lines = String(diffText || '').split('\n')
-  const hunks = []
-  let currentHunk = null
-
-  for (const line of lines) {
-    const headerMatch = line.match(/^@@ -(\d+(?:,\d+)?) \+(\d+(?:,\d+)?) @@/)
-    if (headerMatch) {
-      if (currentHunk) hunks.push(currentHunk)
-      currentHunk = {
-        oldRange: parseDiffRange(headerMatch[1]),
-        newRange: parseDiffRange(headerMatch[2]),
-        removedLines: [],
-        addedLines: []
-      }
-      continue
-    }
-    if (!currentHunk) continue
-    if (line.startsWith('-') && !line.startsWith('---')) {
-      currentHunk.removedLines.push(line.slice(1))
-    } else if (line.startsWith('+') && !line.startsWith('+++')) {
-      currentHunk.addedLines.push(line.slice(1))
-    }
-  }
-
-  if (currentHunk) {
-    hunks.push(currentHunk)
-  }
-  return hunks
-}
-
-async function loadFileDiffMetadata(filePath, model) {
-  const entry = getModifiedEntryByPath(filePath)
-  if (!editor || !model || !entry) {
-    clearGitDiffDecorations()
-    return
-  }
-
-  if (entry.isUntracked) {
-    const lineCount = model.getLineCount()
-    const decorations = lineCount > 0
-      ? [{
-          range: new monaco.Range(1, 1, lineCount, model.getLineMaxColumn(lineCount)),
-          options: {
-            isWholeLine: true,
-            className: 'workspace-diff-line workspace-diff-line--added',
-            linesDecorationsClassName: 'workspace-diff-gutter workspace-diff-gutter--added',
-            overviewRuler: {
-              color: 'rgba(72, 177, 112, 0.95)',
-              position: monaco.editor.OverviewRulerLane.Right
-            },
-            minimap: {
-              color: 'rgba(72, 177, 112, 0.8)',
-              position: monaco.editor.MinimapPosition.Inline
-            }
-          }
-        }]
-      : []
-    changeNavigationLines.value = lineCount > 0 ? [1] : []
-    currentChangeLine.value = changeNavigationLines.value[0] || null
-    gitDiffDecorationIds = editor.deltaDecorations(gitDiffDecorationIds, decorations)
-    return
-  }
-
-  const tryCommands = [
-    `git diff --no-ext-diff --unified=0 HEAD -- ${quoteShellPath(relativeToProjectPath(filePath) || basename(filePath))}`,
-    `git diff --no-ext-diff --unified=0 -- ${quoteShellPath(relativeToProjectPath(filePath) || basename(filePath))}`
-  ]
-
-  let diffOutput = ''
-  for (const command of tryCommands) {
-    const result = await executeWorkspaceCommand(command)
-    if (result?.success || result?.output || result?.stdout) {
-      diffOutput = result?.output || result?.stdout || ''
-      break
-    }
-  }
-
-  const hunks = parseUnifiedDiffHunks(diffOutput)
-  const decorations = []
-  const nextChangeLines = new Set()
-  const lineCount = model.getLineCount()
-
-  for (const hunk of hunks) {
-    const oldCount = hunk.oldRange.count
-    const newCount = hunk.newRange.count
-    if (newCount > 0) {
-      const startLine = Math.max(1, Math.min(hunk.newRange.start, lineCount))
-      const endLine = Math.max(startLine, Math.min(hunk.newRange.start + newCount - 1, lineCount))
-      const className = oldCount === 0
-        ? 'workspace-diff-line workspace-diff-line--added'
-        : 'workspace-diff-line workspace-diff-line--modified'
-      const gutterClass = oldCount === 0
-        ? 'workspace-diff-gutter workspace-diff-gutter--added'
-        : 'workspace-diff-gutter workspace-diff-gutter--modified'
-      const lineColor = oldCount === 0 ? 'rgba(72, 177, 112, 0.95)' : 'rgba(214, 180, 67, 0.95)'
-      const minimapColor = oldCount === 0 ? 'rgba(72, 177, 112, 0.8)' : 'rgba(214, 180, 67, 0.8)'
-      nextChangeLines.add(startLine)
-      decorations.push({
-        range: new monaco.Range(startLine, 1, endLine, model.getLineMaxColumn(endLine)),
-        options: {
-          isWholeLine: true,
-          className,
-          linesDecorationsClassName: gutterClass,
-          overviewRuler: {
-            color: lineColor,
-            position: monaco.editor.OverviewRulerLane.Right
-          },
-          minimap: {
-            color: minimapColor,
-            position: monaco.editor.MinimapPosition.Inline
-          }
-        }
-      })
-    }
-
-    if (oldCount > 0 && newCount === 0) {
-      const anchorLine = Math.min(Math.max(1, hunk.newRange.start), lineCount)
-      nextChangeLines.add(anchorLine)
-      decorations.push({
-        range: new monaco.Range(anchorLine, 1, anchorLine, 1),
-        options: {
-          isWholeLine: true,
-          linesDecorationsClassName: 'workspace-diff-gutter workspace-diff-gutter--deleted',
-          glyphMarginClassName: 'workspace-diff-glyph workspace-diff-glyph--deleted',
-          glyphMarginHoverMessage: [{ value: `此处删除了 ${oldCount} 行` }],
-          overviewRuler: {
-            color: 'rgba(222, 109, 115, 0.95)',
-            position: monaco.editor.OverviewRulerLane.Right
-          }
-        }
-      })
-    }
-  }
-
-  changeNavigationLines.value = Array.from(nextChangeLines).sort((a, b) => a - b)
-  currentChangeLine.value = changeNavigationLines.value[0] || null
-  gitDiffDecorationIds = editor.deltaDecorations(gitDiffDecorationIds, decorations)
-}
-
-function revealChangeLine(lineNumber) {
-  if (!editor || !lineNumber) return
-  currentChangeLine.value = lineNumber
-  editor.revealLineInCenter(lineNumber)
-  editor.setPosition({ lineNumber, column: 1 })
-}
-
-function goToPreviousChange() {
-  const lines = changeNavigationLines.value
-  if (!lines.length) return
-  const current = currentChangeLine.value ?? lines[0]
-  const currentIndex = lines.findIndex((line) => line >= current)
-  const nextIndex = currentIndex <= 0 ? lines.length - 1 : currentIndex - 1
-  revealChangeLine(lines[nextIndex])
-}
-
-function goToNextChange() {
-  const lines = changeNavigationLines.value
-  if (!lines.length) return
-  const current = currentChangeLine.value ?? lines[0]
-  const currentIndex = lines.findIndex((line) => line > current)
-  const nextIndex = currentIndex === -1 ? 0 : currentIndex
-  revealChangeLine(lines[nextIndex])
-}
-
-const currentChangeIndexLabel = computed(() => {
-  const lines = changeNavigationLines.value
-  if (!lines.length) return ''
-  const current = currentChangeLine.value ?? lines[0]
-  const index = Math.max(0, lines.findIndex((line) => line === current))
-  return `${index + 1}/${lines.length}`
-})
+const activeTab = computed(() => tabs.value.find((tab) => tab.id === activeTabId.value) || null)
 
 async function openFile (filePath) {
   if (!window.electronAPI) return
@@ -1631,17 +1382,6 @@ async function openFile (filePath) {
     return
   }
 
-  const lang = languageForPath(filePath)
-  const uri = uriForPath(filePath)
-  let model = monaco.editor.getModel(uri)
-  if (model) {
-    model.setValue(content)
-    monaco.editor.setModelLanguage(model, lang)
-  } else {
-    model = monaco.editor.createModel(content, lang, uri)
-    pathToModel.set(filePath, model)
-  }
-
   const existing = tabs.value.find((t) => t.path === filePath)
   const id = existing ? existing.id : `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   if (!existing) {
@@ -1651,19 +1391,19 @@ async function openFile (filePath) {
         id,
         path: filePath,
         title: basename(filePath),
-        kind: 'text'
+        kind: 'text',
+        content
       }
     ]
+  } else {
+    tabs.value = tabs.value.map((tab) => (
+      tab.id === existing.id
+        ? { ...tab, content }
+        : tab
+    ))
   }
   activeTabId.value = id
   saveWorkspaceState()
-
-  await nextTick()
-  if (editor && model) {
-    editor.setModel(model)
-    layoutEditor()
-  }
-  await loadFileDiffMetadata(filePath, model)
 }
 
 function toggleExpandedKey (key) {
@@ -1917,14 +1657,6 @@ async function deleteContextNode() {
     selectedKeys.value = []
   }
   const deletedPath = normalizePath(node.key)
-  const removedTabs = tabs.value.filter((tab) => isSamePathOrChildPath(tab.path, deletedPath))
-  for (const tab of removedTabs) {
-    if (tab.kind === 'text' && pathToModel.has(tab.path)) {
-      const model = pathToModel.get(tab.path)
-      model?.dispose()
-      pathToModel.delete(tab.path)
-    }
-  }
   tabs.value = tabs.value.filter((tab) => !isSamePathOrChildPath(tab.path, deletedPath))
   if (selectedKeys.value[0] && isSamePathOrChildPath(selectedKeys.value[0], deletedPath)) {
     selectedKeys.value = []
@@ -1932,77 +1664,23 @@ async function deleteContextNode() {
   if (activeTabId.value && !tabs.value.some((tab) => tab.id === activeTabId.value)) {
     activeTabId.value = tabs.value.length ? tabs.value[tabs.value.length - 1].id : null
   }
-  syncActiveTabContent()
   await refreshGitStatuses()
   emit('status-changed')
   await refreshTree()
-}
-
-function syncActiveTabContent () {
-  const tab = tabs.value.find((t) => t.id === activeTabId.value) || null
-  activeTab.value = tab
-
-  if (!tab) {
-    imageDataUrl.value = ''
-    if (editor) {
-      editor.setModel(null)
-      layoutEditor()
-    }
-    clearGitDiffDecorations()
-    return
-  }
-
-  if (tab.kind === 'text') {
-    imageDataUrl.value = ''
-    nextTick(async () => {
-      const model = pathToModel.get(tab.path) || monaco.editor.getModel(uriForPath(tab.path))
-      if (editor && model) {
-        editor.setModel(model)
-        layoutEditor()
-        await loadFileDiffMetadata(tab.path, model)
-      }
-    })
-    return
-  }
-
-  if (editor) {
-    editor.setModel(null)
-    layoutEditor()
-  }
-  clearGitDiffDecorations()
-
-  if (tab.kind === 'image') {
-    void window.electronAPI?.readImageAsBase64(tab.path).then((img) => {
-      if (activeTabId.value === tab.id) {
-        imageDataUrl.value = img?.success ? img.dataUrl : ''
-      }
-    })
-    return
-  }
-
-  imageDataUrl.value = ''
 }
 
 function activateTab (id) {
   closeTabContextMenu()
   activeTabId.value = id
   saveWorkspaceState()
-  syncActiveTabContent()
 }
 
 function closeTab (id) {
-  const tab = tabs.value.find((t) => t.id === id)
-  if (tab && tab.kind === 'text' && pathToModel.has(tab.path)) {
-    const m = pathToModel.get(tab.path)
-    m.dispose()
-    pathToModel.delete(tab.path)
-  }
   tabs.value = tabs.value.filter((t) => t.id !== id)
   if (activeTabId.value === id) {
     activeTabId.value = tabs.value.length ? tabs.value[tabs.value.length - 1].id : null
   }
   saveWorkspaceState()
-  syncActiveTabContent()
 }
 
 function closeTabsByIds(ids) {
@@ -2050,7 +1728,6 @@ function onSplitterPointerDown (e) {
     const dx = ev.clientX - startX
     const next = Math.min(520, Math.max(200, startW + dx))
     treeWidthPx.value = next
-    requestAnimationFrame(() => layoutEditor())
   }
 
   const onUp = () => {
@@ -2062,12 +1739,6 @@ function onSplitterPointerDown (e) {
 
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
-}
-
-function layoutEditor () {
-  if (editor) {
-    editor.layout()
-  }
 }
 
 function escapeForBashCommand(value) {
@@ -2304,42 +1975,11 @@ onMounted(async () => {
     await refreshGitStatuses()
     lastAppliedGitSignature.value = props.gitSignature || ''
   }
-  await nextTick()
-  layoutObserver = new ResizeObserver(() => {
-    layoutEditor()
-  })
-  await nextTick()
-  if (previewBodyRef.value) {
-    layoutObserver.observe(previewBodyRef.value)
-  }
-  if (treeScrollRef.value) {
-    layoutObserver.observe(treeScrollRef.value)
-  }
-  if (!editorContainerRef.value) return
-  editor = monaco.editor.create(editorContainerRef.value, {
-    readOnly: true,
-    theme: 'vs-dark',
-    automaticLayout: true,
-    minimap: { enabled: true },
-    fontSize: 13,
-    scrollBeyondLastLine: false,
-    wordWrap: 'on',
-    glyphMargin: true
-  })
-  layoutEditor()
 })
 
 onBeforeUnmount(() => {
   saveWorkspaceState()
   document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
-  layoutObserver?.disconnect()
-  layoutObserver = null
-  disposeAllModels()
-  if (editor) {
-    clearGitDiffDecorations()
-    editor.dispose()
-    editor = null
-  }
 })
 
 watch(
@@ -2348,9 +1988,6 @@ watch(
     if (active) {
       await refreshGitStatuses()
       lastAppliedGitSignature.value = props.gitSignature || ''
-      if (editor) {
-        nextTick(() => layoutEditor())
-      }
     }
   }
 )
@@ -2364,16 +2001,6 @@ watch(
     await refreshGitStatuses()
     lastAppliedGitSignature.value = normalizedSignature
   }
-)
-
-watch(
-  modifiedFileEntries,
-  async () => {
-    if (!activeTab.value || activeTab.value.kind !== 'text') return
-    const model = pathToModel.get(activeTab.value.path) || monaco.editor.getModel(uriForPath(activeTab.value.path))
-    await loadFileDiffMetadata(activeTab.value.path, model)
-  },
-  { deep: true }
 )
 
 watch(
@@ -2404,13 +2031,6 @@ watch(
 )
 
 watch(
-  () => [tabs.value.length, activeTabId.value],
-  () => {
-    nextTick(() => layoutEditor())
-  }
-)
-
-watch(
   () => ({
     expandedKeys: [...expandedKeys.value],
     tabPaths: tabs.value.map((tab) => tab.path),
@@ -2429,6 +2049,26 @@ watch(
       imageDataUrl.value = ''
     }
   }
+)
+
+watch(
+  activeTab,
+  (tab) => {
+    if (!tab) {
+      imageDataUrl.value = ''
+      return
+    }
+    if (tab.kind === 'image') {
+      void window.electronAPI?.readImageAsBase64(tab.path).then((img) => {
+        if (activeTabId.value === tab.id) {
+          imageDataUrl.value = img?.success ? img.dataUrl : ''
+        }
+      })
+      return
+    }
+    imageDataUrl.value = ''
+  },
+  { immediate: true, deep: true }
 )
 </script>
 
@@ -3122,44 +2762,6 @@ watch(
   overflow: hidden;
 }
 
-.editor-change-nav {
-  position: absolute;
-  top: 10px;
-  right: 112px;
-  z-index: 8;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: calc(100% - 124px);
-  padding: 6px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  background: rgba(31, 32, 36, 0.92);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-}
-
-.editor-change-nav__btn {
-  height: 24px;
-  padding: 0 10px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.86);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.editor-change-nav__btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.editor-change-nav__meta {
-  min-width: 34px;
-  text-align: center;
-  color: rgba(255, 255, 255, 0.52);
-  font-size: 12px;
-}
-
 .preview-empty {
   position: absolute;
   inset: 0;
@@ -3168,60 +2770,6 @@ watch(
   justify-content: center;
   color: rgba(255, 255, 255, 0.35);
   font-size: 13px;
-}
-
-.monaco-container {
-  position: absolute;
-  inset: 0;
-  min-height: 0;
-  min-width: 0;
-}
-
-.monaco-container :deep(.monaco-editor),
-.monaco-container :deep(.monaco-editor .overflow-guard) {
-  min-height: 100%;
-}
-
-.monaco-container :deep(.workspace-diff-line--added) {
-  background: rgba(72, 177, 112, 0.16);
-}
-
-.monaco-container :deep(.workspace-diff-line--modified) {
-  background: rgba(214, 180, 67, 0.14);
-}
-
-.monaco-container :deep(.workspace-diff-gutter) {
-  width: 4px !important;
-  margin-left: 6px;
-  border-radius: 999px;
-}
-
-.monaco-container :deep(.workspace-diff-gutter--added) {
-  background: #48b170;
-}
-
-.monaco-container :deep(.workspace-diff-gutter--modified) {
-  background: #d6b443;
-}
-
-.monaco-container :deep(.workspace-diff-gutter--deleted) {
-  background: #de6d73;
-}
-
-.monaco-container :deep(.workspace-diff-glyph--deleted::before) {
-  content: '−';
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  margin-left: 4px;
-  border-radius: 999px;
-  background: rgba(222, 109, 115, 0.18);
-  color: #ffb1b4;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
 }
 
 .image-preview-wrap {

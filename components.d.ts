@@ -43,5 +43,6 @@ declare module 'vue' {
     TerminalPanel: typeof import('./src/components/terminal/TerminalPanel.vue')['default']
     TerminalSplitNode: typeof import('./src/components/terminal/TerminalSplitNode.vue')['default']
     WebView: typeof import('./src/components/webview/WebView.vue')['default']
+    WorkspaceTextEditor: typeof import('./src/components/git/WorkspaceTextEditor.vue')['default']
   }
 }
