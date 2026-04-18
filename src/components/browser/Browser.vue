@@ -4038,10 +4038,10 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   align-items: center;
   background: rgba(255, 255, 255, 0.025);
   padding: 0 0 0 0;
-  padding-top: 4px; /* 顶部预留空间 */
   gap: 0;
   flex-shrink: 0;
   overflow: hidden; /* 禁止整个标签栏滚动 */
+  height: 36px;
   min-height: 36px;
   -webkit-app-region: no-drag; /* 标签栏本身不可拖拽 */
   position: relative;
@@ -4060,6 +4060,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   align-items: center;
   gap: 0;
   flex: 0 1 auto; /* 只占用内容所需空间，不扩展 */
+  height: 100%;
   overflow: hidden; /* 不允许滚动，标签自动缩小 */
   min-width: 0; /* 允许 flex 子元素缩小 */
   max-width: calc(100% - 32px); /* 最大宽度，确保右侧至少保留 32px 空间（和加号按钮一样宽） */
@@ -4071,6 +4072,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 .tabs-bar-menu-wrapper {
   display: flex;
   align-items: center;
+  height: 100%;
   flex: 0 0 auto;
   margin-left: 6px;
   margin-right: 4px;
@@ -4110,7 +4112,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   min-width: 60px; /* 最小宽度，只显示图标和部分标题 */
   width: 200px; /* 默认固定宽度 */
   flex: 0 1 200px; /* 不扩展，只在空间不足时缩小 */
-  height: 32px;
+  height: 100%;
   box-sizing: border-box;
   position: relative;
   color: rgba(255, 255, 255, 0.68);
@@ -4201,23 +4203,15 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   color: rgba(255, 255, 255, 0.95);
   font-weight: 500; /* 保持与未选中状态相同的字重，避免视觉上的放大效果 */
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  border-top-left-radius: 10px;
-  border-top-right-radius: 10px;
+  height: 100%;
+  border-radius: 0;
   position: relative;
   z-index: 1;
 }
 
 /* 选中态下边的柔和衔接 */
 .browser-tab-item.active::before {
-  content: '';
-  position: absolute;
-  bottom: -4px;
-  left: 6px;
-  right: 6px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 999px;
-  z-index: 0;
+  content: none;
 }
 
 /* Tooltip 样式 */
