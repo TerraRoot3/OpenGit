@@ -51,6 +51,15 @@
         <div class="content-wrapper">
           <!-- 左侧面板 -->
           <div class="branches-panel">
+            <div
+              class="file-status-button"
+              :class="{ active: currentView === 'ai-sessions' }"
+              @click="selectAiSessions"
+            >
+              <Bot :size="16" />
+              <span>AI会话</span>
+            </div>
+
             <!-- 终端按钮 -->
             <div
               class="file-status-button"
@@ -59,15 +68,6 @@
             >
               <TerminalIcon :size="16" />
               <span>终端</span>
-            </div>
-
-            <div
-              class="file-status-button"
-              :class="{ active: currentView === 'ai-sessions' }"
-              @click="selectAiSessions"
-            >
-              <Bot :size="16" />
-              <span>AI会话</span>
             </div>
 
             <!-- 文件状态按钮 -->
@@ -572,7 +572,7 @@ const getSavedCurrentView = (path) => {
   try {
     const saved = localStorage.getItem(getProjectViewKey(path))
     if (saved && ['file-status', 'commit-history', 'stash-list', 'terminal', 'ai-sessions'].includes(saved)) {
-      return saved
+      return saved === 'terminal' ? 'ai-sessions' : saved
     }
   } catch (e) {}
   return 'ai-sessions'

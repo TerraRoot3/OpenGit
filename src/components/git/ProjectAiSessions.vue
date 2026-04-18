@@ -171,7 +171,7 @@ const emit = defineEmits(['resume-session'])
 
 const loading = ref(false)
 const errorMessage = ref('')
-const selectedProvider = ref('claude')
+const selectedProvider = ref('codex')
 const selectedSessionId = ref('')
 const summaryDialogSession = ref(null)
 const deleteTargetSession = ref(null)
@@ -209,16 +209,16 @@ const normalizePath = (input) => {
 
 const providerSections = computed(() => ([
   {
-    key: 'claude',
-    label: 'Claude Code',
-    subtitle: 'Claude CLI 历史会话',
-    sessions: sessions.value.claude || []
-  },
-  {
     key: 'codex',
     label: 'Codex',
     subtitle: 'Codex CLI 历史会话',
     sessions: sessions.value.codex || []
+  },
+  {
+    key: 'claude',
+    label: 'Claude Code',
+    subtitle: 'Claude CLI 历史会话',
+    sessions: sessions.value.claude || []
   }
 ]))
 
@@ -291,7 +291,7 @@ const formatTime = (value) => {
 const syncSelectedProvider = () => {
   const hasSelected = providerSections.value.some((provider) => provider.key === selectedProvider.value)
   if (!hasSelected) {
-    selectedProvider.value = providerSections.value[0]?.key || 'claude'
+    selectedProvider.value = providerSections.value[0]?.key || 'codex'
     return
   }
 
