@@ -25,30 +25,28 @@
     "convert-icon": "bash scripts/convert-icon.sh"
   },
   "dependencies": {
+    "electron-store": "^11.0.0",
+    "node-pty": "^1.1.0-beta42"
+  },
+  "devDependencies": {
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
-    "adm-zip": "^0.5.16",
-    "electron-store": "^11.0.0",
-    "lucide-vue-next": "^0.294.0",
-    "monaco-editor": "^0.55.1",
-    "naive-ui": "^2.44.1",
-    "node-pty": "^1.1.0-beta42",
-    "vue": "^3.4.0",
-    "vue-router": "^4.2.5"
-  },
-  "devDependencies": {
     "@electron/get": "^4.0.2",
     "@electron/rebuild": "^4.0.2",
     "@vitejs/plugin-vue": "^4.5.0",
     "concurrently": "^9.2.1",
     "electron": "^38.7.2",
     "electron-builder": "^26.0.12",
+    "lucide-vue-next": "^0.294.0",
+    "monaco-editor": "^0.55.1",
     "unplugin-auto-import": "^0.16.7",
     "unplugin-vue-components": "^0.25.2",
     "vite": "^5.0.0",
     "vite-plugin-monaco-editor": "^1.1.0",
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.5",
     "wait-on": "^9.0.1"
   },
   "build": {
@@ -60,7 +58,6 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "node_modules/**/*",
       "package.json"
     ],
     "asarUnpack": [

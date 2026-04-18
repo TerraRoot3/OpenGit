@@ -1,20 +1,15 @@
 <template>
   <div class="project-workspace">
-    <n-config-provider
-      class="workspace-provider"
-      :theme="darkTheme"
-      :theme-overrides="themeOverrides"
-    >
-      <div class="workspace-split">
-        <aside
-          ref="treePaneRef"
-          class="tree-pane"
-          :class="{ 'tree-pane--modified': isModifiedFilterMode }"
-          :style="{ width: `${treeWidthPx}px` }"
-          tabindex="0"
-          @keydown="handleTreeKeydown"
-          @paste="handleTreePaste"
-        >
+    <div class="workspace-split">
+      <aside
+        ref="treePaneRef"
+        class="tree-pane"
+        :class="{ 'tree-pane--modified': isModifiedFilterMode }"
+        :style="{ width: `${treeWidthPx}px` }"
+        tabindex="0"
+        @keydown="handleTreeKeydown"
+        @paste="handleTreePaste"
+      >
           <div class="tree-toolbar">
             <div class="tree-toolbar__header">
               <span class="tree-toolbar__title">项目文件</span>
@@ -243,13 +238,13 @@
               </button>
             </div>
           </div>
-        </aside>
-        <div
-          class="splitter"
-          title="拖拽调整宽度"
-          @pointerdown="onSplitterPointerDown"
-        />
-        <main class="editor-pane" :class="{ 'editor-pane--tabs': tabs.length > 0 }">
+      </aside>
+      <div
+        class="splitter"
+        title="拖拽调整宽度"
+        @pointerdown="onSplitterPointerDown"
+      />
+      <main class="editor-pane" :class="{ 'editor-pane--tabs': tabs.length > 0 }">
           <div v-if="tabs.length" class="tab-bar">
             <button
               v-for="tab in tabs"
@@ -296,9 +291,8 @@
               </div>
             </template>
           </div>
-        </main>
-      </div>
-    </n-config-provider>
+      </main>
+    </div>
     <OperationDialog
       :show="showOperationDialog"
       :title="operationType"
@@ -311,7 +305,6 @@
 
 <script setup>
 import { computed, defineAsyncComponent, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { NConfigProvider, darkTheme } from 'naive-ui'
 import {
   ChevronDown,
   ChevronRight,
@@ -382,18 +375,6 @@ const { confirm } = useConfirm()
 const tabs = ref([])
 const activeTabId = ref(null)
 const imageDataUrl = ref('')
-
-const themeOverrides = {
-  common: {
-    fontSize: '13px',
-    borderRadius: '8px'
-  },
-  Tree: {
-    nodeColorHover: 'rgba(255, 255, 255, 0.06)',
-    nodeColorPressed: 'rgba(255, 255, 255, 0.08)',
-    nodeColorActive: 'rgba(255, 255, 255, 0.1)'
-  }
-}
 
 const WORKSPACE_HEADER_HEIGHT = '37px'
 const STATUS_PRIORITY = ['U', 'D', 'R', 'A', 'M', '?']
@@ -2087,15 +2068,6 @@ watch(
   /* 仅左右留白，避免 margin 纵向吃掉 flex 可用高度 */
   margin: 0 10px 0 0;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-}
-
-.workspace-provider {
-  display: flex;
-  flex: 1 1 0%;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
 }
 
 .workspace-split {
