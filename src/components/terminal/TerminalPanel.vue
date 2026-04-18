@@ -867,7 +867,8 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     restoreViewportToBottom: true,
     viewportDirtyWhileHidden: false,
     _viewportRevealTimerId: null,
-    _dropHandlers: null
+    _dropHandlers: null,
+    _focusCleanup: null
   }
 
   bindTerminalDropEvents(term)
@@ -893,11 +894,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
       window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
     }
   })
-  xterm.onFocus(() => {
-    try {
-      focusSplitPane(term.termId)
-    } catch {}
-  })
+  term._focusCleanup = bindTerminalFocusTracking(term, xterm)
 
   if (restoredConnected) {
     if (!window.electronAPI?.terminal?.create) {
@@ -1089,22 +1086,8 @@ const handlePaneDragStart = (payload) => {
   window.addEventListener('mouseup', handlePaneDragMouseUp)
 }
 
-const resolveSplitCwd = async (terminal) => {
-  const projectRoot = getProjectRootCwd()
-  const cachedCwd = normalizeIncomingPath(terminal?.cwd || '')
-
-  if (terminal?.ptyId) {
-    try {
-      const data = await window.electronAPI?.terminal?.getCwd?.({ id: terminal.ptyId })
-      if (data?.success && typeof data.cwd === 'string' && data.cwd.trim()) {
-        return normalizeIncomingPath(data.cwd)
-      }
-    } catch {
-      // ignore and fallback
-    }
-  }
-
-  return cachedCwd || projectRoot || ''
+const resolveSplitCwd = () => {
+  return getProjectRootCwd()
 }
 
 const splitActiveTerminal = async (direction = 'row') => {
@@ -1114,7 +1097,7 @@ const splitActiveTerminal = async (direction = 'row') => {
 
   ensureTabLayout(tab)
 
-  const baseCwd = await resolveSplitCwd(active)
+  const baseCwd = resolveSplitCwd()
   const newTermId = await addTerminal(baseCwd || null, { autoSwitch: false, tabId: tab.tabId })
   if (!newTermId) return
 
@@ -1141,11 +1124,59 @@ const closeSplitPane = async (termId) => {
   schedulePersistedSnapshot()
 }
 
+const bindTerminalFocusTracking = (term, xterm) => {
+  if (!term || !xterm) return () => {}
+  try {
+    if (typeof xterm.onFocus === 'function') {
+      const disposable = xterm.onFocus(() => {
+        try {
+          focusSplitPane(term.termId)
+        } catch {}
+      })
+      if (disposable?.dispose) {
+        return () => {
+          try {
+            disposable.dispose()
+          } catch {}
+        }
+      }
+      if (typeof disposable === 'function') {
+        return disposable
+      }
+      return () => {}
+    }
+
+    const element = xterm.element
+    if (!element || typeof element.addEventListener !== 'function' || typeof element.removeEventListener !== 'function') {
+      return () => {}
+    }
+
+    const handler = () => {
+      try {
+        focusSplitPane(term.termId)
+      } catch {}
+    }
+    const mouseDownHandler = () => handler()
+    element.addEventListener('focusin', handler)
+    element.addEventListener('mousedown', mouseDownHandler)
+    return () => {
+      element.removeEventListener('focusin', handler)
+      element.removeEventListener('mousedown', mouseDownHandler)
+    }
+  } catch {
+    return () => {}
+  }
+}
+
 const closeTerminalById = async (termId) => {
   const idx = terminals.value.findIndex(t => t.termId === termId)
   if (idx === -1) return
 
   const term = terminals.value[idx]
+  if (typeof term._focusCleanup === 'function') {
+    term._focusCleanup()
+    term._focusCleanup = null
+  }
   unbindTerminalDropEvents(term)
   cancelViewportRevealSync(term, (timerId) => window.clearTimeout(timerId))
   if (term.ptyId) {
