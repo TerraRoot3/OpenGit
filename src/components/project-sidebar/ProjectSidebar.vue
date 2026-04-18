@@ -76,23 +76,25 @@
               <div class="child-name">
                 <span>{{ repo.name }}</span>
               </div>
-              <div
-                v-if="repo.gitStatus?.hasPendingFiles"
-                class="pending-files-icon"
-                title="有待定文件"
-              >
-                <svg width="12" height="12" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
-                  <path d="M526.41 117.029v58.514a7.314 7.314 0 0 1-7.315 7.314H219.429a36.571 36.571 0 0 0-35.987 29.989l-0.585 6.583V804.57a36.571 36.571 0 0 0 29.989 35.987l6.583 0.585H804.57a36.571 36.571 0 0 0 35.987-29.989l0.585-6.583v-317.44a7.314 7.314 0 0 1 7.314-7.314h58.514a7.314 7.314 0 0 1 7.315 7.314v317.44a109.714 109.714 0 0 1-99.182 109.203l-10.533 0.512H219.43a109.714 109.714 0 0 1-109.203-99.182l-0.512-10.533V219.43a109.714 109.714 0 0 1 99.182-109.203l10.533-0.512h299.666a7.314 7.314 0 0 1 7.314 7.315z m307.345 31.817l41.4 41.399a7.314 7.314 0 0 1 0 10.313L419.985 655.726a7.314 7.314 0 0 1-10.313 0l-41.399-41.4a7.314 7.314 0 0 1 0-10.312l455.168-455.168a7.314 7.314 0 0 1 10.313 0z"></path>
-                </svg>
-              </div>
-              <div class="push-count">
-                <span
-                  v-if="(repo.gitStatus?.localAhead || 0) > 0"
-                  class="push-count-number"
-                  :title="`本地领先 ${repo.gitStatus?.localAhead || 0} 个提交`"
+              <div class="repo-meta">
+                <div
+                  v-if="repo.gitStatus?.hasPendingFiles"
+                  class="pending-files-icon"
+                  title="有待定文件"
                 >
-                  ↑{{ repo.gitStatus?.localAhead || 0 }}
-                </span>
+                  <svg width="12" height="12" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
+                    <path d="M526.41 117.029v58.514a7.314 7.314 0 0 1-7.315 7.314H219.429a36.571 36.571 0 0 0-35.987 29.989l-0.585 6.583V804.57a36.571 36.571 0 0 0 29.989 35.987l6.583 0.585H804.57a36.571 36.571 0 0 0 35.987-29.989l0.585-6.583v-317.44a7.314 7.314 0 0 1 7.314-7.314h58.514a7.314 7.314 0 0 1 7.315 7.314v317.44a109.714 109.714 0 0 1-99.182 109.203l-10.533 0.512H219.43a109.714 109.714 0 0 1-109.203-99.182l-0.512-10.533V219.43a109.714 109.714 0 0 1 99.182-109.203l10.533-0.512h299.666a7.314 7.314 0 0 1 7.314 7.315z m307.345 31.817l41.4 41.399a7.314 7.314 0 0 1 0 10.313L419.985 655.726a7.314 7.314 0 0 1-10.313 0l-41.399-41.4a7.314 7.314 0 0 1 0-10.312l455.168-455.168a7.314 7.314 0 0 1 10.313 0z"></path>
+                  </svg>
+                </div>
+                <div class="push-count">
+                  <span
+                    v-if="(repo.gitStatus?.localAhead || 0) > 0"
+                    class="push-count-number"
+                    :title="`本地领先 ${repo.gitStatus?.localAhead || 0} 个提交`"
+                  >
+                    ↑{{ repo.gitStatus?.localAhead || 0 }}
+                  </span>
+                </div>
               </div>
             </div>
             <div class="repo-branch-row">
@@ -305,6 +307,8 @@ const isExpanded = (path) => {
   border: 0;
   background: transparent;
   color: inherit;
+  font: inherit;
+  line-height: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -466,6 +470,13 @@ const isExpanded = (path) => {
   gap: 8px;
 }
 
+.repo-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
 .repo-branch-row {
   color: rgba(255, 255, 255, 0.62);
   font-size: 12px;
@@ -482,6 +493,7 @@ const isExpanded = (path) => {
   white-space: nowrap;
 }
 
+.repo-meta,
 .pending-files-icon,
 .push-count,
 .pull-count {
@@ -513,8 +525,6 @@ const isExpanded = (path) => {
   font-weight: 500;
   white-space: nowrap;
   margin-left: 4px;
-  line-height: 1;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 }
 
 .pull-count {
@@ -523,8 +533,6 @@ const isExpanded = (path) => {
   font-weight: 500;
   white-space: nowrap;
   margin-left: 4px;
-  line-height: 1;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 }
 
 .rotated {
