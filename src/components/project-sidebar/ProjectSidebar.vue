@@ -261,20 +261,35 @@ const isExpanded = (path) => {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid transparent;
   color: rgba(255, 255, 255, 0.72);
+  outline: none;
 }
 
 .search-box:focus-within {
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: transparent;
   box-shadow: none;
+  outline: none;
 }
 
 .search-input {
   flex: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
   border: 0;
-  outline: 0;
+  outline: none;
   background: transparent;
   color: #fff;
   font-size: 13px;
+  line-height: 34px;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.search-input:focus,
+.search-input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .project-sidebar-body {
