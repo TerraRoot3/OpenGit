@@ -239,7 +239,8 @@
           <div class="right-panel">
             <!-- 文件状态 -->
             <ProjectWorkspace
-              v-if="currentView === 'workspace'"
+              v-if="workspaceMounted"
+              v-show="currentView === 'workspace'"
               :project-path="path"
               :is-active="isActive && currentView === 'workspace'"
             />
@@ -681,6 +682,7 @@ const restoreExpandState = (path) => {
 const currentView = ref('ai-sessions')
 const terminalMounted = ref(false)
 const aiSessionsMounted = ref(false)
+const workspaceMounted = ref(false)
 const showLocalBranches = ref(true)
 const showRemoteBranches = ref(false)
 const showTags = ref(false)
@@ -691,6 +693,7 @@ const commitHistoryRefreshToken = ref(0)
 const refreshing = ref(false)
 const refreshSuccess = ref(false)
 let aiSessionsPreloadHandle = null
+let workspacePreloadHandle = null
 
 const clearAiSessionsPreload = () => {
   if (aiSessionsPreloadHandle == null || typeof window === 'undefined') return
@@ -702,6 +705,18 @@ const clearAiSessionsPreload = () => {
   }
 
   aiSessionsPreloadHandle = null
+}
+
+const clearWorkspacePreload = () => {
+  if (workspacePreloadHandle == null || typeof window === 'undefined') return
+
+  if (typeof workspacePreloadHandle === 'number') {
+    window.clearTimeout(workspacePreloadHandle)
+  } else if (typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(workspacePreloadHandle)
+  }
+
+  workspacePreloadHandle = null
 }
 
 const scheduleAiSessionsPreload = () => {
@@ -720,6 +735,24 @@ const scheduleAiSessionsPreload = () => {
   }
 
   aiSessionsPreloadHandle = window.setTimeout(mountAiSessions, 0)
+}
+
+const scheduleWorkspacePreload = () => {
+  if (workspaceMounted.value || typeof window === 'undefined') return
+
+  clearWorkspacePreload()
+
+  const mountWorkspace = () => {
+    workspacePreloadHandle = null
+    workspaceMounted.value = true
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    workspacePreloadHandle = window.requestIdleCallback(mountWorkspace, { timeout: 600 })
+    return
+  }
+
+  workspacePreloadHandle = window.setTimeout(mountWorkspace, 0)
 }
 
 // ==================== 操作对话框 ====================
@@ -2392,6 +2425,7 @@ const cancelOperation = () => {
 // ==================== 生命周期 ====================
 watch(() => props.path, (newPath, oldPath) => {
   clearAiSessionsPreload()
+  clearWorkspacePreload()
   clearPipelineSummaryTimer()
   stopProjectGitMonitor()
   resetProjectGitMonitorState()
@@ -2405,6 +2439,9 @@ watch(() => props.path, (newPath, oldPath) => {
     }
     if (currentView.value === 'ai-sessions') {
       aiSessionsMounted.value = true
+    }
+    if (currentView.value === 'workspace') {
+      workspaceMounted.value = true
     }
     restoreExpandState(newPath)
     
@@ -2465,6 +2502,7 @@ watch(() => props.path, (newPath, oldPath) => {
     })
 
     scheduleAiSessionsPreload()
+    scheduleWorkspacePreload()
     if (shouldPollProjectGitMonitor.value && isGitRepository.value !== false) {
       startProjectGitMonitor()
     }
@@ -2494,6 +2532,9 @@ watch(currentView, (view) => {
   }
   if (view === 'ai-sessions') {
     aiSessionsMounted.value = true
+  }
+  if (view === 'workspace') {
+    workspaceMounted.value = true
   }
 }, { immediate: true })
 
@@ -2569,6 +2610,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearAiSessionsPreload()
+  clearWorkspacePreload()
   clearPipelineSummaryTimer()
   stopProjectGitMonitor()
   window.removeEventListener('focus', handleWindowFocus)

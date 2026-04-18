@@ -239,6 +239,8 @@ const ARCHIVE_FILE_EXT = new Set(['zip', 'tar', 'gz', 'tgz', '7z', 'rar', 'bz2',
 const TERMINAL_FILE_EXT = new Set(['sh', 'bash', 'zsh', 'fish'])
 const TEXT_FILE_EXT = new Set(['md', 'txt', 'log', 'yml', 'yaml', 'toml', 'ini', 'conf'])
 const platform = window.electronAPI?.platform || 'darwin'
+const isRestoringWorkspaceState = ref(false)
+const isWorkspaceStatePersistenceSuspended = ref(false)
 
 const systemFileManagerLabel = computed(() => {
   if (platform === 'win32') return '资源管理器'
@@ -251,9 +253,19 @@ function treeWidthStorageKey () {
   return `workspaceTreeWidth_${p.replace(/[^a-zA-Z0-9]/g, '_')}`
 }
 
-function loadTreeWidth () {
+function workspaceStateStorageKey () {
+  const p = props.projectPath || ''
+  return `workspaceState_${p.replace(/[^a-zA-Z0-9]/g, '_')}`
+}
+
+function workspaceStateConfigKey () {
+  const p = props.projectPath || ''
+  return `workspace-state-${p.replace(/[^a-zA-Z0-9]/g, '_')}`
+}
+
+async function loadTreeWidth () {
   try {
-    const raw = localStorage.getItem(treeWidthStorageKey())
+    const raw = await window.electronAPI?.getConfig?.(treeWidthStorageKey())
     const n = Number(raw)
     if (Number.isFinite(n) && n >= 200 && n <= 520) {
       treeWidthPx.value = n
@@ -263,7 +275,36 @@ function loadTreeWidth () {
 
 function saveTreeWidth () {
   try {
-    localStorage.setItem(treeWidthStorageKey(), String(treeWidthPx.value))
+    window.electronAPI?.setConfig?.(treeWidthStorageKey(), treeWidthPx.value)
+  } catch (e) {}
+}
+
+async function loadWorkspaceState() {
+  try {
+    const parsed = await window.electronAPI?.getConfig?.(workspaceStateConfigKey())
+    if (!parsed) return null
+    return {
+      treeWidth: Number.isFinite(Number(parsed?.treeWidth)) ? Number(parsed.treeWidth) : null,
+      expandedKeys: Array.isArray(parsed?.expandedKeys) ? parsed.expandedKeys : [],
+      openTabs: Array.isArray(parsed?.openTabs) ? parsed.openTabs : [],
+      activePath: typeof parsed?.activePath === 'string' ? parsed.activePath : ''
+    }
+  } catch (e) {
+    return null
+  }
+}
+
+function saveWorkspaceState() {
+  if (isRestoringWorkspaceState.value || isWorkspaceStatePersistenceSuspended.value || !props.projectPath) return
+  try {
+    const activeTab = tabs.value.find((tab) => tab.id === activeTabId.value) || null
+    const payload = {
+      treeWidth: treeWidthPx.value,
+      expandedKeys: expandedKeys.value.filter((key) => key && key !== props.projectPath),
+      openTabs: tabs.value.map((tab) => tab.path),
+      activePath: activeTab?.path || ''
+    }
+    window.electronAPI?.setConfig?.(workspaceStateConfigKey(), payload)
   } catch (e) {}
 }
 
@@ -597,6 +638,76 @@ async function ensureNodeReady(key) {
   return node
 }
 
+async function ensurePathChainReady(targetPath, options = {}) {
+  const { expandTarget = false } = options
+  const normalizedTargetPath = normalizePath(targetPath)
+  const rootPath = normalizePath(props.projectPath)
+  if (!normalizedTargetPath || !rootPath || !normalizedTargetPath.startsWith(rootPath)) {
+    return null
+  }
+
+  let currentNode = treeData.value[0] || null
+  if (!currentNode) return null
+
+  await ensureDirectoryChildren(currentNode)
+
+  const relativePath = relativeToProjectPath(normalizedTargetPath)
+  const segments = relativePath.split('/').filter(Boolean)
+
+  let currentPath = rootPath
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index]
+    currentPath = `${currentPath}/${segment}`.replace(/\/+/g, '/')
+    const isLastSegment = index === segments.length - 1
+
+    if (currentNode?.isDirectory) {
+      await ensureDirectoryChildren(currentNode)
+      if (!isExpanded(currentNode.key)) {
+        toggleExpandedKey(currentNode.key)
+      }
+    }
+
+    const nextNode = findTreeNodeByKey(treeData.value, currentPath)
+    if (!nextNode) return null
+
+    if (nextNode.isDirectory && (!isLastSegment || expandTarget)) {
+      await ensureDirectoryChildren(nextNode)
+      if (!isExpanded(nextNode.key)) {
+        toggleExpandedKey(nextNode.key)
+      }
+    }
+
+    currentNode = nextNode
+  }
+
+  return currentNode
+}
+
+async function preloadExpandedDirectories(expandedKeysSnapshot) {
+  const expandedSet = new Set(
+    [props.projectPath, ...expandedKeysSnapshot]
+      .map((key) => normalizePath(key))
+      .filter(Boolean)
+  )
+
+  const visit = async (node) => {
+    if (!node?.isDirectory) return
+    if (!expandedSet.has(normalizePath(node.key))) return
+    await ensureDirectoryChildren(node)
+    if (!isExpanded(node.key)) {
+      toggleExpandedKey(node.key)
+    }
+    for (const child of node.children || []) {
+      await visit(child)
+    }
+  }
+
+  const rootNode = treeData.value[0]
+  if (rootNode) {
+    await visit(rootNode)
+  }
+}
+
 function resetCreateDraftState() {
   createDraft.value = null
   draftName.value = ''
@@ -676,6 +787,7 @@ async function commitCreateDraft() {
   } else {
     await openFile(targetPath)
   }
+  saveWorkspaceState()
 }
 
 async function handleDraftBlur() {
@@ -730,20 +842,57 @@ async function refreshTree() {
   const previousSelectedKey = selectedKeys.value[0] || null
   resetCreateDraftState()
   resetTree()
-  await ensureDirectoryChildren(treeData.value[0])
-  for (const key of previousExpandedKeys.filter(key => key !== props.projectPath)) {
-    const parentKey = findParentDirectoryKey(key)
-    await ensureNodeReady(parentKey)
-    const node = findTreeNodeByKey(treeData.value, key)
-    if (node?.isDirectory) {
-      await ensureDirectoryChildren(node)
-      if (!isExpanded(node.key)) {
-        toggleExpandedKey(node.key)
-      }
-    }
-  }
+  expandedKeys.value = Array.from(new Set([props.projectPath, ...previousExpandedKeys.filter(Boolean)]))
+  await preloadExpandedDirectories(previousExpandedKeys.filter(key => key !== props.projectPath))
   if (previousSelectedKey) {
     selectedKeys.value = [previousSelectedKey]
+  }
+  saveWorkspaceState()
+}
+
+async function restoreWorkspaceState() {
+  const state = await loadWorkspaceState()
+  if (!state) return
+  isRestoringWorkspaceState.value = true
+  try {
+    if (Number.isFinite(state.treeWidth) && state.treeWidth >= 200 && state.treeWidth <= 520) {
+      treeWidthPx.value = state.treeWidth
+    }
+
+    for (const key of state.expandedKeys) {
+      if (!key || key === props.projectPath) continue
+      await ensurePathChainReady(key, { expandTarget: true })
+    }
+
+    const restoredPaths = []
+    for (const filePath of state.openTabs) {
+      if (!filePath) continue
+      try {
+        const node = await ensurePathChainReady(filePath, { expandTarget: false })
+        if (!node || node.isDirectory) {
+          continue
+        }
+        await openFile(filePath)
+        restoredPaths.push(filePath)
+      } catch (error) {
+        console.warn('恢复工作区文件失败:', filePath, error)
+      }
+    }
+
+    if (state.activePath) {
+      const activeTab = tabs.value.find((tab) => tab.path === state.activePath)
+      if (activeTab) {
+        activeTabId.value = activeTab.id
+      }
+    }
+
+    if (!state.activePath && restoredPaths.length) {
+      const lastTab = tabs.value[tabs.value.length - 1]
+      activeTabId.value = lastTab?.id || null
+    }
+  } finally {
+    isRestoringWorkspaceState.value = false
+    saveWorkspaceState()
   }
 }
 
@@ -823,21 +972,28 @@ async function handleTreeKeydown(event) {
 
 watch(
   () => props.projectPath,
-  (p) => {
+  async (p) => {
     if (!p) return
-    loadTreeWidth()
-    resetTree()
-    void ensureDirectoryChildren(treeData.value[0])
-    tabs.value = []
-    activeTabId.value = null
-    imageDataUrl.value = ''
-    gitStatusByPath.value = {}
-    disposeAllModels()
-    if (editor) {
-      editor.setModel(null)
-    }
-    if (props.isActive) {
-      startGitStatusPolling()
+    isWorkspaceStatePersistenceSuspended.value = true
+    try {
+      await loadTreeWidth()
+      resetTree()
+      tabs.value = []
+      activeTabId.value = null
+      imageDataUrl.value = ''
+      gitStatusByPath.value = {}
+      disposeAllModels()
+      if (editor) {
+        editor.setModel(null)
+      }
+      await ensureDirectoryChildren(treeData.value[0])
+      await restoreWorkspaceState()
+      if (props.isActive) {
+        startGitStatusPolling()
+      }
+    } finally {
+      isWorkspaceStatePersistenceSuspended.value = false
+      saveWorkspaceState()
     }
   },
   { immediate: true }
@@ -884,6 +1040,7 @@ async function openFile (filePath) {
     activeTabId.value = id
     const img = await window.electronAPI.readImageAsBase64(filePath)
     imageDataUrl.value = img?.success ? img.dataUrl : ''
+    saveWorkspaceState()
     await nextTick()
     return
   }
@@ -931,6 +1088,7 @@ async function openFile (filePath) {
     ]
   }
   activeTabId.value = id
+  saveWorkspaceState()
 
   await nextTick()
   if (editor && model) {
@@ -945,6 +1103,7 @@ function toggleExpandedKey (key) {
   if (next.has(key)) next.delete(key)
   else next.add(key)
   expandedKeys.value = Array.from(next)
+  saveWorkspaceState()
 }
 
 function isExpanded (key) {
@@ -1196,6 +1355,7 @@ function syncActiveTabContent () {
 function activateTab (id) {
   closeTabContextMenu()
   activeTabId.value = id
+  saveWorkspaceState()
   syncActiveTabContent()
 }
 
@@ -1210,6 +1370,7 @@ function closeTab (id) {
   if (activeTabId.value === id) {
     activeTabId.value = tabs.value.length ? tabs.value[tabs.value.length - 1].id : null
   }
+  saveWorkspaceState()
   syncActiveTabContent()
 }
 
@@ -1265,6 +1426,7 @@ function onSplitterPointerDown (e) {
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerup', onUp)
     saveTreeWidth()
+    saveWorkspaceState()
   }
 
   window.addEventListener('pointermove', onMove)
@@ -1279,7 +1441,7 @@ function layoutEditor () {
 
 onMounted(async () => {
   document.addEventListener('pointerdown', handleDocumentPointerDown, true)
-  loadTreeWidth()
+  await loadTreeWidth()
   if (props.isActive) {
     startGitStatusPolling()
   }
@@ -1308,6 +1470,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  saveWorkspaceState()
   document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
   stopGitStatusPolling()
   layoutObserver?.disconnect()
@@ -1338,6 +1501,18 @@ watch(
   () => {
     nextTick(() => layoutEditor())
   }
+)
+
+watch(
+  () => ({
+    expandedKeys: [...expandedKeys.value],
+    tabPaths: tabs.value.map((tab) => tab.path),
+    activeTabId: activeTabId.value
+  }),
+  () => {
+    saveWorkspaceState()
+  },
+  { deep: true }
 )
 
 watch(
