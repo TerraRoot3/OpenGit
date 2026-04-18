@@ -1,6 +1,6 @@
 <template>
   <div id="app">
-    <Browser />
+    <AppShell />
     <!-- 全局确认弹框 -->
     <ConfirmDialog ref="confirmDialogRef" />
   </div>
@@ -8,7 +8,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import Browser from './components/browser/Browser.vue'
+import AppShell from './components/app/AppShell.vue'
 import ConfirmDialog from './components/dialog/ConfirmDialog.vue'
 import { registerConfirmDialog } from './composables/useConfirm.js'
 
@@ -32,6 +32,30 @@ html, body {
   padding: 0;
   background: #2d2d30; /* 深色背景，与tab-bar一致 */
   overflow: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 #app {

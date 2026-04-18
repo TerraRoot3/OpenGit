@@ -7,6 +7,7 @@ export {}
 
 declare module 'vue' {
   export interface GlobalComponents {
+    AppShell: typeof import('./src/components/app/AppShell.vue')['default']
     BackupManager: typeof import('./src/components/BackupManager.vue')['default']
     Browser: typeof import('./src/components/browser/Browser.vue')['default']
     CloneProgressDialog: typeof import('./src/components/dialog/CloneProgressDialog.vue')['default']
@@ -29,6 +30,7 @@ declare module 'vue' {
     ProjectFileStatus: typeof import('./src/components/git/ProjectFileStatus.vue')['default']
     ProjectManager: typeof import('./src/components/git/ProjectManager.vue')['default']
     ProjectSettingsDialog: typeof import('./src/components/dialog/ProjectSettingsDialog.vue')['default']
+    ProjectSidebar: typeof import('./src/components/project-sidebar/ProjectSidebar.vue')['default']
     ProjectStashList: typeof import('./src/components/git/ProjectStashList.vue')['default']
     RemoteRepo: typeof import('./src/components/git/RemoteRepo.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

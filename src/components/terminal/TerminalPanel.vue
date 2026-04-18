@@ -2289,7 +2289,7 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
 .terminal-body :deep(.xterm-viewport)::-webkit-scrollbar { width: 4px; }
 .terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-track { background: transparent; }
 .terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
-.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
 .terminal-cwd-picker {
   position: relative;
 }

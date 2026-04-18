@@ -1108,7 +1108,7 @@ defineExpose({})
 }
 
 .domain-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .domain-item {
@@ -1254,7 +1254,7 @@ defineExpose({})
 }
 
 .favorites-grid::-webkit-scrollbar-thumb:hover {
-  background: #999;
+  background: #ccc;
 }
 
 .favorite-card {
@@ -1850,4 +1850,3 @@ defineExpose({})
   z-index: -1;
 }
 </style>
-

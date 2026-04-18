@@ -412,6 +412,8 @@ import {
   buildPasswordSaveDecision
 } from '../../composables/webPasswordUtils.mjs'
 
+const emit = defineEmits(['project-context-changed'])
+
 const props = defineProps({
   initialUrl: {
     type: String,
@@ -602,6 +604,23 @@ const tabOrder = ref({}) // 标签显示顺序 { tabId: orderIndex }
 const currentTab = computed(() => {
   return browserTabs.value.find(tab => tab.id === activeBrowserTabId.value)
 })
+
+const emitProjectContext = () => {
+  const tab = currentTab.value
+  if (!tab) {
+    emit('project-context-changed', { path: '', routeType: '' })
+    return
+  }
+
+  const routeType = tab.routeType || ''
+  const path = tab.routeProps?.path || ''
+  if (routeType === 'clone-directory' || routeType === 'single-project') {
+    emit('project-context-changed', { path, routeType })
+    return
+  }
+
+  emit('project-context-changed', { path: '', routeType })
+}
 
 
 // 获取标签页的路由类型 - 确保返回有效值
@@ -1819,6 +1838,10 @@ const openInNewTab = async (url) => {
   }
 
   await openNewTab(url)
+}
+
+const openProjectRoute = async (url) => {
+  await openInNewTab(url)
 }
 
 /**
@@ -3690,6 +3713,18 @@ watch(() => activeBrowserTabId.value, () => {
   }, 500)
 })
 
+watch(
+  () => ({
+    activeTabId: activeBrowserTabId.value,
+    routeType: currentTab.value?.routeType || '',
+    path: currentTab.value?.routeProps?.path || ''
+  }),
+  () => {
+    emitProjectContext()
+  },
+  { immediate: true, deep: false }
+)
+
 // 监听标签页 URL 变化，自动保存
 watch(() => browserTabs.value.map(tab => ({ id: tab.id, url: tab.url, title: tab.title })), () => {
   // 延迟保存，避免频繁保存
@@ -3701,6 +3736,7 @@ watch(() => browserTabs.value.map(tab => ({ id: tab.id, url: tab.url, title: tab
 // 暴露方法给父组件
 defineExpose({
   openNewTab,
+  openProjectRoute,
   refresh,
   stopRefreshing
 })
@@ -3933,7 +3969,10 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 .browser-container {
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   background: #1e1e1e;
 }
 
@@ -3954,7 +3993,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 /* 系统菜单预留空间 */
 .system-menu-space {
-  width: 80px; /* 预留系统菜单空间 */
+  width: 30px; /* 预留系统按钮空间 */
   height: 100%;
   flex-shrink: 0;
   -webkit-app-region: drag; /* 系统菜单区域可拖拽 */

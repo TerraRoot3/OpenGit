@@ -284,6 +284,57 @@ function registerBranchHandlers({
     })
   }
 
+  async function getProjectGitWatchSignature(projectPath) {
+    const gitDirResult = await executeGitCommand(
+      ['git', 'rev-parse', '--git-dir'],
+      projectPath
+    )
+
+    if (!gitDirResult.success || !gitDirResult.stdout?.trim()) {
+      throw new Error(gitDirResult.error || '获取 git 目录失败')
+    }
+
+    const rawGitDir = gitDirResult.stdout.trim()
+    const gitDirPath = path.isAbsolute(rawGitDir)
+      ? rawGitDir
+      : path.join(projectPath, rawGitDir)
+
+    const statParts = []
+    const appendStat = (label, targetPath) => {
+      try {
+        const stat = fs.statSync(targetPath)
+        statParts.push(`${label}:${Math.trunc(stat.mtimeMs)}`)
+      } catch (error) {
+        statParts.push(`${label}:0`)
+      }
+    }
+
+    appendStat('HEAD', path.join(gitDirPath, 'HEAD'))
+    appendStat('index', path.join(gitDirPath, 'index'))
+    appendStat('FETCH_HEAD', path.join(gitDirPath, 'FETCH_HEAD'))
+    appendStat('packed-refs', path.join(gitDirPath, 'packed-refs'))
+    appendStat('MERGE_HEAD', path.join(gitDirPath, 'MERGE_HEAD'))
+    appendStat('rebase-merge', path.join(gitDirPath, 'rebase-merge'))
+    appendStat('rebase-apply', path.join(gitDirPath, 'rebase-apply'))
+
+    try {
+      const headsDir = path.join(gitDirPath, 'refs', 'heads')
+      if (fs.existsSync(headsDir)) {
+        const entries = fs.readdirSync(headsDir)
+        for (const entry of entries) {
+          appendStat(`refs/heads/${entry}`, path.join(headsDir, entry))
+        }
+      }
+    } catch (error) {
+      // ignore
+    }
+
+    return {
+      gitDirPath,
+      signature: statParts.join('|')
+    }
+  }
+
   ipcMain.handle('get-branch-list', async (event, data) => {
     try {
       safeLog(`🌿 获取分支列表: ${data.path}`)
@@ -321,6 +372,16 @@ function registerBranchHandlers({
     } catch (error) {
       safeError('❌ 获取分支列表失败:', error.message)
       return { success: false, message: `获取失败: ${error.message}` }
+    }
+  })
+
+  ipcMain.handle('get-project-git-watch-signature', async (event, data) => {
+    try {
+      const result = await getProjectGitWatchSignature(data.path)
+      return { success: true, data: result }
+    } catch (error) {
+      safeError('❌ 获取项目 Git watch 签名失败:', error.message)
+      return { success: false, message: `获取失败: ${error.message}`, data: null }
     }
   })
 

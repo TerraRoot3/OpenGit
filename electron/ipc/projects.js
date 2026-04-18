@@ -171,6 +171,89 @@ function registerProjectHandlers({
       return { success: false, message: `获取失败: ${error.message}`, projects: [] }
     }
   })
+
+  ipcMain.handle('get-scan-root-repositories', async (event, data) => {
+    try {
+      const rootPath = path.resolve(String(data?.path || ''))
+      if (!rootPath || !fs.existsSync(rootPath)) {
+        return { success: false, message: '目录不存在', root: null, children: [] }
+      }
+
+      const ignoredNames = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.nuxt'])
+
+      const isGitRepo = async (targetPath) => {
+        try {
+          const gitDir = path.join(targetPath, '.git')
+          const stat = await fsp.stat(gitDir)
+          return stat.isDirectory() || stat.isFile()
+        } catch (error) {
+          return false
+        }
+      }
+
+      const children = []
+      const seenPaths = new Set()
+
+      const walk = async (currentPath, depth) => {
+        if (depth > 3) return
+
+        let entries = []
+        try {
+          entries = await fsp.readdir(currentPath, { withFileTypes: true })
+        } catch (error) {
+          safeError(`扫描目录失败 ${currentPath}:`, error.message)
+          return
+        }
+
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue
+          if (entry.name.startsWith('.') || ignoredNames.has(entry.name)) continue
+
+          const fullPath = path.join(currentPath, entry.name)
+          const repoDetected = await isGitRepo(fullPath)
+
+          const normalizedPath = path.resolve(fullPath)
+          if (!seenPaths.has(normalizedPath)) {
+            seenPaths.add(normalizedPath)
+            children.push({
+              path: normalizedPath,
+              name: path.basename(normalizedPath),
+              relativePath: path.relative(rootPath, normalizedPath),
+              depth,
+              kind: repoDetected ? 'repository' : 'directory',
+              isGitRepo: repoDetected
+            })
+          }
+
+          if (depth < 3) {
+            await walk(fullPath, depth + 1)
+          }
+        }
+      }
+
+      const rootIsGitRepo = await isGitRepo(rootPath)
+      await walk(rootPath, 1)
+
+      children.sort((a, b) => {
+        if (a.depth !== b.depth) return a.depth - b.depth
+        if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1
+        return a.path.localeCompare(b.path)
+      })
+
+      return {
+        success: true,
+        root: {
+          path: rootPath,
+          name: path.basename(rootPath),
+          isGitRepo: rootIsGitRepo
+        },
+        children
+      }
+    } catch (error) {
+      safeError('❌ 获取扫描根仓库失败:', error.message)
+      return { success: false, message: `获取失败: ${error.message}`, root: null, children: [] }
+    }
+  })
 }
 
 module.exports = {

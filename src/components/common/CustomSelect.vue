@@ -259,6 +259,6 @@ onUnmounted(() => {
 }
 
 .select-dropdown::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.2);
 }
 </style>

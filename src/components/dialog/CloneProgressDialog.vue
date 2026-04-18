@@ -752,6 +752,6 @@ const scrollToBottom = () => {
 
 .completed-list::-webkit-scrollbar-thumb:hover,
 .output-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.3);
 }
 </style>

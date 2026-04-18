@@ -66,10 +66,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearBranchStatusCache: (data) => ipcRenderer.invoke('clear-branch-status-cache', data),
   getBranchInfo: (data) => ipcRenderer.invoke('get-branch-info', data),
   getProjectGitMonitorSnapshot: (data) => ipcRenderer.invoke('get-project-git-monitor-snapshot', data),
+  getProjectGitWatchSignature: (data) => ipcRenderer.invoke('get-project-git-watch-signature', data),
   refreshRemote: (data) => ipcRenderer.invoke('refresh-remote', data),
   
   // 项目操作
   getProjects: (data) => ipcRenderer.invoke('get-projects', data),
+  getScanRootRepositories: (data) => ipcRenderer.invoke('get-scan-root-repositories', data),
   getProjectAiSessions: (data) => ipcRenderer.invoke('get-project-ai-sessions', data),
   getProjectAiSessionDetail: (data) => ipcRenderer.invoke('get-project-ai-session-detail', data),
   deleteProjectAiSession: (data) => ipcRenderer.invoke('delete-project-ai-session', data),

@@ -523,7 +523,7 @@ defineExpose({
 }
 
 .tab-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .tab-item {
@@ -728,6 +728,6 @@ defineExpose({
 }
 
 .tab-panel::-webkit-scrollbar-thumb:hover {
-  background: rgba(102, 126, 234, 0.5);
+  background: rgba(102, 126, 234, 0.3);
 }
 </style>
