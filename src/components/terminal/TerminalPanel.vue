@@ -894,27 +894,45 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     }
   })
   xterm.onFocus(() => {
-    focusSplitPane(term.termId)
+    try {
+      focusSplitPane(term.termId)
+    } catch {}
   })
 
   if (restoredConnected) {
-    try {
-      // 显式传 string：避免 cwd 被省略时主进程误用 ~
-      const res = await window.electronAPI.terminal.create({
-        id: termId,
-        cwd: props.allowFirstTerminalWithoutCwd ? (cwd || undefined) : cwd
-      })
-      if (res.success) {
-        term.ptyId = res.id
-        if (res.resolvedCwd && typeof res.resolvedCwd === 'string') {
-          term.cwd = res.resolvedCwd
-        }
-        term.connected = true
-      } else {
-        xterm.write('\r\n\x1b[31m终端创建失败: ' + res.error + '\x1b[0m\r\n')
+    if (!window.electronAPI?.terminal?.create) {
+      xterm.write('\r\n\x1b[31m终端创建失败：终端接口不可用\x1b[0m\r\n')
+      return termId
+    }
+
+    const createCandidates = []
+    const normalizedCwd = props.allowFirstTerminalWithoutCwd ? (cwd || undefined) : cwd
+    if (typeof normalizedCwd === 'string' && normalizedCwd.trim()) {
+      createCandidates.push(normalizedCwd)
+    }
+    createCandidates.push(undefined)
+
+    let createResult = null
+    for (const candidate of createCandidates) {
+      try {
+        createResult = await window.electronAPI.terminal.create({
+          id: termId,
+          cwd: candidate
+        })
+      } catch {
+        createResult = null
       }
-    } catch (e) {
-      xterm.write('\r\n\x1b[31m终端创建异常: ' + e.message + '\x1b[0m\r\n')
+      if (createResult?.success) break
+    }
+
+    if (createResult?.success) {
+      term.ptyId = createResult.id
+      if (createResult.resolvedCwd && typeof createResult.resolvedCwd === 'string') {
+        term.cwd = createResult.resolvedCwd
+      }
+      term.connected = true
+    } else {
+      xterm.write('\r\n\x1b[31m终端创建失败: ' + (createResult?.error || 'unknown') + '\x1b[0m\r\n')
     }
   }
 
