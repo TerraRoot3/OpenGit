@@ -49,6 +49,12 @@
                 <div class="root-name">
                   <Folder :size="14" />
                   <span>{{ group.name }}</span>
+                  <Star
+                    v-if="isFavorited(group.path)"
+                    :size="12"
+                    class="favorite-indicator"
+                    fill="currentColor"
+                  />
                 </div>
               </div>
             </div>
@@ -75,6 +81,12 @@
             <div class="repo-name-row">
               <div class="child-name">
                 <span>{{ repo.name }}</span>
+                <Star
+                  v-if="isFavorited(repo.path)"
+                  :size="12"
+                  class="favorite-indicator"
+                  fill="currentColor"
+                />
               </div>
               <div class="repo-meta">
                 <div
@@ -128,7 +140,8 @@ import {
   FolderSearch,
   GitBranch,
   PanelLeftClose,
-  Search
+  Search,
+  Star
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -155,6 +168,10 @@ const props = defineProps({
   selectedEntryPath: {
     type: String,
     default: ''
+  },
+  favoritePaths: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -194,6 +211,11 @@ const filteredGroups = computed(() => {
 const isExpanded = (path) => {
   if (normalizedQuery.value) return true
   return props.expandedRootPaths.includes(path)
+}
+
+const isFavorited = (path) => {
+  const normalizedPath = String(path || '').trim()
+  return normalizedPath ? props.favoritePaths.includes(normalizedPath) : false
 }
 </script>
 
@@ -452,6 +474,7 @@ const isExpanded = (path) => {
 .root-name,
 .child-name {
   display: flex;
+  align-items: center;
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
@@ -459,6 +482,12 @@ const isExpanded = (path) => {
 
 .root-name {
   align-items: center;
+}
+
+.favorite-indicator {
+  flex: 0 0 auto;
+  color: #facc15;
+  opacity: 0.92;
 }
 
 .root-name :deep(svg),

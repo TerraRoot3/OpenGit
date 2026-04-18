@@ -2,6 +2,17 @@ import { ref, computed, nextTick } from 'vue'
 
 // 单例状态，所有组件共享
 const favorites = ref([])
+const FAVORITES_UPDATED_EVENT = 'browser-favorites-updated'
+
+const notifyFavoritesUpdated = () => {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(FAVORITES_UPDATED_EVENT, {
+    detail: {
+      count: favorites.value.length,
+      urls: favorites.value.map((fav) => fav.url)
+    }
+  }))
+}
 
 export function useFavorites() {
   // 加载收藏列表
@@ -31,6 +42,7 @@ export function useFavorites() {
             }
             return fav
           })
+          notifyFavoritesUpdated()
         }
       }
     } catch (error) {
@@ -189,7 +201,7 @@ export function useFavorites() {
     updateFavoritesOrder,
     exportFavorites,
     importFavorites,
-    isUrlFavorited
+    isUrlFavorited,
+    favoritesUpdatedEvent: FAVORITES_UPDATED_EVENT
   }
 }
-

@@ -51,9 +51,18 @@
           <button class="finder-open-btn" @click="openInFinder" :title="`在${systemFileManagerLabel}中打开`">
             <FolderOpen :size="14" /> {{ systemFileManagerLabel }}
           </button>
+          <button
+            class="favorite-project-btn"
+            :class="{ active: isFavorite }"
+            @click="toggleFavorite"
+            :title="isFavorite ? '取消收藏项目' : '收藏项目'"
+          >
+            <Star :size="14" :fill="isFavorite ? 'currentColor' : 'none'" />
+            <span>{{ isFavorite ? '已收藏' : '收藏' }}</span>
+          </button>
           <button class="settings-btn" @click="openProjectSettings" title="项目设置">
             <Settings :size="14" /> 设置
-            </button>
+          </button>
         </div>
       </div>
 
@@ -465,7 +474,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick, defineAsyncComp
 import {
   FolderOpen, GitBranch, Tag, GitPullRequest, ArrowUpCircle, GitMerge, Activity,
   Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot,
-  Folder, FolderTree, Globe, RefreshCw, Check, ChevronRight, Settings
+  Folder, FolderTree, Globe, RefreshCw, Check, ChevronRight, Settings, Star
 } from 'lucide-vue-next'
 import ProjectStashList from './ProjectStashList.vue'
 import ProjectCommitHistory from './ProjectCommitHistory.vue'
@@ -549,6 +558,10 @@ const props = defineProps({
   isActive: {
     type: Boolean,
     default: true
+  },
+  isFavorite: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -564,7 +577,8 @@ const emit = defineEmits([
   'branchChanged',    // 分支切换时通知
   'statusUpdated',    // 状态更新时通知 (remoteAhead, localAhead)
   'navigate',         // 需要在新标签打开 URL
-  'pendingStatusChanged' // 待定文件状态变化时通知（提交后刷新项目列表）
+  'pendingStatusChanged', // 待定文件状态变化时通知（提交后刷新项目列表）
+  'toggleFavorite'
 ])
 
 // ==================== Refs ====================
@@ -2384,6 +2398,15 @@ const openProjectSettings = () => {
   showProjectSettings.value = true
 }
 
+const toggleFavorite = () => {
+  const path = String(props.path || '').trim()
+  if (!path) return
+  emit('toggleFavorite', {
+    path,
+    title: String(projectInfo.value?.name || '').trim() || path.split(/[\\/]/).filter(Boolean).pop() || '项目'
+  })
+}
+
 const onProjectSettingsConfirm = () => {
   debugLog('✅ 项目设置已保存')
   // 刷新远程分支列表
@@ -2764,9 +2787,10 @@ defineExpose({
 }
 
 .create-btn, .pull-single-btn, .push-single-btn, .mr-single-btn,
-.gitlab-open-btn, .finder-open-btn, .settings-btn {
+.gitlab-open-btn, .finder-open-btn, .favorite-project-btn, .settings-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   padding: 8px 11px;
   border: 1px solid rgba(255, 255, 255, 0.04);
@@ -2852,6 +2876,25 @@ defineExpose({
 .finder-open-btn:hover {
   background: rgba(20, 184, 166, 0.26);
   border-color: rgba(20, 184, 166, 0.36);
+}
+
+.favorite-project-btn {
+  background: rgba(250, 204, 21, 0.08);
+  border-color: rgba(250, 204, 21, 0.14);
+  color: rgba(255, 248, 214, 0.82);
+  padding: 8px;
+}
+
+.favorite-project-btn:hover {
+  background: rgba(250, 204, 21, 0.16);
+  border-color: rgba(250, 204, 21, 0.22);
+  color: #fef3c7;
+}
+
+.favorite-project-btn.active {
+  background: rgba(250, 204, 21, 0.22);
+  border-color: rgba(250, 204, 21, 0.3);
+  color: #facc15;
 }
 
 .settings-btn {

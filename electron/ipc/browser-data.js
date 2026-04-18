@@ -13,7 +13,7 @@ function registerBrowserDataHandlers({ ipcMain, getMainWindow, store, safeLog, s
     }
   })
 
-  ipcMain.handle('add-browser-favorite', async (event, { title, url, icon }) => {
+  ipcMain.handle('add-browser-favorite', async (event, { title, url, icon, domain }) => {
     try {
       if (!url) {
         return { success: false, message: 'URL 不能为空' }
@@ -25,19 +25,27 @@ function registerBrowserDataHandlers({ ipcMain, getMainWindow, store, safeLog, s
         return { success: false, message: '该网址已收藏' }
       }
 
-      let domain = ''
+      let resolvedDomain = typeof domain === 'string' ? domain.trim() : ''
       try {
-        const urlObj = new URL(url)
-        domain = urlObj.hostname
+        if (!resolvedDomain) {
+          const urlObj = new URL(url)
+          resolvedDomain = urlObj.hostname
+        }
       } catch (e) {
-        domain = url
+        if (!resolvedDomain) {
+          if (String(url).startsWith('git:project:') || String(url).startsWith('git:clone:')) {
+            resolvedDomain = '项目'
+          } else {
+            resolvedDomain = url
+          }
+        }
       }
 
       const newFavorite = {
         id: Date.now().toString(),
         title: title || url,
         url,
-        domain,
+        domain: resolvedDomain,
         icon: icon || null,
         createdAt: new Date().toISOString()
       }

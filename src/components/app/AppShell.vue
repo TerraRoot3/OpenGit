@@ -16,6 +16,7 @@
     >
       <ProjectSidebar
         :groups="filteredGroups"
+        :favorite-paths="favoriteProjectPaths"
         :expanded-root-paths="sidebarStore.expandedRootPaths.value"
         :search-query="sidebarStore.searchQuery.value"
         :collapsed="sidebarCollapsed"
@@ -37,10 +38,12 @@
       <Browser
         ref="browserRef"
         :leading-tab-inset="browserLeadingTabInset"
+        :favorite-project-paths="favoriteProjectPaths"
         @project-context-changed="handleProjectContextChanged"
         @project-branch-changed="handleProjectBranchChanged"
         @project-status-updated="handleProjectStatusUpdated"
         @project-pending-status-changed="handleProjectPendingStatusChanged"
+        @toggle-project-favorite="handleToggleProjectFavorite"
       />
     </div>
   </div>
@@ -63,21 +66,88 @@ const repositorySignatureMap = ref({})
 let repositoryStatusTimer = null
 const REPOSITORY_STATUS_CACHE_KEY = 'project-sidebar-repository-status-v1'
 const REPOSITORY_STATUS_ELECTRON_STORE_KEY = 'project-sidebar-repository-status-v1'
+const FAVORITES_UPDATED_EVENT = 'browser-favorites-updated'
 const isWindowActive = ref(true)
+const favoriteProjectPaths = ref([])
 
 const sidebarWidth = computed(() => sidebarStore.sidebarWidth.value)
 const sidebarCollapsed = computed(() => sidebarStore.sidebarCollapsed.value)
 const browserLeadingTabInset = computed(() => (sidebarCollapsed.value ? Math.max(72 - 52, 0) : 10))
 
+const normalizeFavoritePaths = (value) => {
+  if (!Array.isArray(value)) return []
+  return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)))
+}
+
+const isFavoritePath = (path) => {
+  const normalizedPath = String(path || '').trim()
+  return normalizedPath ? favoriteProjectPaths.value.includes(normalizedPath) : false
+}
+
+const sortItemsByFavoriteFirst = (items = [], getPath) => {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const favoriteDelta = Number(isFavoritePath(getPath(right.item))) - Number(isFavoritePath(getPath(left.item)))
+      if (favoriteDelta !== 0) return favoriteDelta
+      return left.index - right.index
+    })
+    .map(({ item }) => item)
+}
+
 const filteredGroups = computed(() => {
-  return sidebarStore.repositoryGroups.value.map((group) => ({
-    ...group,
-    repositories: (group.repositories || []).map((repo) => ({
-      ...repo,
-      gitStatus: repositoryStatusMap.value[repo.path] || null
-    }))
-  }))
+  return sortItemsByFavoriteFirst(
+    sidebarStore.repositoryGroups.value.map((group) => ({
+      ...group,
+      repositories: sortItemsByFavoriteFirst(
+        (group.repositories || []).map((repo) => ({
+          ...repo,
+          gitStatus: repositoryStatusMap.value[repo.path] || null
+        })),
+        (repo) => repo.path
+      )
+    })),
+    (group) => group.path
+  )
 })
+
+const extractProjectPathFromFavoriteUrl = (value) => {
+  const url = String(value || '').trim()
+  if (!url) return ''
+
+  if (url.startsWith('git:project:')) {
+    const projectPath = url.slice('git:project:'.length)
+    try {
+      return decodeURIComponent(projectPath)
+    } catch {
+      return projectPath
+    }
+  }
+
+  if (url.startsWith('git:clone:')) {
+    const projectPath = url.slice('git:clone:'.length)
+    try {
+      return decodeURIComponent(projectPath)
+    } catch {
+      return projectPath
+    }
+  }
+
+  return ''
+}
+
+const refreshFavoriteProjectPaths = async () => {
+  if (!window.electronAPI?.getBrowserFavorites) return
+  try {
+    const result = await window.electronAPI.getBrowserFavorites()
+    const favorites = Array.isArray(result?.favorites) ? result.favorites : []
+    favoriteProjectPaths.value = normalizeFavoritePaths(
+      favorites.map((favorite) => extractProjectPathFromFavoriteUrl(favorite?.url))
+    )
+  } catch (error) {
+    console.warn('恢复项目收藏状态失败:', error)
+  }
+}
 
 const normalizeRepositoryStatusPayload = (value) => {
   if (!value || typeof value !== 'object') return {}
@@ -380,6 +450,7 @@ const stopRepositoryStatusPolling = () => {
 
 const handleWindowFocus = () => {
   isWindowActive.value = true
+  refreshFavoriteProjectPaths()
   startRepositoryStatusPolling()
 }
 
@@ -396,8 +467,13 @@ const handleVisibilityChange = () => {
   }
 }
 
+const handleFavoritesUpdated = () => {
+  refreshFavoriteProjectPaths()
+}
+
 onMounted(async () => {
   await sidebarStore.hydrate?.()
+  await refreshFavoriteProjectPaths()
   await hydrateRepositoryStatusCache()
   await restoreRoots()
   await warmRepositoryStatusCache()
@@ -405,6 +481,7 @@ onMounted(async () => {
   window.addEventListener('focus', handleWindowFocus)
   window.addEventListener('blur', handleWindowBlur)
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener(FAVORITES_UPDATED_EVENT, handleFavoritesUpdated)
 })
 
 const openProjectPath = async (path, type) => {
@@ -448,6 +525,34 @@ const handleAddRoot = async () => {
       await warmRepositoryStatusCache()
     }
   }
+}
+
+const handleToggleProjectFavorite = async (payload = {}) => {
+  const path = String(payload?.path || '').trim()
+  if (!path) return
+  const routeUrl = `git:project:${path}`
+
+  try {
+    const favoritesResult = await window.electronAPI?.getBrowserFavorites?.()
+    const favorites = Array.isArray(favoritesResult?.favorites) ? favoritesResult.favorites : []
+    const existing = favorites.find((favorite) => String(favorite?.url || '') === routeUrl)
+
+    if (existing?.id) {
+      await window.electronAPI.removeBrowserFavorite({ id: existing.id })
+    } else {
+      const fallbackTitle = String(payload?.title || '').trim() || path.split(/[\\/]/).filter(Boolean).pop() || '项目'
+      await window.electronAPI.addBrowserFavorite({
+        title: fallbackTitle,
+        url: routeUrl,
+        icon: null,
+        domain: '项目'
+      })
+    }
+  } catch (error) {
+    console.warn('切换项目收藏状态失败:', error)
+  }
+
+  await refreshFavoriteProjectPaths()
 }
 
 const handleProjectContextChanged = (payload) => {
@@ -499,6 +604,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', handleWindowFocus)
   window.removeEventListener('blur', handleWindowBlur)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener(FAVORITES_UPDATED_EVENT, handleFavoritesUpdated)
   cleanupResize?.()
 })
 </script>

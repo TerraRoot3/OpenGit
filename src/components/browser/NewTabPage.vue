@@ -60,10 +60,12 @@
     <ProjectDetail 
       v-else-if="routeType === 'single-project'"
       :path="routeProps?.path"
+      :is-favorite="favoriteProjectPaths.includes(routeProps?.path)"
       :is-active="isActive"
       @branch-changed="(payload) => emit('project-branch-changed', payload)"
       @status-updated="(payload) => emit('project-status-updated', payload)"
       @pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
+      @toggle-favorite="(payload) => emit('toggle-project-favorite', payload)"
     />
     
     <!-- 已保存的仓库 -->
@@ -137,6 +139,10 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  favoriteProjectPaths: {
+    type: Array,
+    default: () => []
+  },
   isActive: {
     type: Boolean,
     default: false
@@ -163,7 +169,8 @@ const emit = defineEmits([
   'favicon-updated',
   'project-branch-changed',
   'project-status-updated',
-  'project-pending-status-changed'
+  'project-pending-status-changed',
+  'toggle-project-favorite'
 ])
 
 // 在新标签打开

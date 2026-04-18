@@ -89,6 +89,66 @@
       </div>
       <!-- 标签栏右侧拖拽区域 -->
       <div class="tabs-bar-drag-area"></div>
+      <div class="tabs-bar-menu-wrapper" @click.stop>
+        <button
+          class="toolbar-btn tabs-bar-menu-btn"
+          @click="toggleMenu"
+          title="更多选项"
+        >
+          <MoreVertical :size="18" />
+        </button>
+        <Teleport to="body">
+          <div
+            v-if="showMenu"
+            class="toolbar-menu-overlay"
+            @click="showMenu = false"
+          ></div>
+          <div v-if="showMenu" class="toolbar-menu" :style="{ top: menuPosition.top + 'px', right: menuPosition.right + 'px' }">
+            <div class="menu-item" @click="openRemoteRepo">
+              <Cloud :size="16" />
+              <span>远端仓库</span>
+            </div>
+            <div class="menu-item" @click="openSavedProjects">
+              <FolderGit2 :size="16" />
+              <span>仓库管理</span>
+            </div>
+            <div class="menu-item" @click="openFavoritesManager">
+              <Bookmark :size="16" />
+              <span>收藏管理</span>
+            </div>
+            <div class="menu-item" @click="openBrowsingHistory">
+              <History :size="16" />
+              <span>历史记录</span>
+            </div>
+            <div class="menu-item" @click="openPasswordManager">
+              <Key :size="16" />
+              <span>密码管理</span>
+            </div>
+            <div class="menu-item" @click="openDownloadPanel">
+              <Download :size="16" />
+              <span>下载管理</span>
+            </div>
+            <div class="menu-item" @click="openStandaloneTerminal">
+              <Terminal :size="16" />
+              <span>终端</span>
+            </div>
+            <div class="menu-item" @click="createNewPrivateBrowserTab">
+              <Globe :size="16" />
+              <span>新建隐私标签页</span>
+            </div>
+            <div class="menu-divider"></div>
+            <div class="menu-item" @click="openBackupManager">
+              <HardDrive :size="16" />
+              <span>备份管理</span>
+            </div>
+            <!-- 扩展管理暂时隐藏，Electron 对 Chrome 扩展支持有限 -->
+            <!-- <div class="menu-item" @click="openExtensionManager">
+              <Puzzle :size="16" />
+              <span>扩展管理</span>
+            </div> -->
+          </div>
+        </Teleport>
+      </div>
     </div>
 
     <!-- 浏览器工具栏 -->
@@ -187,72 +247,6 @@
         </div>
           </div>
       </div>
-      
-      <div class="toolbar-right">
-        <!-- 三个点菜单 -->
-        <div class="toolbar-menu-wrapper" @click.stop>
-                    <button 
-            class="toolbar-btn" 
-            @click="toggleMenu"
-            title="更多选项"
-          >
-            <MoreVertical :size="18" />
-                    </button>
-          <!-- 下拉菜单 -->
-              <Teleport to="body">
-            <!-- 透明遮罩层，点击关闭菜单 -->
-            <div 
-              v-if="showMenu" 
-              class="toolbar-menu-overlay"
-              @click="showMenu = false"
-            ></div>
-            <div v-if="showMenu" class="toolbar-menu" :style="{ top: menuPosition.top + 'px', right: menuPosition.right + 'px' }">
-              <div class="menu-item" @click="openRemoteRepo">
-                <Cloud :size="16" />
-                <span>远端仓库</span>
-              </div>
-              <div class="menu-item" @click="openSavedProjects">
-                <FolderGit2 :size="16" />
-                <span>仓库管理</span>
-              </div>
-              <div class="menu-item" @click="openFavoritesManager">
-                <Bookmark :size="16" />
-                <span>收藏管理</span>
-              </div>
-              <div class="menu-item" @click="openBrowsingHistory">
-                <History :size="16" />
-                <span>历史记录</span>
-              </div>
-              <div class="menu-item" @click="openPasswordManager">
-                <Key :size="16" />
-                <span>密码管理</span>
-              </div>
-              <div class="menu-item" @click="openDownloadPanel">
-                <Download :size="16" />
-                <span>下载管理</span>
-              </div>
-              <div class="menu-item" @click="openStandaloneTerminal">
-                <Terminal :size="16" />
-                <span>终端</span>
-              </div>
-              <div class="menu-item" @click="createNewPrivateBrowserTab">
-                <Globe :size="16" />
-                <span>新建隐私标签页</span>
-              </div>
-              <div class="menu-divider"></div>
-              <div class="menu-item" @click="openBackupManager">
-                <HardDrive :size="16" />
-                <span>备份管理</span>
-              </div>
-              <!-- 扩展管理暂时隐藏，Electron 对 Chrome 扩展支持有限 -->
-              <!-- <div class="menu-item" @click="openExtensionManager">
-                <Puzzle :size="16" />
-                <span>扩展管理</span>
-              </div> -->
-            </div>
-              </Teleport>
-                  </div>
-      </div>
     </div>
     <div v-if="showBrowserToolbar && loadingProgressVisible" class="loading-progress-track">
       <div class="loading-progress-bar" :style="{ width: `${loadingProgress}%` }"></div>
@@ -319,30 +313,32 @@
           :key="tab.id"
           class="tab-panel"
           :data-tab-id="tab.id"
-              :tab-id="tab.id"
+          :tab-id="tab.id"
           :route-type="getTabRouteType(tab)"
           :route-props="tab.routeProps"
           :content-host="tab.contentHost || 'webcontentsview'"
           :src="tab.routeConfig?.showWebview ? (tab.initialUrl || 'about:blank') : 'about:blank'"
-              :user-agent="userAgent"
+          :user-agent="userAgent"
+          :favorite-project-paths="favoriteProjectPaths"
           :is-active="tab.id === activeBrowserTabId"
           @navigate="openInNewTab"
           @navigate-current="(url) => openInCurrentTab(url, tab.id)"
-              @did-start-loading="(e, tabId) => onLoadStart(e, tabId)"
-              @did-stop-loading="(e, tabId) => onLoadStop(e, tabId)"
-              @did-navigate="(e, tabId) => onNavigate(e, tabId)"
-              @did-navigate-in-page="(e, tabId) => onNavigateInPage(e, tabId)"
-              @new-window="(e, tabId) => onNewWindow(e, tabId)"
-              @dom-ready="(e, tabId) => onDomReady(e, tabId)"
-              @did-fail-load="(e, tabId) => onLoadFail(e, tabId)"
-              @webview-ready="(webview, tabId) => onWebviewReady(webview, tabId)"
-              @navigation-state-changed="(state, tabId) => onNavigationStateChanged(state, tabId)"
-              @title-updated="(title, tabId) => onTitleUpdatedFromWebView(title, tabId)"
-              @favicon-updated="(favicon, tabId) => onFaviconUpdated(favicon, tabId)"
-              @project-branch-changed="(payload) => emit('project-branch-changed', payload)"
-              @project-status-updated="(payload) => emit('project-status-updated', payload)"
-              @project-pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
-            />
+          @did-start-loading="(e, tabId) => onLoadStart(e, tabId)"
+          @did-stop-loading="(e, tabId) => onLoadStop(e, tabId)"
+          @did-navigate="(e, tabId) => onNavigate(e, tabId)"
+          @did-navigate-in-page="(e, tabId) => onNavigateInPage(e, tabId)"
+          @new-window="(e, tabId) => onNewWindow(e, tabId)"
+          @dom-ready="(e, tabId) => onDomReady(e, tabId)"
+          @did-fail-load="(e, tabId) => onLoadFail(e, tabId)"
+          @webview-ready="(webview, tabId) => onWebviewReady(webview, tabId)"
+          @navigation-state-changed="(state, tabId) => onNavigationStateChanged(state, tabId)"
+          @title-updated="(title, tabId) => onTitleUpdatedFromWebView(title, tabId)"
+          @favicon-updated="(favicon, tabId) => onFaviconUpdated(favicon, tabId)"
+          @project-branch-changed="(payload) => emit('project-branch-changed', payload)"
+          @project-status-updated="(payload) => emit('project-status-updated', payload)"
+          @project-pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
+          @toggle-project-favorite="(payload) => emit('toggle-project-favorite', payload)"
+        />
       </div>
       <DownloadPanel
         :visible="showDownloadPanel"
@@ -420,7 +416,8 @@ const emit = defineEmits([
   'project-context-changed',
   'project-branch-changed',
   'project-status-updated',
-  'project-pending-status-changed'
+  'project-pending-status-changed',
+  'toggle-project-favorite'
 ])
 
 const props = defineProps({
@@ -431,6 +428,10 @@ const props = defineProps({
   leadingTabInset: {
     type: Number,
     default: 0
+  },
+  favoriteProjectPaths: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -1216,11 +1217,12 @@ const showDownloadPanel = ref(false)
 
 // 菜单位置
 const menuPosition = ref({ top: 0, right: 0 })
+const getMenuButtonElement = () => document.querySelector('.tabs-bar-menu-wrapper .toolbar-btn, .toolbar-menu-wrapper .toolbar-btn')
 
 // 切换菜单显示
 const toggleMenu = () => {
   if (window.electronAPI?.showBrowserFloatingMenu) {
-    const menuBtn = document.querySelector('.toolbar-menu-wrapper .toolbar-btn')
+    const menuBtn = getMenuButtonElement()
     if (!menuBtn) return
     const rect = menuBtn.getBoundingClientRect()
     const anchor = {
@@ -1240,7 +1242,7 @@ const toggleMenu = () => {
   if (!showMenu.value) {
     // 计算菜单位置
     nextTick(() => {
-      const menuBtn = document.querySelector('.toolbar-menu-wrapper .toolbar-btn')
+      const menuBtn = getMenuButtonElement()
       if (menuBtn) {
         const rect = menuBtn.getBoundingClientRect()
         menuPosition.value = {
@@ -4064,6 +4066,23 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   -webkit-app-region: no-drag; /* 标签列表不可拖拽 */
   position: relative;
   z-index: 15; /* 确保在拖拽区域下方 */
+}
+
+.tabs-bar-menu-wrapper {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: 6px;
+  margin-right: 4px;
+  -webkit-app-region: no-drag;
+  position: relative;
+  z-index: 16;
+}
+
+.tabs-bar-menu-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
 }
 
 /* 标签栏右侧拖拽区域 */
