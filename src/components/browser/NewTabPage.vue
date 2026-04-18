@@ -61,7 +61,8 @@
       v-else-if="routeType === 'single-project'"
       :path="routeProps?.path"
       :is-active="isActive"
-      :show-open-in-new-tab="false"
+      @status-updated="(payload) => emit('project-status-updated', payload)"
+      @pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
     />
     
     <!-- 已保存的仓库 -->
@@ -158,7 +159,9 @@ const emit = defineEmits([
   'webview-ready',
   'navigation-state-changed',
   'title-updated',
-  'favicon-updated'
+  'favicon-updated',
+  'project-status-updated',
+  'project-pending-status-changed'
 ])
 
 // 在新标签打开

@@ -40,14 +40,6 @@
           <button class="finder-open-btn" @click="openInFinder" title="在访达中打开">
             <FolderOpen :size="14" /> 访达
           </button>
-          <button
-            v-if="props.showOpenInNewTab"
-            class="new-tab-btn"
-            @click="openProjectInNewTab"
-            title="在新标签中单独打开项目"
-          >
-            <Plus :size="14" /> 新标签
-          </button>
           <button class="settings-btn" @click="openProjectSettings" title="项目设置">
             <Settings :size="14" /> 设置
             </button>
@@ -442,7 +434,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   FolderOpen, GitBranch, Tag, GitPullRequest, ArrowUpCircle, GitMerge,
-  Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot, Plus,
+  Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot,
   Folder, Globe, RefreshCw, Check,   ChevronRight, Settings
 } from 'lucide-vue-next'
 import ProjectFileStatus from './ProjectFileStatus.vue'
@@ -525,10 +517,6 @@ const props = defineProps({
   isActive: {
     type: Boolean,
     default: true
-  },
-  showOpenInNewTab: {
-    type: Boolean,
-    default: true
   }
 })
 
@@ -567,6 +555,7 @@ const branchStatus = ref(null)
 const allBranchStatus = ref({})
 const statusLoading = ref(false)
 const hasPendingFiles = ref(false) // 是否有待定文件
+const isGitRepository = ref(null)
 const projectGitMonitorSnapshot = ref(null)
 const isDocumentVisible = ref(typeof document === 'undefined' ? true : document.visibilityState === 'visible')
 
@@ -818,6 +807,27 @@ const shouldPollProjectGitMonitor = computed(() => shouldRunProjectGitMonitor({
   isVisible: isDocumentVisible.value
 }))
 
+const detectGitRepository = async (targetPath = props.path) => {
+  if (!targetPath) {
+    isGitRepository.value = false
+    return false
+  }
+
+  try {
+    const result = await executeCommand(`cd "${targetPath}" && git rev-parse --is-inside-work-tree 2>/dev/null`)
+    const isGit = Boolean(result?.success && result?.output?.trim() === 'true')
+    if (props.path === targetPath) {
+      isGitRepository.value = isGit
+    }
+    return isGit
+  } catch (error) {
+    if (props.path === targetPath) {
+      isGitRepository.value = false
+    }
+    return false
+  }
+}
+
 const resetProjectGitMonitorState = () => {
   projectGitMonitorSnapshot.value = null
   projectGitMonitorInFlight = false
@@ -835,7 +845,8 @@ const pollProjectGitMonitor = async () => {
   if (
     !window.electronAPI?.getProjectGitMonitorSnapshot ||
     !shouldPollProjectGitMonitor.value ||
-    projectGitMonitorInFlight
+    projectGitMonitorInFlight ||
+    isGitRepository.value === false
   ) {
     return
   }
@@ -886,7 +897,7 @@ const pollProjectGitMonitor = async () => {
 const startProjectGitMonitor = () => {
   stopProjectGitMonitor()
 
-  if (!shouldPollProjectGitMonitor.value) {
+  if (!shouldPollProjectGitMonitor.value || isGitRepository.value === false) {
     return
   }
 
@@ -905,7 +916,7 @@ const queueProjectRefresh = ({
   reloadCommitHistory = false
 } = {}) => {
   const projectPath = props.path
-  if (!projectPath) return
+  if (!projectPath || isGitRepository.value === false) return
 
   const refreshPlan = buildProjectRefreshPlan({
     reloadBranches,
@@ -1032,6 +1043,7 @@ const loadProjectInfo = ({
   }
 
   setTimeout(() => {
+    if (isGitRepository.value === false) return
     loadCurrentBranchQuick().catch(err => console.error('快速加载当前分支失败:', err))
     loadLocalBranches().catch(err => console.error('加载本地分支失败:', err))
 
@@ -2165,17 +2177,6 @@ const openInFinder = async () => {
   }
 }
 
-const openProjectInNewTab = () => {
-  const projectPath = terminalProjectPath.value
-  if (!projectPath || !window.electronAPI?.openUrlInNewTab) return
-
-  try {
-    window.electronAPI.openUrlInNewTab(`git:project:${projectPath}`)
-  } catch (error) {
-    console.error('新标签打开项目失败:', error)
-  }
-}
-
 // ==================== 项目设置 ====================
 const openProjectSettings = () => {
   showProjectSettings.value = true
@@ -2205,6 +2206,7 @@ watch(() => props.path, (newPath, oldPath) => {
   stopProjectGitMonitor()
   resetProjectGitMonitorState()
   if (newPath) {
+    isGitRepository.value = null
     // 恢复该项目保存的视图状态和展开状态
     currentView.value = getSavedCurrentView(newPath)
     if (currentView.value === 'terminal') {
@@ -2256,16 +2258,27 @@ watch(() => props.path, (newPath, oldPath) => {
     }
     
     // 选中项目时清理分支状态缓存，确保分支名和 ahead/behind 都按当前仓库状态重算
-    clearProjectBranchStatusCache(newPath).finally(() => {
-      loadProjectInfo()
+    detectGitRepository(newPath).then((isGit) => {
+      if (props.path !== newPath) return
+      if (!isGit) {
+        debugLog('ℹ️ [ProjectDetailNew] 当前路径不是 Git 仓库，跳过自动刷新')
+        return
+      }
+
+      clearProjectBranchStatusCache(newPath).finally(() => {
+        if (props.path === newPath && isGitRepository.value !== false) {
+          loadProjectInfo()
+        }
+      })
     })
 
     scheduleAiSessionsPreload()
-    if (shouldPollProjectGitMonitor.value) {
+    if (shouldPollProjectGitMonitor.value && isGitRepository.value !== false) {
       startProjectGitMonitor()
     }
   } else {
     projectInfo.value = null
+    isGitRepository.value = false
     // 切换项目时重置状态
     branchStatus.value = null
     allBranchStatus.value = {}
@@ -2307,7 +2320,7 @@ watch(shouldPollProjectGitMonitor, (shouldRun) => {
 
 // 刷新当前项目状态（供外部调用，如标签切换时）
 const refreshCurrentProject = async () => {
-  if (!props.path) return
+  if (!props.path || isGitRepository.value === false) return
 
   debugLog('🔄 [ProjectDetailNew] 刷新当前项目状态...')
 
@@ -2329,7 +2342,7 @@ const refreshCurrentProject = async () => {
 
 // 窗口获得焦点时刷新状态（只有当前标签激活时才刷新）
 const handleWindowFocus = async () => {
-  if (!props.path || !props.isActive) return
+  if (!props.path || !props.isActive || isGitRepository.value === false) return
   
   debugLog('🔄 [ProjectDetailNew] 窗口获得焦点，刷新状态...')
   refreshCurrentProject()
@@ -2344,10 +2357,6 @@ const handleVisibilityChange = () => {
 }
 
 onMounted(() => {
-  if (props.path) {
-    loadProjectInfo()
-  }
-  
   // 监听窗口焦点事件
   window.addEventListener('focus', handleWindowFocus)
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -2369,7 +2378,7 @@ onUnmounted(() => {
 
 // 监听标签激活状态变化，切换到当前标签时刷新
 watch(() => props.isActive, (newIsActive, oldIsActive) => {
-  if (newIsActive && !oldIsActive && props.path) {
+  if (newIsActive && !oldIsActive && props.path && isGitRepository.value !== false) {
     debugLog('🔄 [ProjectDetailNew] 标签激活，刷新状态...')
     refreshCurrentProject()
   }
@@ -2518,7 +2527,7 @@ defineExpose({
 }
 
 .create-btn, .pull-single-btn, .push-single-btn, .mr-single-btn,
-.gitlab-open-btn, .finder-open-btn, .new-tab-btn, .settings-btn {
+.gitlab-open-btn, .finder-open-btn, .settings-btn {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2557,12 +2566,6 @@ defineExpose({
   color: white;
 }
 .finder-open-btn:hover { background: #0063CC; }
-
-.new-tab-btn {
-  background: #6f42c1;
-  color: white;
-}
-.new-tab-btn:hover { background: #5a32a3; }
 
 .settings-btn {
   background: rgba(255, 255, 255, 0.1);

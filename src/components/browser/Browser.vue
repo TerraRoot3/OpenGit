@@ -338,6 +338,8 @@
               @navigation-state-changed="(state, tabId) => onNavigationStateChanged(state, tabId)"
               @title-updated="(title, tabId) => onTitleUpdatedFromWebView(title, tabId)"
               @favicon-updated="(favicon, tabId) => onFaviconUpdated(favicon, tabId)"
+              @project-status-updated="(payload) => emit('project-status-updated', payload)"
+              @project-pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
             />
       </div>
       <DownloadPanel
@@ -412,7 +414,11 @@ import {
   buildPasswordSaveDecision
 } from '../../composables/webPasswordUtils.mjs'
 
-const emit = defineEmits(['project-context-changed'])
+const emit = defineEmits([
+  'project-context-changed',
+  'project-status-updated',
+  'project-pending-status-changed'
+])
 
 const props = defineProps({
   initialUrl: {
@@ -620,6 +626,19 @@ const emitProjectContext = () => {
   }
 
   emit('project-context-changed', { path: '', routeType })
+}
+
+const getOpenedProjectPaths = () => {
+  const paths = new Set()
+  for (const tab of browserTabs.value) {
+    const routeType = tab?.routeType || ''
+    const path = tab?.routeProps?.path || ''
+    if (!path) continue
+    if (routeType === 'clone-directory' || routeType === 'single-project') {
+      paths.add(path)
+    }
+  }
+  return Array.from(paths)
 }
 
 
@@ -3737,6 +3756,7 @@ watch(() => browserTabs.value.map(tab => ({ id: tab.id, url: tab.url, title: tab
 defineExpose({
   openNewTab,
   openProjectRoute,
+  getOpenedProjectPaths,
   refresh,
   stopRefreshing
 })

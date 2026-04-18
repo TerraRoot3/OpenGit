@@ -34,7 +34,12 @@
     </div>
 
     <div class="workspace-pane">
-      <Browser ref="browserRef" @project-context-changed="handleProjectContextChanged" />
+      <Browser
+        ref="browserRef"
+        @project-context-changed="handleProjectContextChanged"
+        @project-status-updated="handleProjectStatusUpdated"
+        @project-pending-status-changed="handleProjectPendingStatusChanged"
+      />
     </div>
   </div>
 </template>
@@ -121,14 +126,40 @@ const restoreRoots = async () => {
   }
 }
 
-const collectRepositoryPaths = () => {
+const collectAllRepositoryPaths = () => {
   const paths = new Set()
   for (const group of sidebarStore.repositoryGroups.value) {
     for (const repo of group.repositories || []) {
-      if (repo?.path) paths.add(repo.path)
+      if (repo?.path) {
+        paths.add(repo.path)
+      }
     }
   }
   return Array.from(paths)
+}
+
+const collectOpenedRepositoryPaths = () => {
+  const openedPaths = new Set(browserRef.value?.getOpenedProjectPaths?.() || [])
+  if (openedPaths.size === 0) {
+    return []
+  }
+
+  const paths = new Set()
+  for (const group of sidebarStore.repositoryGroups.value) {
+    for (const repo of group.repositories || []) {
+      if (repo?.path && openedPaths.has(repo.path)) {
+        paths.add(repo.path)
+      }
+    }
+  }
+  return Array.from(paths)
+}
+
+const needsRepositoryStatusWarmup = (repoPath) => {
+  const existing = repositoryStatusMap.value?.[repoPath]
+  if (!existing) return true
+  if (!existing.branch || existing.branch === 'unknown') return true
+  return false
 }
 
 const refreshRepositoryStatus = async (repoPath) => {
@@ -161,9 +192,47 @@ const refreshRepositoryStatus = async (repoPath) => {
   }
 }
 
+const handleProjectStatusUpdated = async (payload = {}) => {
+  const repoPath = String(payload?.path || '').trim()
+  if (!repoPath) return
+
+  repositoryStatusMap.value = {
+    ...repositoryStatusMap.value,
+    [repoPath]: {
+      ...(repositoryStatusMap.value[repoPath] || {}),
+      branch: repositoryStatusMap.value[repoPath]?.branch || 'unknown',
+      hasPendingFiles: Boolean(repositoryStatusMap.value[repoPath]?.hasPendingFiles),
+      remoteAhead: payload?.remoteAhead || 0,
+      localAhead: payload?.localAhead || 0,
+      isLoading: false
+    }
+  }
+  persistRepositoryStatusCache()
+  await refreshRepositoryStatus(repoPath)
+}
+
+const handleProjectPendingStatusChanged = async (payload = {}) => {
+  const repoPath = String(payload?.path || '').trim()
+  if (!repoPath) return
+
+  repositoryStatusMap.value = {
+    ...repositoryStatusMap.value,
+    [repoPath]: {
+      ...(repositoryStatusMap.value[repoPath] || {}),
+      branch: repositoryStatusMap.value[repoPath]?.branch || 'unknown',
+      hasPendingFiles: Boolean(payload?.hasPendingFiles),
+      remoteAhead: repositoryStatusMap.value[repoPath]?.remoteAhead || 0,
+      localAhead: repositoryStatusMap.value[repoPath]?.localAhead || 0,
+      isLoading: false
+    }
+  }
+  persistRepositoryStatusCache()
+  await refreshRepositoryStatus(repoPath)
+}
+
 const pollRepositorySignatures = async ({ force = false } = {}) => {
   if (!isWindowActive.value && !force) return
-  const repoPaths = collectRepositoryPaths()
+  const repoPaths = collectOpenedRepositoryPaths()
   if (!repoPaths.length || !window.electronAPI?.getProjectGitWatchSignature) return
 
   for (const repoPath of repoPaths) {
@@ -183,6 +252,16 @@ const pollRepositorySignatures = async ({ force = false } = {}) => {
     } catch (error) {
       // ignore signature polling failure for individual repos
     }
+  }
+}
+
+const warmRepositoryStatusCache = async ({ force = false } = {}) => {
+  const repoPaths = collectAllRepositoryPaths()
+  if (!repoPaths.length) return
+
+  for (const repoPath of repoPaths) {
+    if (!force && !needsRepositoryStatusWarmup(repoPath)) continue
+    await refreshRepositoryStatus(repoPath)
   }
 }
 
@@ -225,6 +304,7 @@ onMounted(async () => {
   await sidebarStore.hydrate?.()
   loadRepositoryStatusCache()
   await restoreRoots()
+  await warmRepositoryStatusCache()
   startRepositoryStatusPolling()
   window.addEventListener('focus', handleWindowFocus)
   window.addEventListener('blur', handleWindowBlur)
@@ -252,7 +332,7 @@ const handleOpenGroup = async (group) => {
   selectedEntryPath.value = group?.path || ''
   const owningRoot = sidebarStore.findOwningRoot(group?.path || '')
   selectedRootPath.value = owningRoot?.path || ''
-  await openProjectPath(group?.path, 'clone-directory')
+  await openProjectPath(group?.path, 'single-project')
 }
 
 const handleAddRoot = async () => {
@@ -269,6 +349,7 @@ const handleAddRoot = async () => {
     const root = sidebarStore.addScanRoot(filePath)
     if (root?.path) {
       await refreshRoot(root.path)
+      await warmRepositoryStatusCache()
     }
   }
 }
