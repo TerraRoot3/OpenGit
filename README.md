@@ -18,9 +18,11 @@ OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKr
 
 它的定位不是“做一个最全的 Git 教科书界面”，而是把开发过程中真正常用的几件事放在一个地方：
 
+- 全局项目侧边栏与扫描目录管理
 - 仓库管理
 - 分支 / 标签 / 提交 / 暂存
 - GitLab / MR 协作入口
+- GitLab Pipeline 执行状态监控
 - 项目级终端工作区
 - 项目级 AI 会话管理
 - 内置浏览器与相关权限、下载、恢复能力
@@ -31,8 +33,10 @@ OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKr
 
 #### 1. 项目与仓库管理
 
+- 左侧全局项目侧边栏，支持添加目录并在 3 级内扫描 Git 仓库
 - 多仓库集中管理，统一查看项目状态并快速切换
 - 项目详情页聚合分支、标签、文件状态、提交历史、终端与 AI 会话
+- 项目列表按目录分组展示，并同步显示分支、待改文件、提交数与拉取数
 - 支持项目单独在新标签页打开
 
 #### 2. 高频 Git 操作
@@ -48,6 +52,8 @@ OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKr
 - GitLab 快速打开
 - 快速创建 Merge Request
 - 常见远端同步操作可视化
+- GitLab Pipeline 子页面：查看进行中的与最近的流水线
+- Project Detail 头部显示当前运行中的 GitLab Pipeline 状态，并自动轮询更新
 
 #### 4. 终端工作区
 
@@ -61,6 +67,7 @@ OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKr
 #### 5. AI 会话管理
 
 - 按当前项目聚合 `Codex` 与 `Claude Code` 历史会话
+- 默认进入 AI 会话页，提供方列表优先展示 `Codex`
 - 查看对话记录
 - 一键恢复会话到终端
 - 删除本地会话记录
@@ -199,9 +206,11 @@ It is intended to be a practical, lightweight alternative to `GitKraken`, especi
 
 Instead of trying to expose every Git concept equally, OpenGit focuses on the workflows developers actually use every day:
 
+- global project sidebar with scan-root management
 - repository management
 - branches, tags, commits, and stash
 - GitLab / Merge Request entry points
+- GitLab Pipeline monitoring
 - project terminal workspace
 - project-scoped AI session management
 - built-in browser with download, permission, and recovery support
@@ -210,8 +219,10 @@ Instead of trying to expose every Git concept equally, OpenGit focuses on the wo
 
 #### 1. Project-Centered Repository Management
 
+- Global project sidebar with scan-root management and Git repository discovery within 3 directory levels
 - Manage multiple repositories from one desktop client
 - Unified project detail page for branches, tags, file status, commit history, terminal, and AI sessions
+- Project list grouped by directory, with branch, pending-file, ahead, and behind indicators
 - Open a project in its own tab
 
 #### 2. High-Frequency Git Operations
@@ -227,6 +238,8 @@ Instead of trying to expose every Git concept equally, OpenGit focuses on the wo
 - Open GitLab directly from the app
 - Quick Merge Request creation
 - Visual remote sync operations
+- GitLab Pipeline page for active and recent pipeline runs
+- Header-level running pipeline summary in Project Detail with automatic polling
 
 #### 4. Terminal Workspace
 
@@ -240,6 +253,7 @@ Instead of trying to expose every Git concept equally, OpenGit focuses on the wo
 #### 5. AI Session Management
 
 - Aggregate project-scoped `Codex` and `Claude Code` sessions
+- Default to the AI sessions page, with `Codex` shown before `Claude Code`
 - Inspect transcripts
 - Resume sessions directly into terminal
 - Delete local session files
