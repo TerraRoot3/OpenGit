@@ -36,6 +36,7 @@
     <div class="workspace-pane">
       <Browser
         ref="browserRef"
+        :leading-tab-inset="browserLeadingTabInset"
         @project-context-changed="handleProjectContextChanged"
         @project-branch-changed="handleProjectBranchChanged"
         @project-status-updated="handleProjectStatusUpdated"
@@ -66,6 +67,7 @@ const isWindowActive = ref(true)
 
 const sidebarWidth = computed(() => sidebarStore.sidebarWidth.value)
 const sidebarCollapsed = computed(() => sidebarStore.sidebarCollapsed.value)
+const browserLeadingTabInset = computed(() => (sidebarCollapsed.value ? Math.max(72 - 52, 0) : 10))
 
 const filteredGroups = computed(() => {
   return sidebarStore.repositoryGroups.value.map((group) => ({

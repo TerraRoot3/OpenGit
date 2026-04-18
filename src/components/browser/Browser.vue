@@ -15,7 +15,7 @@
       @mouseleave="onTabsBarMouseLeave"
     >
       <!-- 系统菜单预留空间 -->
-      <div class="system-menu-space"></div>
+      <div class="system-menu-space" :style="{ width: `${leadingWindowControlsSpace}px` }"></div>
       <div class="browser-tabs-list">
         <div
           v-for="(tab, index) in browserTabs"
@@ -24,6 +24,7 @@
           class="browser-tab-item"
           :class="{ 
             active: activeBrowserTabId === tab.id,
+            'leading-tab': isLeadingTab(tab.id),
             'drag-over': dragOverTabId === tab.id,
             'dragging': draggingTabId === tab.id,
             'hide-separator': shouldHideSeparator(tab.id)
@@ -91,7 +92,7 @@
     </div>
 
     <!-- 浏览器工具栏 -->
-    <div class="browser-toolbar">
+    <div v-if="showBrowserToolbar" class="browser-toolbar">
       <div class="toolbar-left">
         <button 
           class="toolbar-btn" 
@@ -253,7 +254,7 @@
                   </div>
       </div>
     </div>
-    <div v-if="loadingProgressVisible" class="loading-progress-track">
+    <div v-if="showBrowserToolbar && loadingProgressVisible" class="loading-progress-track">
       <div class="loading-progress-bar" :style="{ width: `${loadingProgress}%` }"></div>
     </div>
                     
@@ -426,6 +427,10 @@ const props = defineProps({
   initialUrl: {
     type: String,
     default: ''
+  },
+  leadingTabInset: {
+    type: Number,
+    default: 0
   }
 })
 
@@ -1153,6 +1158,28 @@ const canGoBack = computed(() => {
 const canGoForward = computed(() => currentTab.value?.canGoForward || false)
 const isLoading = computed(() => currentTab.value?.isLoading || false)
 const pageTitle = computed(() => currentTab.value?.title || '')
+const showBrowserToolbar = computed(() => {
+  const routeType = currentTab.value?.routeType || 'new-tab'
+  return routeType === 'webview' || routeType === 'new-tab' || routeType === 'browser-tab'
+})
+const leadingWindowControlsSpace = computed(() => 0)
+const leadingTabInsetCss = computed(() => `${Math.max(0, Number(props.leadingTabInset) || 0)}px`)
+
+const isLeadingTab = (tabId) => {
+  if (!browserTabs.value.length) return false
+  let leadingId = browserTabs.value[0]?.id
+  let minOrder = Infinity
+
+  for (const tab of browserTabs.value) {
+    const order = getTabOrder(tab.id)
+    if (order < minOrder) {
+      minOrder = order
+      leadingId = tab.id
+    }
+  }
+
+  return String(leadingId) === String(tabId)
+}
 
 // 使用 composables
 const {
@@ -2508,8 +2535,7 @@ const onTitleUpdatedFromWebView = (title, tabId) => {
   if (tab) {
     console.log('📝 标题更新:', { tabId, title, type: tab.type, needsSaveHistory: tab.needsSaveHistory, url: tab.url })
     
-    // 如果是特殊页面，不更新标题（保持预设的标题）
-    if (!tab.type) {
+    if (tab.routeType === 'webview') {
       tab.title = title
       
       // 如果需要保存历史记录，在标题更新后保存
@@ -3766,6 +3792,11 @@ defineExpose({
 // 当 URL 更新时，同步到当前标签页
 watch(() => currentUrl.value, (newUrl) => {
   if (currentTab.value) {
+    const routeType = currentTab.value.routeType || 'new-tab'
+    const shouldSyncBrowserState = routeType === 'webview' || routeType === 'new-tab' || routeType === 'browser-tab'
+    if (!shouldSyncBrowserState) {
+      return
+    }
     currentTab.value.url = newUrl
     // 如果 URL 为空，不设置 title 为 'about:blank'，保持为空或 '新标签页'
     if (!newUrl || newUrl === '') {
@@ -3792,7 +3823,9 @@ watch(() => currentUrl.value, (newUrl) => {
 })
 
 watch(() => pageTitle.value, (newTitle) => {
-  if (currentTab.value && newTitle) {
+  const routeType = currentTab.value?.routeType || ''
+  const shouldSyncBrowserState = routeType === 'webview' || routeType === 'new-tab' || routeType === 'browser-tab'
+  if (currentTab.value && newTitle && shouldSyncBrowserState) {
     currentTab.value.title = newTitle
   }
 })
@@ -4014,7 +4047,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 /* 系统菜单预留空间 */
 .system-menu-space {
-  width: 30px; /* 预留系统按钮空间 */
+  width: 0;
   height: 100%;
   flex-shrink: 0;
   -webkit-app-region: drag; /* 系统菜单区域可拖拽 */
@@ -4049,7 +4082,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 0 8px;
+  padding: 0 8px 0 10px;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -4069,6 +4102,10 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   user-select: none; /* 标签项本身不可选中，保持可点击 */
   z-index: 20; /* 确保在拖拽区域上方 */
   pointer-events: auto; /* 确保可以点击 */
+}
+
+.browser-tab-item.leading-tab {
+  padding-left: v-bind(leadingTabInsetCss);
 }
 
 /* 标签拖拽样式 - 非首页标签可拖拽 */
