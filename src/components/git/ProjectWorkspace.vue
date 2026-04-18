@@ -278,6 +278,11 @@
             <div class="context-menu-item delete" @click="closeAllTabs">关闭所有</div>
           </div>
           <div ref="previewBodyRef" class="preview-body">
+            <div v-if="activeTab?.kind === 'text' && changeNavigationLines.length" class="editor-change-nav">
+              <button type="button" class="editor-change-nav__btn" @click="goToPreviousChange">上一个</button>
+              <span class="editor-change-nav__meta">{{ currentChangeIndexLabel }}</span>
+              <button type="button" class="editor-change-nav__btn" @click="goToNextChange">下一个</button>
+            </div>
             <div
               ref="editorContainerRef"
               class="monaco-container"
@@ -387,6 +392,9 @@ const imageDataUrl = ref('')
 let editor = null
 /** @type {Map<string, import('monaco-editor').editor.ITextModel>} */
 const pathToModel = new Map()
+let gitDiffDecorationIds = []
+const changeNavigationLines = ref([])
+const currentChangeLine = ref(null)
 
 const themeOverrides = {
   common: {
@@ -1396,6 +1404,204 @@ function uriForPath (filePath) {
   return monaco.Uri.file(filePath)
 }
 
+function getModifiedEntryByPath(filePath) {
+  return modifiedFileEntries.value.find((entry) => normalizePath(entry.path) === normalizePath(filePath)) || null
+}
+
+function clearGitDiffDecorations() {
+  if (editor) {
+    gitDiffDecorationIds = editor.deltaDecorations(gitDiffDecorationIds, [])
+  } else {
+    gitDiffDecorationIds = []
+  }
+  changeNavigationLines.value = []
+  currentChangeLine.value = null
+}
+
+function parseDiffRange(fragment) {
+  if (!fragment) return { start: 0, count: 1 }
+  const [startText, countText] = fragment.split(',')
+  const start = Number(startText)
+  const count = countText == null ? 1 : Number(countText)
+  return {
+    start: Number.isFinite(start) ? start : 0,
+    count: Number.isFinite(count) ? count : 1
+  }
+}
+
+function parseUnifiedDiffHunks(diffText) {
+  const lines = String(diffText || '').split('\n')
+  const hunks = []
+  let currentHunk = null
+
+  for (const line of lines) {
+    const headerMatch = line.match(/^@@ -(\d+(?:,\d+)?) \+(\d+(?:,\d+)?) @@/)
+    if (headerMatch) {
+      if (currentHunk) hunks.push(currentHunk)
+      currentHunk = {
+        oldRange: parseDiffRange(headerMatch[1]),
+        newRange: parseDiffRange(headerMatch[2]),
+        removedLines: [],
+        addedLines: []
+      }
+      continue
+    }
+    if (!currentHunk) continue
+    if (line.startsWith('-') && !line.startsWith('---')) {
+      currentHunk.removedLines.push(line.slice(1))
+    } else if (line.startsWith('+') && !line.startsWith('+++')) {
+      currentHunk.addedLines.push(line.slice(1))
+    }
+  }
+
+  if (currentHunk) {
+    hunks.push(currentHunk)
+  }
+  return hunks
+}
+
+async function loadFileDiffMetadata(filePath, model) {
+  const entry = getModifiedEntryByPath(filePath)
+  if (!editor || !model || !entry) {
+    clearGitDiffDecorations()
+    return
+  }
+
+  if (entry.isUntracked) {
+    const lineCount = model.getLineCount()
+    const decorations = lineCount > 0
+      ? [{
+          range: new monaco.Range(1, 1, lineCount, model.getLineMaxColumn(lineCount)),
+          options: {
+            isWholeLine: true,
+            className: 'workspace-diff-line workspace-diff-line--added',
+            linesDecorationsClassName: 'workspace-diff-gutter workspace-diff-gutter--added',
+            overviewRuler: {
+              color: 'rgba(72, 177, 112, 0.95)',
+              position: monaco.editor.OverviewRulerLane.Right
+            },
+            minimap: {
+              color: 'rgba(72, 177, 112, 0.8)',
+              position: monaco.editor.MinimapPosition.Inline
+            }
+          }
+        }]
+      : []
+    changeNavigationLines.value = lineCount > 0 ? [1] : []
+    currentChangeLine.value = changeNavigationLines.value[0] || null
+    gitDiffDecorationIds = editor.deltaDecorations(gitDiffDecorationIds, decorations)
+    return
+  }
+
+  const tryCommands = [
+    `git diff --no-ext-diff --unified=0 HEAD -- ${quoteShellPath(relativeToProjectPath(filePath) || basename(filePath))}`,
+    `git diff --no-ext-diff --unified=0 -- ${quoteShellPath(relativeToProjectPath(filePath) || basename(filePath))}`
+  ]
+
+  let diffOutput = ''
+  for (const command of tryCommands) {
+    const result = await executeWorkspaceCommand(command)
+    if (result?.success || result?.output || result?.stdout) {
+      diffOutput = result?.output || result?.stdout || ''
+      break
+    }
+  }
+
+  const hunks = parseUnifiedDiffHunks(diffOutput)
+  const decorations = []
+  const nextChangeLines = new Set()
+  const lineCount = model.getLineCount()
+
+  for (const hunk of hunks) {
+    const oldCount = hunk.oldRange.count
+    const newCount = hunk.newRange.count
+    if (newCount > 0) {
+      const startLine = Math.max(1, Math.min(hunk.newRange.start, lineCount))
+      const endLine = Math.max(startLine, Math.min(hunk.newRange.start + newCount - 1, lineCount))
+      const className = oldCount === 0
+        ? 'workspace-diff-line workspace-diff-line--added'
+        : 'workspace-diff-line workspace-diff-line--modified'
+      const gutterClass = oldCount === 0
+        ? 'workspace-diff-gutter workspace-diff-gutter--added'
+        : 'workspace-diff-gutter workspace-diff-gutter--modified'
+      const lineColor = oldCount === 0 ? 'rgba(72, 177, 112, 0.95)' : 'rgba(214, 180, 67, 0.95)'
+      const minimapColor = oldCount === 0 ? 'rgba(72, 177, 112, 0.8)' : 'rgba(214, 180, 67, 0.8)'
+      nextChangeLines.add(startLine)
+      decorations.push({
+        range: new monaco.Range(startLine, 1, endLine, model.getLineMaxColumn(endLine)),
+        options: {
+          isWholeLine: true,
+          className,
+          linesDecorationsClassName: gutterClass,
+          overviewRuler: {
+            color: lineColor,
+            position: monaco.editor.OverviewRulerLane.Right
+          },
+          minimap: {
+            color: minimapColor,
+            position: monaco.editor.MinimapPosition.Inline
+          }
+        }
+      })
+    }
+
+    if (oldCount > 0 && newCount === 0) {
+      const anchorLine = Math.min(Math.max(1, hunk.newRange.start), lineCount)
+      nextChangeLines.add(anchorLine)
+      decorations.push({
+        range: new monaco.Range(anchorLine, 1, anchorLine, 1),
+        options: {
+          isWholeLine: true,
+          linesDecorationsClassName: 'workspace-diff-gutter workspace-diff-gutter--deleted',
+          glyphMarginClassName: 'workspace-diff-glyph workspace-diff-glyph--deleted',
+          glyphMarginHoverMessage: [{ value: `此处删除了 ${oldCount} 行` }],
+          overviewRuler: {
+            color: 'rgba(222, 109, 115, 0.95)',
+            position: monaco.editor.OverviewRulerLane.Right
+          }
+        }
+      })
+    }
+  }
+
+  changeNavigationLines.value = Array.from(nextChangeLines).sort((a, b) => a - b)
+  currentChangeLine.value = changeNavigationLines.value[0] || null
+  gitDiffDecorationIds = editor.deltaDecorations(gitDiffDecorationIds, decorations)
+}
+
+function revealChangeLine(lineNumber) {
+  if (!editor || !lineNumber) return
+  currentChangeLine.value = lineNumber
+  editor.revealLineInCenter(lineNumber)
+  editor.setPosition({ lineNumber, column: 1 })
+}
+
+function goToPreviousChange() {
+  const lines = changeNavigationLines.value
+  if (!lines.length) return
+  const current = currentChangeLine.value ?? lines[0]
+  const currentIndex = lines.findIndex((line) => line >= current)
+  const nextIndex = currentIndex <= 0 ? lines.length - 1 : currentIndex - 1
+  revealChangeLine(lines[nextIndex])
+}
+
+function goToNextChange() {
+  const lines = changeNavigationLines.value
+  if (!lines.length) return
+  const current = currentChangeLine.value ?? lines[0]
+  const currentIndex = lines.findIndex((line) => line > current)
+  const nextIndex = currentIndex === -1 ? 0 : currentIndex
+  revealChangeLine(lines[nextIndex])
+}
+
+const currentChangeIndexLabel = computed(() => {
+  const lines = changeNavigationLines.value
+  if (!lines.length) return ''
+  const current = currentChangeLine.value ?? lines[0]
+  const index = Math.max(0, lines.findIndex((line) => line === current))
+  return `${index + 1}/${lines.length}`
+})
+
 async function openFile (filePath) {
   if (!window.electronAPI) return
 
@@ -1471,6 +1677,7 @@ async function openFile (filePath) {
     editor.setModel(model)
     layoutEditor()
   }
+  await loadFileDiffMetadata(filePath, model)
 }
 
 function toggleExpandedKey (key) {
@@ -1755,16 +1962,18 @@ function syncActiveTabContent () {
       editor.setModel(null)
       layoutEditor()
     }
+    clearGitDiffDecorations()
     return
   }
 
   if (tab.kind === 'text') {
     imageDataUrl.value = ''
-    nextTick(() => {
+    nextTick(async () => {
       const model = pathToModel.get(tab.path) || monaco.editor.getModel(uriForPath(tab.path))
       if (editor && model) {
         editor.setModel(model)
         layoutEditor()
+        await loadFileDiffMetadata(tab.path, model)
       }
     })
     return
@@ -1774,6 +1983,7 @@ function syncActiveTabContent () {
     editor.setModel(null)
     layoutEditor()
   }
+  clearGitDiffDecorations()
 
   if (tab.kind === 'image') {
     void window.electronAPI?.readImageAsBase64(tab.path).then((img) => {
@@ -2126,7 +2336,8 @@ onMounted(async () => {
     minimap: { enabled: true },
     fontSize: 13,
     scrollBeyondLastLine: false,
-    wordWrap: 'on'
+    wordWrap: 'on',
+    glyphMargin: true
   })
   layoutEditor()
 })
@@ -2139,6 +2350,7 @@ onBeforeUnmount(() => {
   layoutObserver = null
   disposeAllModels()
   if (editor) {
+    clearGitDiffDecorations()
     editor.dispose()
     editor = null
   }
@@ -2156,6 +2368,16 @@ watch(
       stopGitStatusPolling()
     }
   }
+)
+
+watch(
+  modifiedFileEntries,
+  async () => {
+    if (!activeTab.value || activeTab.value.kind !== 'text') return
+    const model = pathToModel.get(activeTab.value.path) || monaco.editor.getModel(uriForPath(activeTab.value.path))
+    await loadFileDiffMetadata(activeTab.value.path, model)
+  },
+  { deep: true }
 )
 
 watch(
@@ -2904,6 +3126,44 @@ watch(
   overflow: hidden;
 }
 
+.editor-change-nav {
+  position: absolute;
+  top: 10px;
+  right: 112px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 124px);
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(31, 32, 36, 0.92);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.editor-change-nav__btn {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.editor-change-nav__btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.editor-change-nav__meta {
+  min-width: 34px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 12px;
+}
+
 .preview-empty {
   position: absolute;
   inset: 0;
@@ -2924,6 +3184,48 @@ watch(
 .monaco-container :deep(.monaco-editor),
 .monaco-container :deep(.monaco-editor .overflow-guard) {
   min-height: 100%;
+}
+
+.monaco-container :deep(.workspace-diff-line--added) {
+  background: rgba(72, 177, 112, 0.16);
+}
+
+.monaco-container :deep(.workspace-diff-line--modified) {
+  background: rgba(214, 180, 67, 0.14);
+}
+
+.monaco-container :deep(.workspace-diff-gutter) {
+  width: 4px !important;
+  margin-left: 6px;
+  border-radius: 999px;
+}
+
+.monaco-container :deep(.workspace-diff-gutter--added) {
+  background: #48b170;
+}
+
+.monaco-container :deep(.workspace-diff-gutter--modified) {
+  background: #d6b443;
+}
+
+.monaco-container :deep(.workspace-diff-gutter--deleted) {
+  background: #de6d73;
+}
+
+.monaco-container :deep(.workspace-diff-glyph--deleted::before) {
+  content: '−';
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: rgba(222, 109, 115, 0.18);
+  color: #ffb1b4;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .image-preview-wrap {
