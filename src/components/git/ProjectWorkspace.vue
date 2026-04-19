@@ -425,6 +425,7 @@ const platform = window.electronAPI?.platform || 'darwin'
 const isRestoringWorkspaceState = ref(false)
 const isWorkspaceStatePersistenceSuspended = ref(false)
 const lastAppliedGitSignature = ref('')
+const hasRestoredTreeFilterPreference = ref(false)
 
 const systemFileManagerLabel = computed(() => {
   if (platform === 'win32') return '资源管理器'
@@ -469,11 +470,15 @@ async function loadWorkspaceState() {
   try {
     const parsed = await window.electronAPI?.getConfig?.(workspaceStateConfigKey())
     if (!parsed) return null
+    const filterMode = parsed?.filterMode === 'modified' || parsed?.filterMode === 'all'
+      ? parsed.filterMode
+      : ''
     return {
       treeWidth: Number.isFinite(Number(parsed?.treeWidth)) ? Number(parsed.treeWidth) : null,
       expandedKeys: Array.isArray(parsed?.expandedKeys) ? parsed.expandedKeys : [],
       openTabs: Array.isArray(parsed?.openTabs) ? parsed.openTabs : [],
-      activePath: typeof parsed?.activePath === 'string' ? parsed.activePath : ''
+      activePath: typeof parsed?.activePath === 'string' ? parsed.activePath : '',
+      filterMode
     }
   } catch (e) {
     return null
@@ -506,7 +511,8 @@ function saveWorkspaceState() {
       treeWidth: treeWidthPx.value,
       expandedKeys: expandedKeys.value.filter((key) => key && key !== props.projectPath),
       openTabs: tabs.value.map((tab) => tab.path),
-      activePath: activeTab?.path || ''
+      activePath: activeTab?.path || '',
+      filterMode: treeFilterMode.value === 'modified' ? 'modified' : 'all'
     }
     window.electronAPI?.setConfig?.(workspaceStateConfigKey(), payload)
   } catch (e) {}
@@ -1116,6 +1122,7 @@ function toggleFilterMenu() {
 function selectFilterMode(mode) {
   treeFilterMode.value = mode
   closeFilterMenu()
+  saveWorkspaceState()
 }
 
 async function focusDraftInput() {
@@ -1334,6 +1341,10 @@ async function restoreWorkspaceState() {
   try {
     if (Number.isFinite(state.treeWidth) && state.treeWidth >= 200 && state.treeWidth <= 520) {
       treeWidthPx.value = state.treeWidth
+    }
+    if (state.filterMode === 'modified' || state.filterMode === 'all') {
+      treeFilterMode.value = state.filterMode
+      hasRestoredTreeFilterPreference.value = true
     }
 
     for (const key of state.expandedKeys) {
@@ -1737,6 +1748,7 @@ watch(
     if (!p) return
     isWorkspaceStatePersistenceSuspended.value = true
     try {
+      hasRestoredTreeFilterPreference.value = false
       commitMessage.value = ''
       await loadTreeWidth()
       resetTree()
@@ -1750,7 +1762,9 @@ watch(
       await restoreWorkspaceState()
       if (props.isActive) {
         await refreshGitStatuses()
-        applyDefaultTreeFilterMode()
+        if (!hasRestoredTreeFilterPreference.value) {
+          applyDefaultTreeFilterMode()
+        }
         lastAppliedGitSignature.value = props.gitSignature || ''
       }
     } finally {
@@ -2281,7 +2295,6 @@ async function refreshAfterGitAction({ clearCommit = false } = {}) {
     await loadCommitTemplate(props.projectPath)
   }
   await refreshGitStatuses()
-  applyDefaultTreeFilterMode()
   await refreshTree()
   emit('status-changed')
 }
