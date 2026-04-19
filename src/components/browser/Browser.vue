@@ -1785,6 +1785,22 @@ const handleUrlSuggestionResult = (payload) => {
   }
 }
 
+/** 关闭地址栏联想（内联列表 + 主进程浮层）；点击侧栏、标签栏等非地址栏区域时使用 */
+function dismissUrlSuggestionsChrome() {
+  nativeUrlSuggestionsOpen.value = false
+  showSuggestions.value = false
+  userSelectedSuggestion.value = false
+  void window.electronAPI?.closeBrowserUrlSuggestions?.()
+}
+
+const onGlobalPointerDownDismissUrlSuggestions = (ev) => {
+  if (!showSuggestions.value && !nativeUrlSuggestionsOpen.value) return
+  const el = ev.target instanceof Element ? ev.target : ev.target?.parentElement
+  if (!el) return
+  if (typeof el.closest === 'function' && el.closest('.url-input-wrapper')) return
+  dismissUrlSuggestionsChrome()
+}
+
 async function runNativeUrlSuggestionsPopup() {
   if (!useNativeUrlSuggestions.value) return
   if (!showSuggestions.value || !allSuggestions.value.length) {
@@ -4005,7 +4021,9 @@ onMounted(async () => {
     // 保存引用以便卸载时移除
     window.__browserShortcutController = shortcutController
     window.__browserResizeHandler = handleResize
-    
+
+    window.addEventListener('pointerdown', onGlobalPointerDownDismissUrlSuggestions, true)
+    window.__browserUrlSuggestionsPointerDown = onGlobalPointerDownDismissUrlSuggestions
   
   // 监听菜单事件
   if (window.electronAPI) {
@@ -4125,6 +4143,10 @@ onUnmounted(() => {
   if (window.__browserResizeHandler) {
     window.removeEventListener('resize', window.__browserResizeHandler)
     delete window.__browserResizeHandler
+  }
+  if (window.__browserUrlSuggestionsPointerDown) {
+    window.removeEventListener('pointerdown', window.__browserUrlSuggestionsPointerDown, true)
+    delete window.__browserUrlSuggestionsPointerDown
   }
   
   saveBrowserTabs()

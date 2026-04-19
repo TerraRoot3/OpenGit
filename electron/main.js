@@ -800,6 +800,15 @@ function closeUrlSuggestionWindowNotifyParent() {
   } catch (error) {}
   activeUrlSuggestionWindow = null
 }
+
+/** 点击/聚焦到网页区域（WebContentsView）时关闭地址栏联想：原生浮层 + 渲染进程内联列表 */
+function dismissBrowserUrlSuggestionsChrome() {
+  closeUrlSuggestionWindowNotifyParent()
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const wc = mainWindow.webContents
+  if (!wc || wc.isDestroyed()) return
+  notifyUrlSuggestionResult(wc, null)
+}
 const pendingPermissionCallbacks = new Map()
 const pendingPermissionTimeouts = new Map()
 const downloadHistory = new Map()
@@ -2368,7 +2377,8 @@ app.whenReady().then(async () => {
     lifecycleOptions: {
       discardDelayMs: Number.POSITIVE_INFINITY
     },
-    webTabPreloadPath: path.join(__dirname, 'web-tab-preload.js')
+    webTabPreloadPath: path.join(__dirname, 'web-tab-preload.js'),
+    onBrowserWebContentsFocused: dismissBrowserUrlSuggestionsChrome
   })
   sitePermissionManager = createSitePermissionManager({ store })
   sessionPartitionManager = createSessionPartitionManager()

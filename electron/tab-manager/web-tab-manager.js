@@ -23,11 +23,15 @@ class WebTabManager {
     safeError = () => {},
     lifecycleOptions = {},
     webTabPreloadPath = '',
-    ViewClass = WebContentsView
+    ViewClass = WebContentsView,
+    /** 内置网页区域获得焦点时回调（用于关闭地址栏联想等浮层） */
+    onBrowserWebContentsFocused = null
   } = {}) {
     this.safeLog = safeLog
     this.safeError = safeError
     this.ViewClass = ViewClass
+    this.onBrowserWebContentsFocused =
+      typeof onBrowserWebContentsFocused === 'function' ? onBrowserWebContentsFocused : null
     this.mainWindow = null
     this.renderer = null
     this.views = new Map()
@@ -141,6 +145,14 @@ class WebTabManager {
     wc.on('did-stop-loading', emitState)
     wc.on('did-navigate', emitState)
     wc.on('did-navigate-in-page', emitState)
+
+    wc.on('focus', () => {
+      try {
+        this.onBrowserWebContentsFocused?.()
+      } catch (err) {
+        this.safeError('[WebTabManager] onBrowserWebContentsFocused failed', err)
+      }
+    })
 
     wc.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       if (!isMainFrame) return
