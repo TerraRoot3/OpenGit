@@ -2426,29 +2426,22 @@ app.whenReady().then(async () => {
 // 添加应用退出标记
 app.isQuiting = false
 
-app.on('before-quit', async () => {
+// 不在此 handler 上使用 async/await：Electron 会等待 before-quit 返回的 Promise，
+// cookies.flushStore() 可能较慢，导致退出前界面“卡一下”。同步 flush 存储 + 异步写 cookie 即可。
+app.on('before-quit', () => {
   app.isQuiting = true
 
-
-  // 确保 webview session 的所有存储数据被刷新到磁盘
   try {
     const webviewSession = session.fromPartition('persist:main')
-    
-    // 刷新 cookies
-    await webviewSession.cookies.flushStore()
-    safeLog('✅ Session cookies flushed to disk')
-    
-    // 刷新存储缓存（包括 localStorage, IndexedDB 等）
-    // Electron 会在 session 关闭时自动保存，但显式刷新更可靠
-    if (webviewSession.flushStorageData) {
+
+    if (typeof webviewSession.flushStorageData === 'function') {
       webviewSession.flushStorageData()
-      safeLog('✅ Storage data flushed to disk')
     }
-    
-    // 清理未使用的缓存（可选，保持磁盘空间）
-    // await webviewSession.clearCache() // 不清理，保持缓存
-    
-    safeLog('✅ All session data saved')
+
+    void webviewSession.cookies.flushStore().then(
+      () => safeLog('✅ Session cookies flushed to disk'),
+      (error) => safeError('❌ Session cookies flush failed:', error?.message || error)
+    )
   } catch (error) {
     safeError('❌ Failed to flush session data:', error)
   }
