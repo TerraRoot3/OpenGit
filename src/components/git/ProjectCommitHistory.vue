@@ -278,7 +278,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['switchToFileStatus'])
+const emit = defineEmits(['switchToWorkspace'])
 
 // 组件已加载
 
@@ -1400,8 +1400,8 @@ const revertCommitAction = async () => {
     const errMsg = typeof error === 'string' ? error : (error?.stderr || error?.message || '')
     // 检测冲突
     if (errMsg.includes('CONFLICT') || errMsg.includes('conflict') || errMsg.includes('could not revert')) {
-      console.log('revert 发生冲突，切换到文件状态页')
-      emit('switchToFileStatus')
+      console.log('revert 发生冲突，切换到工作区')
+      emit('switchToWorkspace')
     } else {
       console.error('回滚失败:', error)
     }
@@ -1430,8 +1430,8 @@ const cherryPickCommitAction = async () => {
     const errMsg = typeof error === 'string' ? error : (error?.stderr || error?.message || '')
     // 检测冲突
     if (errMsg.includes('CONFLICT') || errMsg.includes('conflict')) {
-      console.log('cherry-pick 发生冲突，切换到文件状态页')
-      emit('switchToFileStatus')
+      console.log('cherry-pick 发生冲突，切换到工作区')
+      emit('switchToWorkspace')
     } else {
       console.error('遴选失败:', error)
     }

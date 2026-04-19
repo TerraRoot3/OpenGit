@@ -137,7 +137,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['switch-to-file-status'])
+const emit = defineEmits(['switch-to-workspace'])
 
 // 响应式数据
 const stashListLoading = ref(false)
@@ -424,8 +424,8 @@ const confirmRestoreStash = async () => {
       closeRestoreDialog()
       setTimeout(() => {
         showOperationDialog.value = false
-        // 切换到文件状态查看恢复的更改
-        emit('switch-to-file-status')
+        // 切换到工作区查看恢复的更改
+        emit('switch-to-workspace')
       }, 2000)
     } else {
       // 确保显示完整的错误信息

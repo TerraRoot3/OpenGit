@@ -1945,7 +1945,7 @@ watch(() => props.defaultCwd, async (newCwd, oldCwd) => {
   }
 })
 
-// 项目详情：进入「终端」视图且已有项目路径时再建第一个 PTY（避免在文件状态页 onMounted 就建、cwd 不稳）。
+// 项目详情：进入「终端」视图且已有项目路径时再建第一个 PTY（避免在工作区 onMounted 就建、cwd 不稳）。
 // 加号：始终走 addTerminal()，依赖 projectRootRef / getBaseCwd。
 // about:terminal：无项目路径，allowFirstTerminalWithoutCwd 为 true 时仍可自动建第一个。
 watch(

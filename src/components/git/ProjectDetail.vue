@@ -67,39 +67,52 @@
       </div>
 
       <!-- 主内容区 -->
-      <div class="project-main-area">
-        <div class="content-wrapper">
+      <div
+        class="project-main-area"
+        :class="{ 'project-main-area--branch-rail': isBranchesPanelIconRail }"
+      >
+        <div
+          class="content-wrapper"
+          :class="{ 'content-wrapper--branch-rail': isBranchesPanelIconRail }"
+        >
           <!-- 左侧面板（宽度可拖拽，按项目缓存） -->
           <div
             class="branches-panel"
-            :style="{ width: `${branchesPanelWidthPx}px`, minWidth: `${BRANCHES_PANEL_MIN}px` }"
+            :class="{ 'branches-panel--icon-rail': isBranchesPanelIconRail }"
+            :style="{ width: `${branchesPanelWidthPx}px`, minWidth: `${BRANCHES_PANEL_RAIL_MIN}px` }"
           >
             <div
-              class="file-status-button"
+              class="file-status-button rail-tip-target"
+              title="AI会话"
+              data-rail-tip="AI会话"
               :class="{ active: currentView === 'ai-sessions' }"
               @click="selectAiSessions"
             >
               <Bot :size="16" />
-              <span>AI会话</span>
+              <span class="branches-nav-label">AI会话</span>
             </div>
 
             <!-- 终端按钮 -->
             <div
-              class="file-status-button"
+              class="file-status-button rail-tip-target"
+              title="终端"
+              data-rail-tip="终端"
               :class="{ active: currentView === 'terminal' }"
               @click="selectTerminal"
             >
               <TerminalIcon :size="16" />
-              <span>终端</span>
+              <span class="branches-nav-label">终端</span>
             </div>
 
             <div
-              class="file-status-button"
+              class="file-status-button rail-tip-target"
+              title="工作区"
+              data-rail-tip="工作区"
               :class="{ active: currentView === 'workspace' }"
               @click="selectWorkspace"
             >
               <FolderTree :size="16" />
-              <span>工作区</span>
+              <span class="branches-nav-label">工作区</span>
               <span v-if="hasPendingFiles" class="pending-icon" title="有待定文件">
                 <svg width="12" height="12" viewBox="0 0 1024 1024" fill="currentColor">
                   <path d="M526.41 117.029v58.514a7.314 7.314 0 0 1-7.315 7.314H219.429a36.571 36.571 0 0 0-35.987 29.989l-0.585 6.583V804.57a36.571 36.571 0 0 0 29.989 35.987l6.583 0.585H804.57a36.571 36.571 0 0 0 35.987-29.989l0.585-6.583v-317.44a7.314 7.314 0 0 1 7.314-7.314h58.514a7.314 7.314 0 0 1 7.315 7.314v317.44a109.714 109.714 0 0 1-99.182 109.203l-10.533 0.512H219.43a109.714 109.714 0 0 1-109.203-99.182l-0.512-10.533V219.43a109.714 109.714 0 0 1 99.182-109.203l10.533-0.512h299.666a7.314 7.314 0 0 1 7.314 7.315z m307.345 31.817l41.4 41.399a7.314 7.314 0 0 1 0 10.313L419.985 655.726a7.314 7.314 0 0 1-10.313 0l-41.399-41.4a7.314 7.314 0 0 1 0-10.312l455.168-455.168a7.314 7.314 0 0 1 10.313 0z"></path>
@@ -109,12 +122,14 @@
 
             <!-- 提交历史按钮 -->
             <div
-              class="file-status-button"
+              class="file-status-button rail-tip-target"
+              title="流水线"
+              data-rail-tip="流水线"
               :class="{ active: currentView === 'pipeline' }"
               @click="selectPipeline"
             >
               <Activity :size="16" />
-              <span>流水线</span>
+              <span class="branches-nav-label">流水线</span>
               <span
                 v-if="activePipelineSummary"
                 class="pipeline-inline-status"
@@ -125,32 +140,41 @@
             </div>
 
             <div
-              class="file-status-button"
+              class="file-status-button rail-tip-target"
+              title="提交历史"
+              data-rail-tip="提交历史"
               :class="{ active: currentView === 'commit-history' }"
               @click="selectCommitHistory"
             >
               <History :size="16" />
-              <span>提交历史</span>
+              <span class="branches-nav-label">提交历史</span>
             </div>
 
             <!-- 暂存列表按钮 -->
             <div
-              class="file-status-button"
+              class="file-status-button rail-tip-target"
+              title="暂存列表"
+              data-rail-tip="暂存列表"
               :class="{ active: currentView === 'stash-list' }"
               @click="selectStashList"
             >
               <Archive :size="16" />
-              <span>暂存列表</span>
+              <span class="branches-nav-label">暂存列表</span>
             </div>
 
             <!-- 本地分支 -->
             <div class="branch-section">
-              <div class="branch-section-header" @click="toggleLocalBranches">
-                <Folder :size="14" />
-                <span>本地分支</span>
+              <div
+                class="branch-section-header rail-tip-target"
+                title="本地分支"
+                data-rail-tip="本地分支"
+                @click="toggleLocalBranches"
+              >
+                <GitBranch :size="14" />
+                <span class="branch-section-label">本地分支</span>
                 <ChevronRight :size="14" class="expand-arrow" :class="{ expanded: showLocalBranches }" />
               </div>
-              <div v-if="showLocalBranches" class="branch-list">
+              <div v-if="showLocalBranches && !isBranchesPanelIconRail" class="branch-list">
                 <div 
                   v-for="branch in allBranches" 
                   :key="branch"
@@ -174,9 +198,14 @@
 
             <!-- 远程分支 -->
             <div class="branch-section">
-              <div class="branch-section-header" @click="toggleRemoteBranches">
-                <Globe :size="14" />
-                <span>远程分支</span>
+              <div
+                class="branch-section-header rail-tip-target"
+                title="远程分支"
+                data-rail-tip="远程分支"
+                @click="toggleRemoteBranches"
+              >
+                <Cloud :size="14" />
+                <span class="branch-section-label">远程分支</span>
                 <button 
                   class="refresh-btn" 
                   @click.stop="refreshRemoteBranches"
@@ -188,7 +217,7 @@
                 </button>
                 <ChevronRight :size="14" class="expand-arrow" :class="{ expanded: showRemoteBranches }" />
               </div>
-              <div v-if="showRemoteBranches" class="branch-list">
+              <div v-if="showRemoteBranches && !isBranchesPanelIconRail" class="branch-list">
                 <div v-if="refreshing && remoteBranches.length === 0" class="empty-tags">加载中...</div>
                 <div v-else-if="remoteBranches.length === 0" class="empty-tags">暂无远程分支</div>
                 <div 
@@ -206,9 +235,14 @@
 
             <!-- 标签 -->
             <div class="branch-section">
-              <div class="branch-section-header" @click="toggleTags">
+              <div
+                class="branch-section-header rail-tip-target"
+                title="标签"
+                data-rail-tip="标签"
+                @click="toggleTags"
+              >
                 <Tag :size="14" />
-                <span>标签</span>
+                <span class="branch-section-label">标签</span>
                 <button
                   class="refresh-btn"
                   @click.stop="refreshTags"
@@ -220,7 +254,7 @@
                 </button>
                 <ChevronRight :size="14" class="expand-arrow" :class="{ expanded: showTags }" />
               </div>
-              <div v-if="showTags" class="branch-list">
+              <div v-if="showTags && !isBranchesPanelIconRail" class="branch-list">
                 <div v-if="tagsViewState === 'loading'" class="empty-tags">加载中...</div>
                 <div v-else-if="tagsViewState === 'empty'" class="empty-tags">暂无标签</div>
                 <div 
@@ -244,7 +278,7 @@
 
           <!-- 右侧内容区 -->
           <div class="right-panel">
-            <!-- 文件状态 -->
+            <!-- 工作区 -->
             <ProjectWorkspace
               v-if="workspaceMounted"
               v-show="currentView === 'workspace'"
@@ -277,15 +311,16 @@
               :refresh-token="commitHistoryRefreshToken"
               :execute-command="executeCommand"
               :refresh-branch-status="loadBranches"
-              @switch-to-file-status="selectFileStatus"
+              @switch-to-workspace="selectWorkspace"
             />
 
             <!-- 暂存列表 -->
-            <ProjectStashList 
+            <ProjectStashList
               v-if="currentView === 'stash-list'"
               :project-path="path"
               :execute-command="executeCommand"
               ref="stashListRef"
+              @switch-to-workspace="selectWorkspace"
             />
 
             <!-- 终端 - 使用 v-show 保持存活，避免切换时重新创建 -->
@@ -479,11 +514,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick, defineAsyncComponent } from 'vue'
 import {
   FolderOpen, GitBranch, Tag, GitPullRequest, ArrowUpCircle, GitMerge, Activity,
   Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot,
-  Folder, FolderTree, Globe, RefreshCw, Check, ChevronRight, Settings, Star
+  FolderTree, Cloud, RefreshCw, Check, ChevronRight, Settings, Star
 } from 'lucide-vue-next'
 import ProjectStashList from './ProjectStashList.vue'
 import ProjectCommitHistory from './ProjectCommitHistory.vue'
@@ -632,53 +667,107 @@ let pipelineSummaryTimer = null
 let pipelineSummaryHoldUntil = 0
 
 // ==================== UI 状态 ====================
-// 从 localStorage 读取项目对应的视图状态，默认为 'ai-sessions'
+/** 主进程 electron-store（get-config / set-config），无 Electron 时不持久化 */
 const getProjectViewKey = (path) => `projectView_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
 const getExpandStateKey = (path) => `expandState_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
 const getBranchesPanelWidthKey = (path) =>
   `projectBranchesPanelWidth_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
+const getBranchesPanelLastExpandedKey = (path) =>
+  `projectBranchesPanelLastExpanded_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
 
-const BRANCHES_PANEL_MIN = 200
+const projectUiConfigViaElectron = () =>
+  typeof window !== 'undefined' &&
+  typeof window.electronAPI?.getConfig === 'function' &&
+  typeof window.electronAPI?.setConfig === 'function'
+
+async function getConfigString (key) {
+  if (!projectUiConfigViaElectron()) return null
+  const v = await window.electronAPI.getConfig(key)
+  if (v !== undefined && v !== null && String(v).length > 0) return String(v)
+  return null
+}
+
+async function setConfigString (key, str) {
+  if (!projectUiConfigViaElectron()) return
+  await window.electronAPI.setConfig(key, String(str)).catch(() => {})
+}
+
+async function getConfigObject (key) {
+  if (!projectUiConfigViaElectron()) return null
+  const v = await window.electronAPI.getConfig(key)
+  if (v && typeof v === 'object' && !Array.isArray(v)) return v
+  if (typeof v === 'string' && v.length > 0) {
+    try {
+      return JSON.parse(v)
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+async function setConfigObject (key, obj) {
+  if (!projectUiConfigViaElectron()) return
+  await window.electronAPI.setConfig(key, obj).catch(() => {})
+}
+
+async function getConfigNumber (key) {
+  if (!projectUiConfigViaElectron()) return null
+  const v = await window.electronAPI.getConfig(key)
+  if (v !== undefined && v !== null && v !== '') {
+    const n = typeof v === 'number' ? v : Number(v)
+    if (Number.isFinite(n)) return n
+  }
+  return null
+}
+
+async function setConfigNumber (key, value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return
+  if (!projectUiConfigViaElectron()) return
+  await window.electronAPI.setConfig(key, n).catch(() => {})
+}
+
+/** 拖拽可拖到的最窄宽度（仅图标条） */
+const BRANCHES_PANEL_RAIL_MIN = 48
+/** 从图标条点「本地/远程分支」恢复后的可读最小宽度 */
+const BRANCHES_PANEL_READABLE_MIN = 200
 const BRANCHES_PANEL_MAX = 560
 const BRANCHES_PANEL_DEFAULT = 240
+/** 小于等于此宽度时隐藏侧栏文字，仅保留图标（悬停 title 显示全称） */
+const BRANCHES_PANEL_ICON_RAIL_BREAKPOINT = 100
 
-const getSavedCurrentView = (path) => {
+const getSavedCurrentView = async (path) => {
   try {
-    const saved = localStorage.getItem(getProjectViewKey(path))
-    if (saved && ['file-status', 'commit-history', 'stash-list', 'terminal', 'ai-sessions', 'pipeline', 'workspace'].includes(saved)) {
+    const saved = await getConfigString(getProjectViewKey(path))
+    if (saved === 'file-status') return 'workspace'
+    if (saved && ['commit-history', 'stash-list', 'terminal', 'ai-sessions', 'pipeline', 'workspace'].includes(saved)) {
       if (saved === 'terminal') return 'ai-sessions'
-      if (saved === 'file-status') return 'workspace'
       return saved
     }
   } catch (e) {}
   return 'ai-sessions'
 }
 
-// 保存展开状态到 localStorage
 const saveExpandState = () => {
-  try {
-    if (props.path) {
-      const state = {
-        localBranches: showLocalBranches.value,
-        remoteBranches: showRemoteBranches.value,
-        tags: showTags.value
-      }
-      localStorage.setItem(getExpandStateKey(props.path), JSON.stringify(state))
-    }
-  } catch (e) {}
+  if (!props.path) return
+  void (async () => {
+    await setConfigObject(getExpandStateKey(props.path), {
+      localBranches: showLocalBranches.value,
+      remoteBranches: showRemoteBranches.value,
+      tags: showTags.value
+    })
+  })().catch(() => {})
 }
 
-// 从 localStorage 读取展开状态
-const restoreExpandState = (path) => {
+const restoreExpandState = async (path) => {
   try {
-    const saved = localStorage.getItem(getExpandStateKey(path))
-    if (saved) {
-      const state = JSON.parse(saved)
+    const state = await getConfigObject(getExpandStateKey(path))
+    if (state && typeof state === 'object') {
       showLocalBranches.value = state.localBranches ?? true
       showRemoteBranches.value = state.remoteBranches ?? false
       showTags.value = state.tags ?? false
     } else {
-      // 默认值
       showLocalBranches.value = true
       showRemoteBranches.value = false
       showTags.value = false
@@ -692,31 +781,80 @@ const restoreExpandState = (path) => {
 
 const currentView = ref('ai-sessions')
 const branchesPanelWidthPx = ref(BRANCHES_PANEL_DEFAULT)
+/** 用户上次拉宽后的宽度，用于从图标条恢复 */
+const branchesPanelLastExpandedWidth = ref(BRANCHES_PANEL_DEFAULT)
 
-function loadBranchesPanelWidth (path) {
+const isBranchesPanelIconRail = computed(
+  () => branchesPanelWidthPx.value <= BRANCHES_PANEL_ICON_RAIL_BREAKPOINT
+)
+
+async function loadBranchesPanelLastExpanded (path) {
+  if (!path) {
+    branchesPanelLastExpandedWidth.value = BRANCHES_PANEL_DEFAULT
+    return
+  }
+  const n = await getConfigNumber(getBranchesPanelLastExpandedKey(path))
+  if (n !== null && n >= BRANCHES_PANEL_READABLE_MIN && n <= BRANCHES_PANEL_MAX) {
+    branchesPanelLastExpandedWidth.value = Math.round(n)
+  } else {
+    branchesPanelLastExpandedWidth.value = BRANCHES_PANEL_DEFAULT
+  }
+}
+
+async function loadBranchesPanelWidth (path) {
   if (!path) {
     branchesPanelWidthPx.value = BRANCHES_PANEL_DEFAULT
     return
   }
-  try {
-    const raw = localStorage.getItem(getBranchesPanelWidthKey(path))
-    const n = Number(raw)
-    if (Number.isFinite(n) && n >= BRANCHES_PANEL_MIN && n <= BRANCHES_PANEL_MAX) {
-      branchesPanelWidthPx.value = Math.round(n)
-    } else {
-      branchesPanelWidthPx.value = BRANCHES_PANEL_DEFAULT
+  await loadBranchesPanelLastExpanded(path)
+  const n = await getConfigNumber(getBranchesPanelWidthKey(path))
+  if (n !== null && n >= BRANCHES_PANEL_RAIL_MIN && n <= BRANCHES_PANEL_MAX) {
+    const w = Math.round(n)
+    branchesPanelWidthPx.value = w
+    if (w > BRANCHES_PANEL_ICON_RAIL_BREAKPOINT) {
+      branchesPanelLastExpandedWidth.value = w
     }
-  } catch {
+  } else {
     branchesPanelWidthPx.value = BRANCHES_PANEL_DEFAULT
   }
 }
 
+async function persistBranchesPanelWidth () {
+  if (!props.path) return
+  const w = branchesPanelWidthPx.value
+  await setConfigNumber(getBranchesPanelWidthKey(props.path), w)
+  if (w > BRANCHES_PANEL_ICON_RAIL_BREAKPOINT) {
+    branchesPanelLastExpandedWidth.value = w
+    await setConfigNumber(getBranchesPanelLastExpandedKey(props.path), w)
+  }
+}
+
 function saveBranchesPanelWidth () {
-  try {
-    if (props.path) {
-      localStorage.setItem(getBranchesPanelWidthKey(props.path), String(branchesPanelWidthPx.value))
-    }
-  } catch {}
+  void persistBranchesPanelWidth().catch(() => {})
+}
+
+/** 图标条模式下点击「本地分支 / 远程分支」标题时恢复侧栏可读宽度 */
+function expandSidePanelFromIconRail () {
+  if (branchesPanelWidthPx.value > BRANCHES_PANEL_ICON_RAIL_BREAKPOINT) return
+  const target = Math.min(
+    BRANCHES_PANEL_MAX,
+    Math.max(
+      BRANCHES_PANEL_READABLE_MIN,
+      branchesPanelLastExpandedWidth.value || BRANCHES_PANEL_DEFAULT
+    )
+  )
+  branchesPanelWidthPx.value = target
+  saveBranchesPanelWidth()
+}
+
+let branchesPanelWidthSaveThrottleTimer = null
+function scheduleBranchesPanelWidthSaveThrottled () {
+  if (!props.path) return
+  if (branchesPanelWidthSaveThrottleTimer) return
+  branchesPanelWidthSaveThrottleTimer = setTimeout(() => {
+    branchesPanelWidthSaveThrottleTimer = null
+    saveBranchesPanelWidth()
+  }, 200)
 }
 
 function onBranchesPanelResizerPointerDown (e) {
@@ -733,8 +871,9 @@ function onBranchesPanelResizerPointerDown (e) {
     const d = ev.clientX - startX
     branchesPanelWidthPx.value = Math.min(
       BRANCHES_PANEL_MAX,
-      Math.max(BRANCHES_PANEL_MIN, startW + d)
+      Math.max(BRANCHES_PANEL_RAIL_MIN, startW + d)
     )
+    scheduleBranchesPanelWidthSaveThrottled()
   }
   const onUp = (ev) => {
     try {
@@ -745,6 +884,10 @@ function onBranchesPanelResizerPointerDown (e) {
     el.removeEventListener('pointermove', onMove)
     el.removeEventListener('pointerup', onUp)
     el.removeEventListener('pointercancel', onUp)
+    if (branchesPanelWidthSaveThrottleTimer) {
+      clearTimeout(branchesPanelWidthSaveThrottleTimer)
+      branchesPanelWidthSaveThrottleTimer = null
+    }
     saveBranchesPanelWidth()
   }
   el.addEventListener('pointermove', onMove)
@@ -1646,19 +1789,9 @@ const refreshTags = async () => {
 }
 
 // ==================== 视图切换 ====================
-// 保存项目的视图状态到 localStorage
 const saveCurrentView = (view) => {
-  try {
-    if (props.path) {
-      localStorage.setItem(getProjectViewKey(props.path), view)
-    }
-  } catch (e) {}
-}
-
-const selectFileStatus = () => {
-  currentView.value = 'workspace'
-  saveCurrentView('workspace')
-  workspaceMounted.value = true
+  if (!props.path) return
+  void setConfigString(getProjectViewKey(props.path), view).catch(() => {})
 }
 
 const selectAiSessions = () => {
@@ -1759,11 +1892,20 @@ const handleResumeAiSession = async (session) => {
 
 // 展开/折叠本地分支
 const toggleLocalBranches = () => {
+  // 图标条下：第一次点击只拉宽侧栏，不改变列表展开/折叠状态，也不触发加载
+  if (isBranchesPanelIconRail.value) {
+    expandSidePanelFromIconRail()
+    return
+  }
   showLocalBranches.value = !showLocalBranches.value
   saveExpandState()
 }
 
 const toggleTags = () => {
+  if (isBranchesPanelIconRail.value) {
+    expandSidePanelFromIconRail()
+    return
+  }
   showTags.value = !showTags.value
   saveExpandState()
   // 展开时，如果没有缓存且不在加载中，则加载标签
@@ -1774,6 +1916,10 @@ const toggleTags = () => {
 
 // 展开/折叠远程分支
 const toggleRemoteBranches = () => {
+  if (isBranchesPanelIconRail.value) {
+    expandSidePanelFromIconRail()
+    return
+  }
   showRemoteBranches.value = !showRemoteBranches.value
   saveExpandState()
   // 展开时，如果没有缓存且不在加载中，则加载远程分支
@@ -1888,7 +2034,7 @@ const pullProject = async () => {
 
     if (hasConflicts) {
       operationOutput.value += '\n\n⚠️ 拉取完成，但存在合并冲突！\n'
-      operationOutput.value += '请在"文件状态"中解决冲突后提交。\n'
+      operationOutput.value += '请在「工作区」中解决冲突后提交。\n'
       operationOutput.value += '冲突文件:\n' + conflictCheck.output
     } else if (result.success) {
       showOperationDialog.value = false
@@ -1903,7 +2049,7 @@ const pullProject = async () => {
         operationOutput.value += '请先提交或暂存本地更改后再拉取。'
       } else if (errorMsg.includes('CONFLICT') || errorMsg.includes('conflict')) {
         operationOutput.value += '\n\n⚠️ 拉取时发生冲突\n'
-        operationOutput.value += '请在"文件状态"中解决冲突。'
+        operationOutput.value += '请在「工作区」中解决冲突。'
       } else {
         operationOutput.value += '\n\n❌ 拉取失败: ' + errorMsg
       }
@@ -2551,7 +2697,7 @@ const cancelOperation = () => {
 }
 
 // ==================== 生命周期 ====================
-watch(() => props.path, (newPath, oldPath) => {
+watch(() => props.path, async (newPath, oldPath) => {
   clearAiSessionsPreload()
   clearWorkspacePreload()
   clearPipelineSummaryTimer()
@@ -2560,8 +2706,8 @@ watch(() => props.path, (newPath, oldPath) => {
   if (newPath) {
     isGitRepository.value = null
     activePipelineSummary.value = null
-    // 恢复该项目保存的视图状态和展开状态
-    currentView.value = getSavedCurrentView(newPath)
+    // 恢复该项目保存的视图状态和展开状态（electron-store）
+    currentView.value = await getSavedCurrentView(newPath)
     if (currentView.value === 'terminal') {
       terminalMounted.value = true
     }
@@ -2571,8 +2717,8 @@ watch(() => props.path, (newPath, oldPath) => {
     if (currentView.value === 'workspace') {
       workspaceMounted.value = true
     }
-    restoreExpandState(newPath)
-    loadBranchesPanelWidth(newPath)
+    await restoreExpandState(newPath)
+    await loadBranchesPanelWidth(newPath)
 
     // 切换项目时先清空所有数据，防止显示旧项目的数据
     branchStatus.value = null
@@ -2637,6 +2783,7 @@ watch(() => props.path, (newPath, oldPath) => {
     }
   } else {
     branchesPanelWidthPx.value = BRANCHES_PANEL_DEFAULT
+    branchesPanelLastExpandedWidth.value = BRANCHES_PANEL_DEFAULT
     projectInfo.value = null
     isGitRepository.value = false
     activePipelineSummary.value = null
@@ -2721,6 +2868,13 @@ const handleWindowFocus = async () => {
 // 窗口焦点变化处理
 const handleVisibilityChange = () => {
   isDocumentVisible.value = document.visibilityState === 'visible'
+  if (document.visibilityState === 'hidden' && props.path) {
+    if (branchesPanelWidthSaveThrottleTimer) {
+      clearTimeout(branchesPanelWidthSaveThrottleTimer)
+      branchesPanelWidthSaveThrottleTimer = null
+    }
+    saveBranchesPanelWidth()
+  }
   if (isDocumentVisible.value && props.isActive) {
     handleWindowFocus()
   } else {
@@ -2728,14 +2882,32 @@ const handleVisibilityChange = () => {
   }
 }
 
-onMounted(() => {
+const flushBranchesPanelWidthBeforeLeave = () => {
+  if (props.path) {
+    if (branchesPanelWidthSaveThrottleTimer) {
+      clearTimeout(branchesPanelWidthSaveThrottleTimer)
+      branchesPanelWidthSaveThrottleTimer = null
+    }
+    void persistBranchesPanelWidth().catch(() => {})
+  }
+}
+
+onMounted(async () => {
+  if (props.path) {
+    await loadBranchesPanelWidth(props.path)
+  }
   // 监听窗口焦点事件
   window.addEventListener('focus', handleWindowFocus)
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('beforeunload', flushBranchesPanelWidthBeforeLeave)
   // 监听 Electron 的窗口焦点事件
   if (window.electronAPI?.onWindowFocus) {
     window.electronAPI.onWindowFocus(handleWindowFocus)
   }
+})
+
+onBeforeUnmount(() => {
+  flushBranchesPanelWidthBeforeLeave()
 })
 
 onUnmounted(() => {
@@ -2745,6 +2917,7 @@ onUnmounted(() => {
   stopProjectGitMonitor()
   window.removeEventListener('focus', handleWindowFocus)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('beforeunload', flushBranchesPanelWidthBeforeLeave)
   if (window.electronAPI?.removeWindowFocusListener) {
     window.electronAPI.removeWindowFocusListener(handleWindowFocus)
   }
@@ -2752,6 +2925,9 @@ onUnmounted(() => {
 
 // 监听标签激活状态变化，切换到当前标签时刷新
 watch(() => props.isActive, (newIsActive, oldIsActive) => {
+  if (oldIsActive && !newIsActive && props.path) {
+    flushBranchesPanelWidthBeforeLeave()
+  }
   if (newIsActive && !oldIsActive && props.path && isGitRepository.value !== false) {
     debugLog('🔄 [ProjectDetailNew] 标签激活，刷新状态...')
     refreshCurrentProject()
@@ -3053,6 +3229,10 @@ defineExpose({
   overflow: hidden;
 }
 
+.project-main-area--branch-rail {
+  overflow-x: visible;
+}
+
 .content-wrapper {
   flex: 1;
   display: flex;
@@ -3061,6 +3241,19 @@ defineExpose({
   gap: 0;
   padding: 0;
   background: #1b1c1f;
+}
+
+/* 左栏图标条：允许悬停提示伸到右侧主区域上方，避免被 overflow 裁掉 */
+.content-wrapper--branch-rail {
+  overflow: visible;
+}
+
+.content-wrapper--branch-rail .branches-panel {
+  z-index: 4;
+}
+
+.content-wrapper--branch-rail .branches-panel-resizer {
+  z-index: 5;
 }
 
 .branches-panel {
@@ -3076,6 +3269,11 @@ defineExpose({
   padding: 0 0 6px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.branches-panel.branches-panel--icon-rail {
+  overflow: visible;
+  padding-bottom: 6px;
 }
 
 .branches-panel-resizer {
@@ -3108,6 +3306,86 @@ defineExpose({
 
 .branches-panel::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+.branches-panel--icon-rail .file-status-button {
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 6px;
+  margin: 0 4px 4px;
+}
+
+.branches-panel--icon-rail .branches-nav-label,
+.branches-panel--icon-rail .branch-section-label,
+.branches-panel--icon-rail .expand-arrow {
+  display: none;
+}
+
+.branches-panel--icon-rail .pipeline-inline-status {
+  display: none;
+}
+
+.branches-panel--icon-rail .pending-icon {
+  display: none !important;
+}
+
+.branches-panel--icon-rail .branch-section-header {
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 6px;
+  margin: 0 4px 4px;
+}
+
+.branches-panel--icon-rail .branch-section-header .refresh-btn {
+  display: none !important;
+}
+
+/* 图标条：伪元素在项右侧显示文案（避免依赖易被裁切的原生 title） */
+.branches-panel--icon-rail .rail-tip-target {
+  position: relative;
+  z-index: 0;
+}
+
+.branches-panel--icon-rail .rail-tip-target:hover {
+  z-index: 30;
+}
+
+.branches-panel--icon-rail .rail-tip-target::after {
+  content: attr(data-rail-tip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(28, 30, 34, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.1s ease, visibility 0.1s ease;
+  z-index: 50;
+}
+
+.branches-panel--icon-rail .rail-tip-target:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+.branches-panel--icon-rail .branch-list .branch-item,
+.branches-panel--icon-rail .branch-list .tag-item {
+  padding-left: 8px;
+  padding-right: 4px;
+}
+
+.branches-panel--icon-rail .branch-name {
+  font-size: 11px;
 }
 
 .file-status-button {

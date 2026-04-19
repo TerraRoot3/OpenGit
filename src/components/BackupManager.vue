@@ -469,7 +469,7 @@ const findCommonBasePath = (paths) => {
   return commonParts.join('/')
 }
 
-// 标准化 git URL（与 ProjectBuildConfig.vue 保持一致）
+// 标准化 git URL（用于备份与远程匹配键）
 const normalizeGitUrl = (url) => {
   if (!url) return null
   // 去掉 .git 后缀
