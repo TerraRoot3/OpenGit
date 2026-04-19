@@ -367,12 +367,22 @@ function disposeAllModels () {
 
 onMounted(async () => {
   if (!editorContainerRef.value) return
+  monaco.editor.defineTheme('workspace-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#17181a'
+    }
+  })
   editor = monaco.editor.create(editorContainerRef.value, {
     readOnly: true,
-    theme: 'vs-dark',
+    theme: 'workspace-dark',
     automaticLayout: true,
     minimap: { enabled: true },
     fontSize: 13,
+    lineNumbersMinChars: 1,
+    lineDecorationsWidth: 8,
     scrollBeyondLastLine: false,
     wordWrap: 'on',
     glyphMargin: true
@@ -433,6 +443,7 @@ watch(
   inset: 0;
   min-height: 0;
   min-width: 0;
+  background: #17181a;
 }
 
 .editor-change-nav {

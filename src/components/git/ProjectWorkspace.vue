@@ -3178,7 +3178,7 @@ watch(
   /* 无 Tab 时单行占满；有 Tab 时首行 auto、预览区 minmax 可滚 */
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
-  background: #1e1e1e;
+  background: #17181a;
 }
 
 .editor-pane--tabs {
@@ -3225,7 +3225,7 @@ watch(
 }
 
 .tab-item.active {
-  background: #1e1e1e;
+  background: #17181a;
   color: rgba(255, 255, 255, 0.92);
 }
 
@@ -3253,6 +3253,7 @@ watch(
   min-width: 0;
   position: relative;
   overflow: hidden;
+  background: #17181a;
 }
 
 .preview-empty {
@@ -3275,6 +3276,7 @@ watch(
   overflow-x: hidden;
   padding: 12px;
   box-sizing: border-box;
+  background: #17181a;
 }
 
 .image-preview {
@@ -3289,14 +3291,14 @@ watch(
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  background: #1e1e1e;
+  background: #17181a;
 }
 
 .pdf-preview-frame {
   width: 100%;
   height: 100%;
   border: none;
-  background: #1e1e1e;
+  background: #17181a;
 }
 
 .binary-hint {
@@ -3309,5 +3311,6 @@ watch(
   font-size: 13px;
   padding: 24px;
   text-align: center;
+  background: #17181a;
 }
 </style>
