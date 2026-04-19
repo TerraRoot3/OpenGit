@@ -747,6 +747,9 @@ async function refreshGitStatuses () {
     if (modifiedFileEntries.value.length) {
       modifiedFileEntries.value = []
     }
+    if (!modifiedFileEntries.value.length && treeFilterMode.value === 'modified') {
+      treeFilterMode.value = 'all'
+    }
     return
   }
   const { statusMap: nextMap, entries: nextEntries } = parseGitStatusMap(result.output || result.stdout || '')
@@ -754,6 +757,9 @@ async function refreshGitStatuses () {
     gitStatusByPath.value = nextMap
   }
   modifiedFileEntries.value = nextEntries
+  if (!nextEntries.length && treeFilterMode.value === 'modified') {
+    treeFilterMode.value = 'all'
+  }
 }
 
 function sameStatusMap (left, right) {
