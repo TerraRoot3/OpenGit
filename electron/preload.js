@@ -251,6 +251,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   webTabEvaluate: (data) => ipcRenderer.invoke('web-tab-evaluate', data),
   webTabRestore: (data) => ipcRenderer.invoke('web-tab-restore', data),
   showBrowserFloatingMenu: (data) => ipcRenderer.invoke('browser-show-floating-menu', data),
+  showBrowserUrlSuggestions: (data) => ipcRenderer.invoke('browser-show-url-suggestions', data),
+  closeBrowserUrlSuggestions: () => ipcRenderer.invoke('browser-close-url-suggestions'),
+  setBrowserUrlSuggestionIndex: (data) => ipcRenderer.invoke('browser-url-suggestions-set-index', data),
+  onBrowserUrlSuggestionResult: (callback) => {
+    ipcRenderer.on('browser-url-suggestion-result', (event, payload) => callback(payload))
+  },
+  removeBrowserUrlSuggestionResultListener: () => {
+    ipcRenderer.removeAllListeners('browser-url-suggestion-result')
+  },
   showBrowserNativeMenu: () => ipcRenderer.invoke('browser-show-native-menu'),
   onWebTabStateChanged: (callback) => {
     ipcRenderer.on('web-tab-state-changed', (event, data) => callback(data))

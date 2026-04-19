@@ -200,8 +200,8 @@
           type="text"
           autocomplete="off"
         />
-        <!-- 联想提示（about 页面 + 历史记录） -->
-        <div v-if="showSuggestions && allSuggestions.length > 0" class="about-suggestions">
+        <!-- 联想提示：Electron 下走主进程浮层（与右上角菜单一致），避免被 WebContentsView 盖住 -->
+        <div v-if="showSuggestions && allSuggestions.length > 0 && !useNativeUrlSuggestions" class="about-suggestions">
           <div 
             v-for="(item, index) in allSuggestions" 
             :key="item.id || item.url"
@@ -1502,6 +1502,8 @@ const { browsingHistory, loadHistory: loadBrowsingHistory, addToHistory } = useB
 // Tooltip 状态
 // 自动补全相关（合并 about 页面和历史记录）
 const showSuggestions = ref(false)
+/** 主进程地址栏联想浮层打开中（避免 blur 立刻关掉联想状态） */
+const nativeUrlSuggestionsOpen = ref(false)
 const suggestionIndex = ref(0)
 const savedCloneDirectories = ref([]) // 保存的克隆目录列表
 // 兼容旧变量名
@@ -1641,6 +1643,12 @@ const allSuggestions = computed(() => {
   return [...special, ...history]
 })
 
+const useNativeUrlSuggestions = computed(
+  () =>
+    typeof window !== 'undefined' &&
+    typeof window.electronAPI?.showBrowserUrlSuggestions === 'function'
+)
+
 // 输入框内容变化
 const onUrlInputChange = () => {
   const input = urlInput.value.toLowerCase().trim()
@@ -1664,8 +1672,9 @@ const onUrlInputFocus = () => {
 
 // 输入框失去焦点
 const onUrlInputBlur = () => {
-  // 延迟关闭，让点击事件有时间触发
+  // 延迟关闭，让点击事件有时间触发；主进程联想浮层打开时不要关（否则会抢焦点）
   setTimeout(() => {
+    if (nativeUrlSuggestionsOpen.value) return
     showAboutSuggestions.value = false
   }, 150)
 }
@@ -1741,6 +1750,7 @@ const onUrlInputKeydown = (event) => {
   } else if (event.key === 'Escape') {
     showSuggestions.value = false
     userSelectedSuggestion.value = false
+    void window.electronAPI?.closeBrowserUrlSuggestions?.()
   }
 }
 
@@ -1759,6 +1769,111 @@ const selectSuggestion = async (item) => {
 
 // 兼容旧函数名
 const selectAboutSuggestion = selectSuggestion
+
+let urlSuggestionDebounceTimer = null
+let urlSuggestionIndexDebounceTimer = null
+
+const handleUrlSuggestionResult = (payload) => {
+  nativeUrlSuggestionsOpen.value = false
+  if (payload && payload.url) {
+    const item =
+      allSuggestions.value.find((it) => it.url === payload.url) ||
+      { url: payload.url, title: payload.title || '' }
+    void selectSuggestion(item)
+  } else {
+    showSuggestions.value = false
+  }
+}
+
+async function runNativeUrlSuggestionsPopup() {
+  if (!useNativeUrlSuggestions.value) return
+  if (!showSuggestions.value || !allSuggestions.value.length) {
+    nativeUrlSuggestionsOpen.value = false
+    try {
+      await window.electronAPI?.closeBrowserUrlSuggestions?.()
+    } catch {
+      /* ignore */
+    }
+    return
+  }
+
+  const el = urlInputRef.value
+  if (!el || !window.electronAPI?.showBrowserUrlSuggestions) return
+
+  const rect = el.getBoundingClientRect()
+  const itemsPayload = allSuggestions.value.map((item) => ({
+    url: item.url,
+    title: item.title || '',
+    displayUrl: item.displayUrl || item.url,
+    favicon: item.favicon || ''
+  }))
+
+  try {
+    nativeUrlSuggestionsOpen.value = true
+    const result = await window.electronAPI.showBrowserUrlSuggestions({
+      x: Math.round(window.screenX + rect.left),
+      y: Math.round(window.screenY + rect.bottom + 4),
+      width: Math.round(rect.width),
+      items: itemsPayload,
+      selectedIndex: suggestionIndex.value
+    })
+    if (!result || result.success === false) {
+      nativeUrlSuggestionsOpen.value = false
+    }
+  } catch (error) {
+    console.error('地址栏联想浮层失败:', error)
+    nativeUrlSuggestionsOpen.value = false
+  }
+}
+
+function scheduleNativeUrlSuggestions() {
+  if (!useNativeUrlSuggestions.value) return
+  clearTimeout(urlSuggestionDebounceTimer)
+  urlSuggestionDebounceTimer = setTimeout(() => {
+    urlSuggestionDebounceTimer = null
+    void runNativeUrlSuggestionsPopup()
+  }, 200)
+}
+
+watch(
+  () => [
+    useNativeUrlSuggestions.value,
+    showSuggestions.value,
+    allSuggestions.value.map((i) => `${i.url}\t${i.title}`).join('\n')
+  ],
+  () => {
+    scheduleNativeUrlSuggestions()
+  },
+  { flush: 'post' }
+)
+
+watch(suggestionIndex, () => {
+  if (!useNativeUrlSuggestions.value || !nativeUrlSuggestionsOpen.value) return
+  clearTimeout(urlSuggestionIndexDebounceTimer)
+  urlSuggestionIndexDebounceTimer = setTimeout(() => {
+    void window.electronAPI?.setBrowserUrlSuggestionIndex?.({
+      index: suggestionIndex.value
+    })
+  }, 40)
+})
+
+watch(nativeUrlSuggestionsOpen, (open) => {
+  if (typeof window === 'undefined') return
+  if (open && useNativeUrlSuggestions.value) {
+    const onEsc = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        void window.electronAPI?.closeBrowserUrlSuggestions?.()
+      }
+    }
+    window.__urlSuggestionEscHandler = onEsc
+    window.addEventListener('keydown', onEsc, true)
+  } else if (window.__urlSuggestionEscHandler) {
+    window.removeEventListener('keydown', window.__urlSuggestionEscHandler, true)
+    delete window.__urlSuggestionEscHandler
+  }
+})
 
 const tooltipVisible = ref(false)
 const tooltipText = ref('')
@@ -3937,6 +4052,9 @@ onMounted(async () => {
         }
       })
     }
+    if (window.electronAPI.onBrowserUrlSuggestionResult) {
+      window.electronAPI.onBrowserUrlSuggestionResult(handleUrlSuggestionResult)
+    }
   }
   
     // 如果有 initialUrl，直接创建标签页（不恢复）
@@ -3970,6 +4088,16 @@ onMounted(async () => {
 
 // 组件卸载时保存标签页
 onUnmounted(() => {
+  clearTimeout(urlSuggestionDebounceTimer)
+  urlSuggestionDebounceTimer = null
+  clearTimeout(urlSuggestionIndexDebounceTimer)
+  urlSuggestionIndexDebounceTimer = null
+  if (typeof window !== 'undefined' && window.__urlSuggestionEscHandler) {
+    window.removeEventListener('keydown', window.__urlSuggestionEscHandler, true)
+    delete window.__urlSuggestionEscHandler
+  }
+  window.electronAPI?.removeBrowserUrlSuggestionResultListener?.()
+  void window.electronAPI?.closeBrowserUrlSuggestions?.()
   clearLoadingProgressTimers()
   filledPasswordByTabId.clear()
   lastFilledUrlByTabId.clear()
@@ -4444,19 +4572,21 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   -webkit-app-region: no-drag; /* URL输入框不可拖拽窗口 */
 }
 
-/* about: 自动补全提示 */
+/* about: 自动补全提示（无 Electron 浮层 API 时的降级，在地址栏下方展开） */
 .about-suggestions {
   position: absolute;
   top: 100%;
   left: 0;
   right: 0;
   margin-top: 4px;
+  max-height: min(42vh, 360px);
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #2a2b2f;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
-  z-index: 1000;
-  overflow: hidden;
+  z-index: 10000;
 }
 
 .suggestion-item {

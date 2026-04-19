@@ -760,6 +760,46 @@ let sitePermissionManager = null
 let sessionPartitionManager = null
 let webTabLifecycleInterval = null
 const floatingMenuResolvers = new Map()
+let activeUrlSuggestionWindow = null
+
+function notifyUrlSuggestionResult(wc, payload) {
+  if (!wc || wc.isDestroyed()) return
+  try {
+    wc.send('browser-url-suggestion-result', payload)
+  } catch (error) {
+    // ignore
+  }
+}
+
+function destroyUrlSuggestionWindowSilent() {
+  const w = activeUrlSuggestionWindow
+  if (!w || w.isDestroyed()) {
+    activeUrlSuggestionWindow = null
+    return
+  }
+  w.__urlSuggestionNotified = true
+  try {
+    w.close()
+  } catch (error) {}
+  activeUrlSuggestionWindow = null
+}
+
+function closeUrlSuggestionWindowNotifyParent() {
+  const w = activeUrlSuggestionWindow
+  if (!w || w.isDestroyed()) {
+    activeUrlSuggestionWindow = null
+    return
+  }
+  const wc = w.__resultTargetWC
+  if (!w.__urlSuggestionNotified) {
+    w.__urlSuggestionNotified = true
+    notifyUrlSuggestionResult(wc, null)
+  }
+  try {
+    w.close()
+  } catch (error) {}
+  activeUrlSuggestionWindow = null
+}
 const pendingPermissionCallbacks = new Map()
 const pendingPermissionTimeouts = new Map()
 const downloadHistory = new Map()
@@ -1029,6 +1069,273 @@ ipcMain.on('browser-floating-menu-action', (event, payload) => {
   }
   if (!menuWindow.isDestroyed()) {
     menuWindow.close()
+  }
+})
+
+ipcMain.on('browser-url-suggestion-action', (event, payload = {}) => {
+  const w = BrowserWindow.fromWebContents(event.sender)
+  if (!w || w.isDestroyed()) return
+  const wc = w.__resultTargetWC
+  const type = payload && payload.type
+  w.__urlSuggestionNotified = true
+  if (type === 'pick' && payload.url) {
+    notifyUrlSuggestionResult(wc, {
+      url: String(payload.url),
+      title: String(payload.title || '')
+    })
+  } else {
+    notifyUrlSuggestionResult(wc, null)
+  }
+  if (activeUrlSuggestionWindow === w) {
+    activeUrlSuggestionWindow = null
+  }
+  try {
+    w.close()
+  } catch (error) {}
+})
+
+ipcMain.handle('browser-close-url-suggestions', async () => {
+  closeUrlSuggestionWindowNotifyParent()
+  return { success: true }
+})
+
+ipcMain.handle('browser-url-suggestions-set-index', async (event, { index } = {}) => {
+  const w = activeUrlSuggestionWindow
+  if (!w || w.isDestroyed()) return { success: false }
+  const i = Math.max(0, Math.floor(Number(index) || 0))
+  try {
+    await w.webContents.executeJavaScript(
+      `typeof window.__urlSuggestionSetIndex === 'function' && window.__urlSuggestionSetIndex(${i})`
+    )
+    return { success: true }
+  } catch (error) {
+    return { success: false }
+  }
+})
+
+async function measureAndSetUrlSuggestionBounds(menuWindow, opts) {
+  const { targetX, screenY, panelWidth, workArea, panelMax } = opts
+  const pm = Number(panelMax) || 420
+  const measuredHeight = await menuWindow.webContents.executeJavaScript(`
+    (() => {
+      const el = document.getElementById('list')
+      if (!el) return ${pm}
+      return Math.ceil(el.getBoundingClientRect().height)
+    })()
+  `)
+  const finalHeight = Math.max(80, Math.min(Number(measuredHeight) || pm, pm))
+  const maxY = workArea.y + workArea.height - finalHeight
+  const finalY = Math.min(Math.max(workArea.y, screenY), maxY)
+  menuWindow.setBounds({
+    x: targetX,
+    y: finalY,
+    width: panelWidth,
+    height: finalHeight
+  })
+}
+
+ipcMain.handle('browser-show-url-suggestions', async (event, payload = {}) => {
+  try {
+    const items = Array.isArray(payload.items) ? payload.items : []
+    if (!items.length) {
+      destroyUrlSuggestionWindowSilent()
+      return { success: true }
+    }
+
+    const targetWindow = BrowserWindow.fromWebContents(event.sender)
+    if (!targetWindow || targetWindow.isDestroyed()) return { success: false }
+
+    const screenX = Math.round(Number(payload.x) || 0)
+    const screenY = Math.round(Number(payload.y) || 0)
+    let panelWidth = Math.round(Number(payload.width) || 400)
+    panelWidth = Math.max(320, Math.min(panelWidth, 720))
+
+    const display = screen.getDisplayNearestPoint({ x: screenX, y: screenY })
+    const { workArea } = display
+
+    const targetX = Math.min(
+      Math.max(workArea.x, screenX),
+      workArea.x + workArea.width - panelWidth
+    )
+
+    const itemsB64 = Buffer.from(JSON.stringify(items), 'utf8').toString('base64')
+    const b64Js = JSON.stringify(itemsB64)
+    let sel = Number(payload.selectedIndex) || 0
+    if (sel < 0) sel = 0
+    if (sel >= items.length) sel = 0
+
+    const panelMax = 420
+    const existing = activeUrlSuggestionWindow
+    if (existing && !existing.isDestroyed() && existing.__resultTargetWC === targetWindow.webContents) {
+      try {
+        const jsB64 = JSON.stringify(itemsB64)
+        await existing.webContents.executeJavaScript(
+          `typeof window.__urlSuggestionReplaceFromB64 === 'function' && window.__urlSuggestionReplaceFromB64(${jsB64}, ${sel})`
+        )
+        await measureAndSetUrlSuggestionBounds(existing, {
+          targetX,
+          screenY,
+          panelWidth,
+          workArea,
+          panelMax
+        })
+        return { success: true, updated: true }
+      } catch (updateErr) {
+        destroyUrlSuggestionWindowSilent()
+      }
+    } else if (existing && !existing.isDestroyed()) {
+      destroyUrlSuggestionWindowSilent()
+    }
+
+    const menuWindow = new BrowserWindow({
+      width: panelWidth,
+      height: panelMax,
+      x: targetX,
+      y: screenY,
+      frame: false,
+      show: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      parent: targetWindow,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+        sandbox: false
+      }
+    })
+
+    const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+html,body{margin:0;padding:0;background:transparent;overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  -webkit-font-smoothing:antialiased;}
+.list{
+  width:100%;box-sizing:border-box;max-height:${panelMax}px;overflow-x:hidden;overflow-y:auto;
+  background:#2a2b2f;border:1px solid rgba(255,255,255,0.08);border-radius:12px;
+  box-shadow:0 12px 28px rgba(0,0,0,0.32);padding:0;
+}
+.list::-webkit-scrollbar{width:8px;}
+.list::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:4px;}
+.item{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;
+  color:rgba(255,255,255,0.9);font-size:14px;line-height:1.35;
+  transition:background 0.12s ease;
+}
+.item:first-child{border-top-left-radius:11px;border-top-right-radius:11px;}
+.item:last-child{border-bottom-left-radius:11px;border-bottom-right-radius:11px;}
+.item:only-child{border-radius:11px;}
+.item:hover{background:rgba(255,255,255,0.06);}
+.item.active{background:rgba(255,255,255,0.1);}
+.fav{width:16px;height:16px;flex-shrink:0;border-radius:3px;object-fit:contain;background:rgba(255,255,255,0.06);}
+.fav-sp{width:16px;height:16px;flex-shrink:0;border-radius:3px;background:rgba(255,255,255,0.06);}
+.txt{display:flex;flex-direction:column;min-width:0;flex:1;gap:2px;}
+.url{color:rgba(255,255,255,0.88);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.title{color:rgba(255,255,255,0.45);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+</style>
+</head>
+<body>
+<div class="list" id="list"></div>
+<script>
+const { ipcRenderer } = require('electron');
+let items = JSON.parse(Buffer.from(${b64Js}, 'base64').toString('utf8'));
+let selectedIndex = ${sel};
+const list = document.getElementById('list');
+function send(t, extra) {
+  ipcRenderer.send('browser-url-suggestion-action', Object.assign({ type: t }, extra || {}));
+}
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+function clampSel() {
+  if (selectedIndex < 0) selectedIndex = items.length - 1;
+  if (selectedIndex >= items.length) selectedIndex = 0;
+}
+window.__urlSuggestionReplaceFromB64 = (b64, s) => {
+  try {
+    items = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+    selectedIndex = Math.max(0, Math.min(Math.floor(Number(s) || 0), items.length - 1));
+    clampSel();
+    render();
+  } catch (err) {}
+};
+function render() {
+  list.innerHTML = items.map((it, i) => {
+    const fav = it.favicon
+      ? '<img class="fav" src="' + esc(it.favicon) + '" alt="">'
+      : '<span class="fav-sp"></span>';
+    const du = esc(it.displayUrl || it.url || '');
+    const tt = esc(it.title || '');
+    return '<div class="item' + (i === selectedIndex ? ' active' : '') + '" data-i="' + i + '">' + fav +
+      '<div class="txt"><span class="url">' + du + '</span><span class="title">' + tt + '</span></div></div>';
+  }).join('');
+  list.querySelectorAll('.item').forEach((el) => {
+    el.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const i = parseInt(el.getAttribute('data-i'), 10);
+      const it = items[i];
+      if (it) send('pick', { url: it.url, title: it.title || '' });
+    });
+  });
+  const act = list.querySelector('.item.active');
+  if (act) act.scrollIntoView({ block: 'nearest' });
+}
+window.__urlSuggestionSetIndex = (i) => {
+  selectedIndex = Math.max(0, Math.min(Math.floor(Number(i) || 0), items.length - 1));
+  clampSel();
+  render();
+};
+render();
+</script>
+</body>
+</html>`
+
+    await menuWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+
+    await measureAndSetUrlSuggestionBounds(menuWindow, {
+      targetX,
+      screenY,
+      panelWidth,
+      workArea,
+      panelMax
+    })
+
+    menuWindow.__resultTargetWC = targetWindow.webContents
+    menuWindow.__urlSuggestionNotified = false
+    menuWindow.once('closed', () => {
+      if (activeUrlSuggestionWindow === menuWindow) {
+        activeUrlSuggestionWindow = null
+      }
+      if (!menuWindow.__urlSuggestionNotified && menuWindow.__resultTargetWC) {
+        menuWindow.__urlSuggestionNotified = true
+        notifyUrlSuggestionResult(menuWindow.__resultTargetWC, null)
+      }
+    })
+
+    activeUrlSuggestionWindow = menuWindow
+    if (process.platform === 'darwin' && typeof menuWindow.showInactive === 'function') {
+      menuWindow.showInactive()
+    } else {
+      menuWindow.show()
+    }
+
+    return { success: true }
+  } catch (error) {
+    safeError('❌ 打开地址栏联想浮层失败:', error.message)
+    return { success: false, error: error.message }
   }
 })
 
