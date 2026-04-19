@@ -309,6 +309,14 @@
               <div v-show="activeTab.kind === 'image'" class="image-preview-wrap">
                 <img v-if="imageDataUrl" :src="imageDataUrl" alt="" class="image-preview" />
               </div>
+              <div v-show="activeTab.kind === 'pdf'" class="pdf-preview-wrap">
+                <iframe
+                  v-if="pdfDataUrl"
+                  :src="pdfDataUrl"
+                  class="pdf-preview-frame"
+                  title="PDF 预览"
+                />
+              </div>
               <div v-show="activeTab.kind === 'binary'" class="binary-hint">
                 无法以文本预览该文件（可能为二进制或大文件）
               </div>
@@ -529,6 +537,7 @@ function relativeToProjectPath(targetPath) {
 }
 
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.svg'])
+const PDF_EXT = new Set(['.pdf'])
 const LANGUAGE_ICON_MAP = {
   js: 'javascript',
   mjs: 'javascript',
@@ -567,6 +576,10 @@ function extname (p) {
 
 function isImagePath (p) {
   return IMAGE_EXT.has(extname(p))
+}
+
+function isPdfPath (p) {
+  return PDF_EXT.has(extname(p))
 }
 
 function languageForPath (p) {
@@ -1744,6 +1757,7 @@ watch(
 )
 
 const activeTab = computed(() => tabs.value.find((tab) => tab.id === activeTabId.value) || null)
+const pdfDataUrl = ref('')
 
 async function ensureActiveTabVisible() {
   if (!activeTabId.value) return
@@ -1780,6 +1794,26 @@ async function openFile (filePath) {
     activeTabId.value = id
     const img = await window.electronAPI.readImageAsBase64(filePath)
     imageDataUrl.value = img?.success ? img.dataUrl : ''
+    saveWorkspaceState()
+    await nextTick()
+    return
+  }
+
+  if (isPdfPath(filePath)) {
+    const existing = tabs.value.find((t) => t.path === filePath)
+    const id = existing ? existing.id : `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    if (!existing) {
+      tabs.value = [
+        ...tabs.value,
+        {
+          id,
+          path: filePath,
+          title: basename(filePath),
+          kind: 'pdf'
+        }
+      ]
+    }
+    activeTabId.value = id
     saveWorkspaceState()
     await nextTick()
     return
@@ -2486,6 +2520,7 @@ watch(
   (n) => {
     if (n === 0) {
       imageDataUrl.value = ''
+      pdfDataUrl.value = ''
       return
     }
     if (activeTabId.value) {
@@ -2506,9 +2541,11 @@ watch(
   (tab) => {
     if (!tab) {
       imageDataUrl.value = ''
+      pdfDataUrl.value = ''
       return
     }
     if (tab.kind === 'image') {
+      pdfDataUrl.value = ''
       void window.electronAPI?.readImageAsBase64(tab.path).then((img) => {
         if (activeTabId.value === tab.id) {
           imageDataUrl.value = img?.success ? img.dataUrl : ''
@@ -2516,7 +2553,17 @@ watch(
       })
       return
     }
+    if (tab.kind === 'pdf') {
+      imageDataUrl.value = ''
+      void window.electronAPI?.readFileAsBase64?.(tab.path).then((fileResult) => {
+        if (activeTabId.value === tab.id) {
+          pdfDataUrl.value = fileResult?.success ? fileResult.dataUrl : ''
+        }
+      })
+      return
+    }
     imageDataUrl.value = ''
+    pdfDataUrl.value = ''
   },
   { immediate: true, deep: true }
 )
@@ -3234,6 +3281,22 @@ watch(
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+.pdf-preview-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  background: #1e1e1e;
+}
+
+.pdf-preview-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #1e1e1e;
 }
 
 .binary-hint {

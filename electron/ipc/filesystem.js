@@ -87,6 +87,31 @@ function registerFilesystemHandlers({
     }
   })
 
+  ipcMain.handle('read-file-as-base64', async (event, filePath) => {
+    try {
+      const ext = path.extname(filePath).toLowerCase()
+      const mimeTypes = {
+        '.pdf': 'application/pdf',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.bmp': 'image/bmp',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon'
+      }
+      const mimeType = mimeTypes[ext] || 'application/octet-stream'
+      const fileBuffer = fs.readFileSync(filePath)
+      const base64 = fileBuffer.toString('base64')
+      const dataUrl = `data:${mimeType};base64,${base64}`
+      return { success: true, dataUrl, mimeType, size: fileBuffer.length }
+    } catch (error) {
+      safeError('❌ 读取文件 base64 失败:', error.message)
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle('show-save-dialog', async (event, options) => {
     try {
       const result = await dialog.showSaveDialog(getMainWindow(), {

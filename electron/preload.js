@@ -206,6 +206,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 读取图片文件并返回 base64
   readImageAsBase64: (filePath) => ipcRenderer.invoke('read-image-as-base64', filePath),
+  readFileAsBase64: (filePath) => ipcRenderer.invoke('read-file-as-base64', filePath),
 
   // Electron 32+ 不再支持 renderer 直接读取 File.path，改用 webUtils
   getPathForFile: (file) => {
