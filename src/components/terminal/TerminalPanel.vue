@@ -1221,11 +1221,13 @@ const closeTab = async (tabId) => {
 const clearTerminal = () => {
   const term = currentTerminal.value
   if (!term) return
-  if (term.ptyId && term.connected) {
-    // Ctrl+L 清屏，与 VS Code 行为一致
-    window.electronAPI.terminal.write({ id: term.ptyId, data: '\x0c' })
-  } else {
+  // 快照恢复的历史是直接 write 进 xterm 的，不在 PTY 里；仅发 Ctrl+L 清不掉这些行。
+  try {
     term.xterm.clear()
+  } catch (e) {}
+  if (term.ptyId && term.connected) {
+    // 再通知 shell 清屏并重绘提示符，与常见终端 Ctrl+L 一致
+    window.electronAPI.terminal.write({ id: term.ptyId, data: '\x0c' })
   }
   term.xterm.focus()
 }
