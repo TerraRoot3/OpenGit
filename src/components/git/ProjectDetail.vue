@@ -69,8 +69,11 @@
       <!-- 主内容区 -->
       <div class="project-main-area">
         <div class="content-wrapper">
-          <!-- 左侧面板 -->
-          <div class="branches-panel">
+          <!-- 左侧面板（宽度可拖拽，按项目缓存） -->
+          <div
+            class="branches-panel"
+            :style="{ width: `${branchesPanelWidthPx}px`, minWidth: `${BRANCHES_PANEL_MIN}px` }"
+          >
             <div
               class="file-status-button"
               :class="{ active: currentView === 'ai-sessions' }"
@@ -233,6 +236,11 @@
               </div>
             </div>
           </div>
+          <div
+            class="branches-panel-resizer"
+            title="拖拽调整左栏宽度"
+            @pointerdown.prevent="onBranchesPanelResizerPointerDown"
+          />
 
           <!-- 右侧内容区 -->
           <div class="right-panel">
@@ -627,6 +635,12 @@ let pipelineSummaryHoldUntil = 0
 // 从 localStorage 读取项目对应的视图状态，默认为 'ai-sessions'
 const getProjectViewKey = (path) => `projectView_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
 const getExpandStateKey = (path) => `expandState_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
+const getBranchesPanelWidthKey = (path) =>
+  `projectBranchesPanelWidth_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
+
+const BRANCHES_PANEL_MIN = 200
+const BRANCHES_PANEL_MAX = 560
+const BRANCHES_PANEL_DEFAULT = 240
 
 const getSavedCurrentView = (path) => {
   try {
@@ -677,6 +691,67 @@ const restoreExpandState = (path) => {
 }
 
 const currentView = ref('ai-sessions')
+const branchesPanelWidthPx = ref(BRANCHES_PANEL_DEFAULT)
+
+function loadBranchesPanelWidth (path) {
+  if (!path) {
+    branchesPanelWidthPx.value = BRANCHES_PANEL_DEFAULT
+    return
+  }
+  try {
+    const raw = localStorage.getItem(getBranchesPanelWidthKey(path))
+    const n = Number(raw)
+    if (Number.isFinite(n) && n >= BRANCHES_PANEL_MIN && n <= BRANCHES_PANEL_MAX) {
+      branchesPanelWidthPx.value = Math.round(n)
+    } else {
+      branchesPanelWidthPx.value = BRANCHES_PANEL_DEFAULT
+    }
+  } catch {
+    branchesPanelWidthPx.value = BRANCHES_PANEL_DEFAULT
+  }
+}
+
+function saveBranchesPanelWidth () {
+  try {
+    if (props.path) {
+      localStorage.setItem(getBranchesPanelWidthKey(props.path), String(branchesPanelWidthPx.value))
+    }
+  } catch {}
+}
+
+function onBranchesPanelResizerPointerDown (e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  const el = e.currentTarget
+  try {
+    el.setPointerCapture(e.pointerId)
+  } catch {
+    /* ignore */
+  }
+  const startX = e.clientX
+  const startW = branchesPanelWidthPx.value
+  const onMove = (ev) => {
+    const d = ev.clientX - startX
+    branchesPanelWidthPx.value = Math.min(
+      BRANCHES_PANEL_MAX,
+      Math.max(BRANCHES_PANEL_MIN, startW + d)
+    )
+  }
+  const onUp = (ev) => {
+    try {
+      el.releasePointerCapture(ev.pointerId)
+    } catch {
+      /* ignore */
+    }
+    el.removeEventListener('pointermove', onMove)
+    el.removeEventListener('pointerup', onUp)
+    el.removeEventListener('pointercancel', onUp)
+    saveBranchesPanelWidth()
+  }
+  el.addEventListener('pointermove', onMove)
+  el.addEventListener('pointerup', onUp)
+  el.addEventListener('pointercancel', onUp)
+}
+
 const terminalMounted = ref(false)
 const aiSessionsMounted = ref(false)
 const workspaceMounted = ref(false)
@@ -2497,7 +2572,8 @@ watch(() => props.path, (newPath, oldPath) => {
       workspaceMounted.value = true
     }
     restoreExpandState(newPath)
-    
+    loadBranchesPanelWidth(newPath)
+
     // 切换项目时先清空所有数据，防止显示旧项目的数据
     branchStatus.value = null
     allBranchStatus.value = {}
@@ -2560,6 +2636,7 @@ watch(() => props.path, (newPath, oldPath) => {
       startProjectGitMonitor()
     }
   } else {
+    branchesPanelWidthPx.value = BRANCHES_PANEL_DEFAULT
     projectInfo.value = null
     isGitRepository.value = false
     activePipelineSummary.value = null
@@ -2987,15 +3064,50 @@ defineExpose({
 }
 
 .branches-panel {
-  width: 240px;
-  min-width: 220px;
+  flex-shrink: 0;
+  box-sizing: border-box;
   background: transparent;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   border: 0;
   border-radius: 0;
   padding: 0 0 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.branches-panel-resizer {
+  flex-shrink: 0;
+  width: 3px;
+  margin: 0 -1px;
+  cursor: col-resize;
+  align-self: stretch;
+  background: transparent;
+  touch-action: none;
+}
+
+.branches-panel-resizer:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.branches-panel::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+.branches-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.branches-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 1.5px;
+}
+
+.branches-panel::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .file-status-button {
@@ -3420,27 +3532,4 @@ defineExpose({
   margin: 6px 0;
 }
 
-/* 滚动条样式 - 最小化 */
-.branches-panel {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
-}
-
-.branches-panel::-webkit-scrollbar {
-  width: 3px;
-  height: 3px;
-}
-
-.branches-panel::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.branches-panel::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 1.5px;
-}
-
-.branches-panel::-webkit-scrollbar-corner {
-  background: transparent;
-}
 </style>
