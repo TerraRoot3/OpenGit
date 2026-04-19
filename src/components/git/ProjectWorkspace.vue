@@ -575,18 +575,34 @@ function mapFileToTreeNode (f) {
   }
 }
 
+const CONFLICT_STATUS_PAIR_SET = new Set([
+  'DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'
+])
+
+function isConflictStatusPair (stagedStatus, unstagedStatus) {
+  return CONFLICT_STATUS_PAIR_SET.has(`${stagedStatus}${unstagedStatus}`)
+}
+
+function normalizeGitStatusFlag (flag) {
+  if (!flag || flag === ' ') return ''
+  if (flag === '?') return '?'
+  if (flag === '!') return ''
+  return flag
+}
+
 function resolveStatusLetter (stagedStatus, unstagedStatus) {
-  if (
-    (stagedStatus === 'U' && unstagedStatus === 'U') ||
-    (stagedStatus === 'A' && unstagedStatus === 'A') ||
-    (stagedStatus === 'D' && unstagedStatus === 'D')
-  ) {
+  if (isConflictStatusPair(stagedStatus, unstagedStatus)) {
     return 'U'
   }
-  if (stagedStatus === '?' && unstagedStatus === '?') {
-    return '?'
-  }
-  return stagedStatus !== ' ' && stagedStatus !== '?' ? stagedStatus : unstagedStatus
+
+  const staged = normalizeGitStatusFlag(stagedStatus)
+  const unstaged = normalizeGitStatusFlag(unstagedStatus)
+
+  if (!staged && !unstaged) return ''
+  if (!staged) return unstaged
+  if (!unstaged) return staged
+
+  return pickHigherPriorityStatus(staged, unstaged)
 }
 
 function decodeStatusPath (line) {
@@ -648,10 +664,7 @@ function parseGitStatusMap (output) {
 
     const stagedF = porcelainStagedFlag(stagedStatus)
     const unstagedF = porcelainUnstagedFlag(unstagedStatus)
-    const lineConflict =
-      (stagedStatus === 'U' && unstagedStatus === 'U') ||
-      (stagedStatus === 'A' && unstagedStatus === 'A') ||
-      (stagedStatus === 'D' && unstagedStatus === 'D')
+    const lineConflict = isConflictStatusPair(stagedStatus, unstagedStatus)
     const lineUntracked = stagedStatus === '?' && unstagedStatus === '?'
 
     const existing = entryByKey.get(canonicalKey)
