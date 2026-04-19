@@ -156,12 +156,19 @@
                   class="workspace-tree-row"
                   :class="[
                     getNodeStatusClass(item.node),
-                    { selected: selectedKeys[0] === item.node.key }
+                    {
+                      selected: selectedKeys.includes(item.node.key),
+                      'workspace-tree-row--drop-target': treeDragHoverKey === item.node.key
+                    }
                   ]"
-                  @click="handleTreeRowClick(item.node)"
+                  draggable="true"
+                  @click="handleTreeRowClick(item.node, $event)"
                   @dblclick="handleTreeRowDoubleClick(item.node)"
                   @contextmenu.prevent="openTreeContextMenu($event, item.node)"
-                  @dragover="handleWorkspaceTreeDragOver"
+                  @dragstart="handleTreeRowDragStart($event, item.node)"
+                  @dragend="handleTreeRowDragEnd"
+                  @dragover.stop="handleWorkspaceTreeRowDragOver($event, item.node)"
+                  @dragleave="handleWorkspaceTreeRowDragLeave($event, item.node)"
                   @drop.stop.prevent="handleWorkspaceTreeRowDrop($event, item.node)"
                 >
                   <span class="workspace-tree-row__indent" :style="{ width: `${item.depth * 16}px` }"></span>
@@ -356,6 +363,9 @@ const selectedModifiedPaths = ref([])
 const createDraft = ref(null)
 const draftName = ref('')
 const internalClipboard = ref({ mode: null, paths: [] })
+const treeDragState = ref({ internal: false, paths: [] })
+const treeDragHoverKey = ref('')
+let treeDragPreviewEl = null
 const treeFilterMode = ref('modified')
 const fileSearchQuery = ref('')
 const searchPatternError = ref('')
@@ -1185,8 +1195,16 @@ function handleDocumentPointerDown(event) {
   }
 }
 
+function getPrimarySelectedKey() {
+  return selectedKeys.value[0] || ''
+}
+
+function getSelectedTreePaths() {
+  return selectedKeys.value.filter(Boolean)
+}
+
 function getPasteTargetDirectory() {
-  return findParentDirectoryKey(selectedKeys.value[0] || props.projectPath)
+  return findParentDirectoryKey(getPrimarySelectedKey() || props.projectPath)
 }
 
 async function refreshTree() {
@@ -1251,12 +1269,31 @@ async function restoreWorkspaceState() {
 }
 
 function storeInternalClipboard(mode) {
-  const selectedKey = selectedKeys.value[0]
-  if (!selectedKey) return
-  internalClipboard.value = { mode, paths: [selectedKey] }
+  const selected = getSelectedTreePaths().filter(Boolean)
+  if (!selected.length) return
+  internalClipboard.value = { mode, paths: selected }
+}
+
+function collectInternalWorkspaceDropPaths (event) {
+  const dt = event?.dataTransfer
+  if (!dt) return []
+
+  const payload = dt.getData('application/x-opengit-tree-paths') || ''
+  if (!payload.trim()) return []
+
+  try {
+    const parsed = JSON.parse(payload)
+    if (!Array.isArray(parsed)) return []
+    return [...new Set(parsed.map((p) => normalizePath(String(p || '').trim())).filter(Boolean))]
+  } catch (error) {
+    return []
+  }
 }
 
 function collectWorkspaceDropPaths (event) {
+  const internalPaths = collectInternalWorkspaceDropPaths(event)
+  if (internalPaths.length) return internalPaths
+
   const dt = event?.dataTransfer
   if (!dt) return []
 
@@ -1371,13 +1408,16 @@ async function ensurePasteOverwriteForSources (sources, targetDirectory) {
   return confirmed ? { proceed: true, overwrite: true } : { proceed: false, overwrite: false }
 }
 
-async function copyDroppedPathsToDirectory (paths, targetDirectory) {
+async function transferPathsToDirectory (paths, targetDirectory, mode = 'copy') {
   if (!paths?.length || !targetDirectory) return
   const { proceed, overwrite } = await ensurePasteOverwriteForSources(paths, targetDirectory)
   if (!proceed) return
-  const result = await window.electronAPI?.copyFilesystemItems({ sources: paths, targetDirectory, overwrite })
+  const action = mode === 'move'
+    ? window.electronAPI?.moveFilesystemItems
+    : window.electronAPI?.copyFilesystemItems
+  const result = await action?.({ sources: paths, targetDirectory, overwrite })
   if (!result?.success) {
-    console.warn('复制失败:', result?.error)
+    console.warn(mode === 'move' ? '移动失败:' : '复制失败:', result?.error)
     return
   }
   await refreshTree()
@@ -1387,18 +1427,10 @@ async function pasteInternalClipboard() {
   const { mode, paths } = internalClipboard.value
   if (!mode || !paths.length) return false
   const targetDirectory = getPasteTargetDirectory()
-  const { proceed, overwrite } = await ensurePasteOverwriteForSources(paths, targetDirectory)
-  if (!proceed) return true
-  const action = mode === 'cut' ? window.electronAPI?.moveFilesystemItems : window.electronAPI?.copyFilesystemItems
-  const result = await action?.({ sources: paths, targetDirectory, overwrite })
-  if (!result?.success) {
-    console.warn('粘贴失败:', result?.error)
-    return true
-  }
+  await transferPathsToDirectory(paths, targetDirectory, mode === 'cut' ? 'move' : 'copy')
   if (mode === 'cut') {
     internalClipboard.value = { mode: null, paths: [] }
   }
-  await refreshTree()
   return true
 }
 
@@ -1407,20 +1439,103 @@ async function pasteExternalFiles(fileList) {
     .map(file => window.electronAPI?.getPathForFile?.(file))
     .filter(Boolean)
   if (!paths.length) return false
-  await copyDroppedPathsToDirectory(paths, getPasteTargetDirectory())
+  await transferPathsToDirectory(paths, getPasteTargetDirectory(), 'copy')
   return true
 }
 
 function handleWorkspaceTreeDragOver (event) {
   if (isModifiedFilterMode.value || !props.projectPath) return
   event.preventDefault()
+  treeDragHoverKey.value = ''
   if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'copy'
+    event.dataTransfer.dropEffect = treeDragState.value.internal && !event.altKey ? 'move' : 'copy'
   }
 }
 
 function suppressWorkspaceTreeDraftDrop () {
+  treeDragHoverKey.value = ''
   /* 新建名称草稿行不导入文件，仅吞掉 drop 避免冒泡到 tree-scroll */
+}
+
+function resolveDropTargetDirectoryKey(node) {
+  if (!node?.key) return ''
+  return node.isDirectory ? normalizePath(node.key) : ''
+}
+
+function createTreeDragPreview(text) {
+  if (typeof document === 'undefined') return null
+  const el = document.createElement('div')
+  el.textContent = text
+  Object.assign(el.style, {
+    position: 'fixed',
+    top: '-9999px',
+    left: '-9999px',
+    padding: '4px 8px',
+    borderRadius: '8px',
+    background: 'rgba(40, 47, 63, 0.72)',
+    border: '1px solid rgba(120, 156, 255, 0.38)',
+    color: 'rgba(245, 248, 255, 0.9)',
+    fontSize: '11px',
+    fontWeight: '500',
+    lineHeight: '1.2',
+    boxShadow: '0 6px 16px rgba(0, 0, 0, 0.32)',
+    pointerEvents: 'none',
+    zIndex: '99999',
+    maxWidth: '180px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+  })
+  document.body.appendChild(el)
+  return el
+}
+
+function handleTreeRowDragStart (event, node) {
+  if (isModifiedFilterMode.value || !node?.key || !event?.dataTransfer) return
+  closeContextMenu()
+  closeTabContextMenu()
+  treeDragHoverKey.value = ''
+
+  const alreadySelected = selectedKeys.value.includes(node.key)
+  if (!alreadySelected) {
+    selectedKeys.value = [node.key]
+  }
+
+  const paths = getSelectedTreePaths()
+  treeDragState.value = { internal: true, paths }
+  const previewLabel = paths.length > 1 ? `${paths.length} 个项目` : basename(paths[0] || node.key)
+  treeDragPreviewEl = createTreeDragPreview(previewLabel)
+  event.dataTransfer.effectAllowed = 'copyMove'
+  if (treeDragPreviewEl && typeof event.dataTransfer.setDragImage === 'function') {
+    event.dataTransfer.setDragImage(treeDragPreviewEl, 12, 10)
+  }
+  event.dataTransfer.setData('application/x-opengit-tree-paths', JSON.stringify(paths))
+  event.dataTransfer.setData('text/plain', paths.join('\n'))
+}
+
+function handleTreeRowDragEnd () {
+  treeDragState.value = { internal: false, paths: [] }
+  treeDragHoverKey.value = ''
+  if (treeDragPreviewEl?.parentNode) {
+    treeDragPreviewEl.parentNode.removeChild(treeDragPreviewEl)
+  }
+  treeDragPreviewEl = null
+}
+
+function handleWorkspaceTreeRowDragOver(event, node) {
+  handleWorkspaceTreeDragOver(event)
+  treeDragHoverKey.value = resolveDropTargetDirectoryKey(node)
+}
+
+function handleWorkspaceTreeRowDragLeave(event, node) {
+  const nextTarget = event?.relatedTarget
+  if (event?.currentTarget instanceof Node && nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+    return
+  }
+  const dropKey = resolveDropTargetDirectoryKey(node)
+  if (dropKey && treeDragHoverKey.value === dropKey) {
+    treeDragHoverKey.value = ''
+  }
 }
 
 async function handleWorkspaceTreeRowDrop (event, node) {
@@ -1432,11 +1547,14 @@ async function handleWorkspaceTreeRowDrop (event, node) {
   const targetDirectory = node.isDirectory
     ? normalizePath(node.key)
     : findParentDirectoryKey(node.key)
-  await copyDroppedPathsToDirectory(paths, targetDirectory)
+  treeDragHoverKey.value = ''
+  const mode = treeDragState.value.internal ? (event.altKey ? 'copy' : 'move') : 'copy'
+  await transferPathsToDirectory(paths, targetDirectory, mode)
 }
 
 async function handleWorkspaceTreeScrollDrop (event) {
   if (isModifiedFilterMode.value || !props.projectPath) return
+  treeDragHoverKey.value = ''
   if (event.target?.closest?.('.workspace-tree-row--draft')) {
     event.preventDefault()
     return
@@ -1445,7 +1563,8 @@ async function handleWorkspaceTreeScrollDrop (event) {
   const paths = collectWorkspaceDropPaths(event)
   if (!paths.length) return
   event.preventDefault()
-  await copyDroppedPathsToDirectory(paths, getPasteTargetDirectory())
+  const mode = treeDragState.value.internal ? (event.altKey ? 'copy' : 'move') : 'copy'
+  await transferPathsToDirectory(paths, getPasteTargetDirectory(), mode)
 }
 
 async function handleTreePaste(event) {
@@ -1740,10 +1859,20 @@ async function toggleDirectory (node) {
   toggleExpandedKey(node.key)
 }
 
-async function handleTreeRowClick (node) {
+async function handleTreeRowClick (node, event) {
   closeContextMenu()
   closeTabContextMenu()
   treePaneRef.value?.focus?.()
+  const isMultiSelectToggle = Boolean(event?.ctrlKey || event?.metaKey)
+  if (isMultiSelectToggle) {
+    if (selectedKeys.value.includes(node.key)) {
+      selectedKeys.value = selectedKeys.value.filter((key) => key !== node.key)
+    } else {
+      selectedKeys.value = [node.key, ...selectedKeys.value.filter((key) => key !== node.key)]
+    }
+    return
+  }
+
   selectedKeys.value = [node.key]
   if (!node?.isDirectory) {
     await openFile(node.key)
@@ -1755,7 +1884,7 @@ async function handleTreeRowDoubleClick (node) {
     await toggleDirectory(node)
     return
   }
-  await handleTreeRowClick(node)
+  await handleTreeRowClick(node, null)
 }
 
 async function openTreeContextMenu(event, node) {
@@ -2559,6 +2688,11 @@ watch(
 
 .workspace-tree-row.selected {
   background: rgba(77, 135, 255, 0.14);
+}
+
+.workspace-tree-row--drop-target {
+  background: rgba(95, 146, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(120, 170, 255, 0.55);
 }
 
 .workspace-tree-row__indent {
