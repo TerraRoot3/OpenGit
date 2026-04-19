@@ -81,6 +81,21 @@
             :class="{ 'branches-panel--icon-rail': isBranchesPanelIconRail }"
             :style="{ width: `${branchesPanelWidthPx}px`, minWidth: `${BRANCHES_PANEL_RAIL_MIN}px` }"
           >
+            <div class="branches-panel-list-head">
+              <button
+                type="button"
+                class="branches-panel-list-head-btn rail-tip-target"
+                :class="{ 'branches-panel-list-head-btn--rail': isBranchesPanelIconRail }"
+                :title="isBranchesPanelIconRail ? '展开侧栏' : '收起为图标条'"
+                :data-rail-tip="isBranchesPanelIconRail ? '导航 · 展开' : '导航 · 收起'"
+                @click="toggleBranchesPanelRail"
+              >
+                <PanelLeftClose v-if="!isBranchesPanelIconRail" :size="16" class="branches-panel-list-head-ico" />
+                <PanelLeftOpen v-else :size="16" class="branches-panel-list-head-ico" />
+                <span v-if="!isBranchesPanelIconRail" class="branches-panel-list-head-text">导航</span>
+              </button>
+            </div>
+            <div class="branches-panel-scroll">
             <div
               class="file-status-button rail-tip-target"
               title="AI会话"
@@ -268,6 +283,7 @@
                   <span class="branch-name">{{ tag.name }}</span>
                 </div>
               </div>
+            </div>
             </div>
           </div>
           <div
@@ -518,7 +534,8 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick
 import {
   FolderOpen, GitBranch, Tag, GitPullRequest, ArrowUpCircle, GitMerge, Activity,
   Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot,
-  FolderTree, Cloud, RefreshCw, Check, ChevronRight, Settings, Star
+  FolderTree, Cloud, RefreshCw, Check, ChevronRight, Settings, Star,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-vue-next'
 import ProjectStashList from './ProjectStashList.vue'
 import ProjectCommitHistory from './ProjectCommitHistory.vue'
@@ -845,6 +862,16 @@ function expandSidePanelFromIconRail () {
   )
   branchesPanelWidthPx.value = target
   saveBranchesPanelWidth()
+}
+
+/** 分割条上的快捷收起 / 展开（与拖窄进图标条一致） */
+function toggleBranchesPanelRail () {
+  if (isBranchesPanelIconRail.value) {
+    expandSidePanelFromIconRail()
+  } else {
+    branchesPanelWidthPx.value = BRANCHES_PANEL_RAIL_MIN
+    saveBranchesPanelWidth()
+  }
 }
 
 let branchesPanelWidthSaveThrottleTimer = null
@@ -3258,17 +3285,124 @@ defineExpose({
 
 .branches-panel {
   flex-shrink: 0;
+  min-height: 0;
   box-sizing: border-box;
   background: transparent;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   border: 0;
   border-radius: 0;
   padding: 0 0 6px;
+}
+
+/* 仅下方列表滚动；顶栏（侧栏宽切换）固定不跟滚动 */
+.branches-panel-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.branches-panel-scroll::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+.branches-panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.branches-panel-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 1.5px;
+}
+
+.branches-panel-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.branches-panel--icon-rail .branches-panel-scroll {
+  overflow-x: visible;
+}
+
+.branches-panel-list-head {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* 标题条背景撑满侧栏宽；左右用 padding 与下方列表项「外边距+内边距」对齐（8+12=20） */
+.branches-panel-list-head-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 20px;
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 14px 14px 0 0;
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.branches-panel-list-head-btn:hover {
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.98);
+}
+
+.branches-panel-list-head-ico {
+  flex-shrink: 0;
+  opacity: 0.88;
+}
+
+.branches-panel-list-head-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 图标条：与下方导航项同一套视觉；左右 margin 缩进，hover/选中底不撑满侧栏 */
+.branches-panel-list-head-btn--rail {
+  align-self: stretch;
+  width: auto;
+  justify-content: center;
+  margin: 0 4px 4px;
+  padding: 10px 6px;
+  gap: 0;
+  height: auto;
+  min-height: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 400;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* 必须盖过上面的 .branches-panel-list-head-btn:hover（0.045），与 .file-status-button:hover 一致 */
+.branches-panel.branches-panel--icon-rail .branches-panel-list-head-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .branches-panel.branches-panel--icon-rail {
@@ -3286,25 +3420,9 @@ defineExpose({
   touch-action: none;
 }
 
-.branches-panel-resizer:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.branches-panel::-webkit-scrollbar {
-  width: 3px;
-  height: 3px;
-}
-
-.branches-panel::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.branches-panel::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 1.5px;
-}
-
-.branches-panel::-webkit-scrollbar-corner {
+/* 刻意不做分割线高亮，避免一条显眼竖线；仅靠光标表示可拖拽 */
+.branches-panel-resizer:hover,
+.branches-panel-resizer:active {
   background: transparent;
 }
 
@@ -3313,6 +3431,7 @@ defineExpose({
   gap: 4px;
   padding: 10px 6px;
   margin: 0 4px 4px;
+  border-radius: 11px;
 }
 
 .branches-panel--icon-rail .branches-nav-label,
@@ -3334,6 +3453,7 @@ defineExpose({
   gap: 4px;
   padding: 10px 6px;
   margin: 0 4px 4px;
+  border-radius: 11px;
 }
 
 .branches-panel--icon-rail .branch-section-header .refresh-btn {
@@ -3380,8 +3500,9 @@ defineExpose({
 
 .branches-panel--icon-rail .branch-list .branch-item,
 .branches-panel--icon-rail .branch-list .tag-item {
-  padding-left: 8px;
-  padding-right: 4px;
+  margin: 1px 4px;
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 .branches-panel--icon-rail .branch-name {
@@ -3392,13 +3513,13 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 10px 20px;
   cursor: pointer;
   transition: background-color 0.2s;
   color: rgba(255, 255, 255, 0.72);
   font-size: 13px;
   user-select: none;
-  margin: 0 8px 2px;
+  margin: 0 0 2px;
   border-radius: 11px;
 }
 
@@ -3417,13 +3538,13 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 10px 20px;
   cursor: pointer;
   transition: background-color 0.2s;
   color: rgba(255, 255, 255, 0.7);
   font-size: 13px;
   user-select: none;
-  margin: 0 8px 2px;
+  margin: 0 0 2px;
   border-radius: 11px;
 }
 
@@ -3473,13 +3594,13 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px 5px 16px;
+  padding: 5px 16px 5px 24px;
   cursor: pointer;
   transition: background-color 0.2s;
   color: rgba(255, 255, 255, 0.8);
   font-size: 11px;
   user-select: none;
-  margin: 1px 8px;
+  margin: 1px 0;
   border-radius: 9px;
 }
 
@@ -3579,12 +3700,12 @@ defineExpose({
 .tag-item {
   display: flex;
   align-items: center;
-  padding: 5px 8px 5px 16px;
+  padding: 5px 16px 5px 24px;
   cursor: pointer;
   transition: background-color 0.2s;
   color: rgba(255, 255, 255, 0.7);
   user-select: none;
-  margin: 1px 8px;
+  margin: 1px 0;
   border-radius: 9px;
 }
 
