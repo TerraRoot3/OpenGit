@@ -226,6 +226,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
   createFile: (data) => ipcRenderer.invoke('create-file', data),
   createDirectory: (data) => ipcRenderer.invoke('create-directory', data),
+  renameFilesystemItem: (data) => ipcRenderer.invoke('rename-filesystem-item', data),
   copyFilesystemItems: (data) => ipcRenderer.invoke('copy-filesystem-items', data),
   moveFilesystemItems: (data) => ipcRenderer.invoke('move-filesystem-items', data),
   getFilesystemPasteConflicts: (data) => ipcRenderer.invoke('get-filesystem-paste-conflicts', data),

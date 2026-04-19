@@ -161,7 +161,7 @@
                       'workspace-tree-row--drop-target': treeDragHoverKey === item.node.key
                     }
                   ]"
-                  draggable="true"
+                  :draggable="!isRenamingNode(item.node)"
                   @click="handleTreeRowClick(item.node, $event)"
                   @dblclick="handleTreeRowDoubleClick(item.node)"
                   @contextmenu.prevent="openTreeContextMenu($event, item.node)"
@@ -184,8 +184,16 @@
                     />
                   </span>
                   <component :is="getNodeIconComponent(item.node)" :size="15" class="workspace-tree-row__icon" :class="getNodeIconClass(item.node)" />
-                  <span class="workspace-tree-row__name" :title="item.node.label">{{ item.node.label }}</span>
-                  <span v-if="getNodeStatus(item.node)" class="workspace-tree-row__status" :title="`Git 状态 ${getNodeStatus(item.node)}`">
+                  <input
+                    v-if="isRenamingNode(item.node)"
+                    v-model="renameName"
+                    class="workspace-tree-row__input workspace-tree-row__rename-input"
+                    @keydown.enter.prevent="commitRenameDraft"
+                    @keydown.esc.prevent="cancelRenameDraft"
+                    @blur="handleRenameBlur"
+                  />
+                  <span v-else class="workspace-tree-row__name" :title="item.node.label">{{ item.node.label }}</span>
+                  <span v-if="!isRenamingNode(item.node) && getNodeStatus(item.node)" class="workspace-tree-row__status" :title="`Git 状态 ${getNodeStatus(item.node)}`">
                     {{ getNodeStatus(item.node) }}
                   </span>
                 </button>
@@ -362,6 +370,8 @@ const modifiedFileEntries = ref([])
 const selectedModifiedPaths = ref([])
 const createDraft = ref(null)
 const draftName = ref('')
+const renameDraft = ref(null)
+const renameName = ref('')
 const internalClipboard = ref({ mode: null, paths: [] })
 const treeDragState = ref({ internal: false, paths: [] })
 const treeDragHoverKey = ref('')
@@ -779,6 +789,7 @@ function resetTree () {
   ]
   selectedKeys.value = []
   expandedKeys.value = props.projectPath ? [props.projectPath] : []
+  resetRenameDraftState()
 }
 
 const visibleTreeNodes = computed(() => {
@@ -1053,6 +1064,11 @@ function resetCreateDraftState() {
   draftName.value = ''
 }
 
+function resetRenameDraftState() {
+  renameDraft.value = null
+  renameName.value = ''
+}
+
 function closeContextMenu() {
   contextMenu.value = {
     visible: false,
@@ -1093,8 +1109,18 @@ async function focusDraftInput() {
   }
 }
 
+async function focusRenameInput() {
+  await nextTick()
+  const input = treePaneRef.value?.querySelector?.('.workspace-tree-row__rename-input')
+  if (input && typeof input.focus === 'function') {
+    input.focus()
+    input.select?.()
+  }
+}
+
 async function startCreate(type) {
   if (isModifiedFilterMode.value) return
+  if (renameDraft.value) return
   closeContextMenu()
   closeTabContextMenu()
   const selectedKey = selectedKeys.value[0] || props.projectPath
@@ -1107,6 +1133,66 @@ async function startCreate(type) {
 
 function cancelCreateDraft() {
   resetCreateDraftState()
+}
+
+function isRenamingNode(node) {
+  return Boolean(renameDraft.value?.key && node?.key === renameDraft.value.key)
+}
+
+async function startRenameSelectedNode() {
+  if (isModifiedFilterMode.value || createDraft.value) return
+  const selectedKey = selectedKeys.value[0]
+  if (!selectedKey) return
+  const node = findTreeNodeByKey(treeData.value, selectedKey)
+  if (!node) return
+  renameDraft.value = {
+    key: node.key,
+    originalName: node.label
+  }
+  renameName.value = node.label
+  await focusRenameInput()
+}
+
+function cancelRenameDraft() {
+  resetRenameDraftState()
+}
+
+async function commitRenameDraft() {
+  if (!renameDraft.value?.key) return
+  const sourcePath = renameDraft.value.key
+  const nextName = renameName.value.trim()
+  if (!nextName || nextName === renameDraft.value.originalName) {
+    cancelRenameDraft()
+    return
+  }
+  const result = await window.electronAPI?.renameFilesystemItem({
+    sourcePath,
+    targetName: nextName
+  })
+  if (!result?.success) {
+    console.warn('重命名失败:', result?.error)
+    return
+  }
+  const renamedPath = normalizePath(result.path || '')
+  cancelRenameDraft()
+  await refreshTree()
+  if (renamedPath) {
+    selectedKeys.value = [renamedPath]
+    const node = findTreeNodeByKey(treeData.value, renamedPath)
+    if (node && !node.isDirectory) {
+      await openFile(renamedPath)
+    }
+  }
+  saveWorkspaceState()
+}
+
+async function handleRenameBlur() {
+  if (!renameDraft.value) return
+  if (!renameName.value.trim()) {
+    cancelRenameDraft()
+    return
+  }
+  await commitRenameDraft()
 }
 
 async function commitCreateDraft() {
@@ -1213,6 +1299,7 @@ async function refreshTree() {
   const previousExpandedKeys = [...expandedKeys.value]
   const previousSelectedKey = selectedKeys.value[0] || null
   resetCreateDraftState()
+  resetRenameDraftState()
   resetTree()
   expandedKeys.value = Array.from(new Set([props.projectPath, ...previousExpandedKeys.filter(Boolean)]))
   await preloadExpandedDirectories(previousExpandedKeys.filter(key => key !== props.projectPath))
@@ -1580,6 +1667,14 @@ async function handleTreePaste(event) {
 }
 
 async function handleTreeKeydown(event) {
+  if (renameDraft.value) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      cancelRenameDraft()
+    }
+    return
+  }
+
   if (isModifiedFilterMode.value) {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
       event.preventDefault()
@@ -1587,6 +1682,13 @@ async function handleTreeKeydown(event) {
     }
     return
   }
+
+  if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault()
+    await startRenameSelectedNode()
+    return
+  }
+
   const isMetaKey = event.metaKey || event.ctrlKey
   if (!isMetaKey) return
   if (event.key.toLowerCase() === 'c') {
@@ -1860,6 +1962,9 @@ async function toggleDirectory (node) {
 }
 
 async function handleTreeRowClick (node, event) {
+  if (renameDraft.value && !isRenamingNode(node)) {
+    cancelRenameDraft()
+  }
   closeContextMenu()
   closeTabContextMenu()
   treePaneRef.value?.focus?.()

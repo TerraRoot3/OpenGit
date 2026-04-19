@@ -156,6 +156,38 @@ function registerFilesystemHandlers({
     }
   })
 
+  ipcMain.handle('rename-filesystem-item', async (event, { sourcePath, targetName }) => {
+    try {
+      if (!sourcePath || !targetName) {
+        return { success: false, error: '缺少 sourcePath 或 targetName 参数' }
+      }
+      const trimmedTargetName = String(targetName).trim()
+      if (!trimmedTargetName) {
+        return { success: false, error: '目标名称不能为空' }
+      }
+      if (trimmedTargetName.includes('/') || trimmedTargetName.includes('\\')) {
+        return { success: false, error: '目标名称不能包含路径分隔符' }
+      }
+      if (!fs.existsSync(sourcePath)) {
+        return { success: false, error: '源文件或文件夹不存在' }
+      }
+
+      const targetPath = path.join(path.dirname(sourcePath), trimmedTargetName)
+      if (sameFilesystemPath(sourcePath, targetPath)) {
+        return { success: true, path: sourcePath }
+      }
+      if (fs.existsSync(targetPath)) {
+        return { success: false, error: '同名文件或文件夹已存在' }
+      }
+
+      await fsp.rename(sourcePath, targetPath)
+      return { success: true, path: targetPath }
+    } catch (error) {
+      safeError('重命名文件系统条目失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle('get-filesystem-paste-conflicts', async (event, { sources, targetDirectory }) => {
     try {
       if (!Array.isArray(sources) || !sources.length || !targetDirectory) {

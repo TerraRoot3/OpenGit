@@ -535,7 +535,7 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
       }
 
       const entries = await fsp.readdir(repoPath)
-      const visibleEntries = entries.filter(entry => entry !== '.git')
+      const visibleEntries = entries.filter(entry => entry !== '.git' && entry !== '.DS_Store')
       const files = await Promise.all(visibleEntries.map(async (entry) => {
         const fullPath = path.join(repoPath, entry)
         const stats = await fsp.stat(fullPath)
