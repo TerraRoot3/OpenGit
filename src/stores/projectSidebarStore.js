@@ -2,8 +2,8 @@ import { computed, ref, toRaw } from 'vue'
 
 const STORAGE_KEY = 'project-sidebar-state-v1'
 const ELECTRON_STORE_KEY = 'project-sidebar-state-v1'
-const DEFAULT_WIDTH = 280
-const MIN_WIDTH = 220
+const DEFAULT_WIDTH = 320
+const MIN_WIDTH = 250
 const MAX_WIDTH = 520
 
 const scanRoots = ref([])

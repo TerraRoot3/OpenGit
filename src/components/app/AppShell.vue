@@ -22,10 +22,13 @@
         :collapsed="sidebarCollapsed"
         :selected-root-path="selectedRootPath"
         :selected-entry-path="selectedEntryPath"
+        :can-refresh-current-root="Boolean(currentRefreshRootPath)"
+        :is-current-root-refreshing="isCurrentRootRefreshing"
         @add-root="handleAddRoot"
         @open-group="handleOpenGroup"
         @open-repository="handleOpenRepository"
         @toggle-root="sidebarStore.toggleRootExpanded"
+        @refresh-current-root="handleRefreshCurrentRoot"
         @toggle-collapse="sidebarStore.setSidebarCollapsed(true)"
         @expand-all="() => sidebarStore.expandAllRoots(filteredGroups.map(group => group.key))"
         @collapse-all="sidebarStore.collapseAllRoots"
@@ -76,6 +79,20 @@ let postMountWarmupHandle = null
 const sidebarWidth = computed(() => sidebarStore.sidebarWidth.value)
 const sidebarCollapsed = computed(() => sidebarStore.sidebarCollapsed.value)
 const browserLeadingTabInset = computed(() => (sidebarCollapsed.value ? Math.max(72 - 52, 0) : 10))
+const currentRefreshRootPath = computed(() => {
+  if (selectedRootPath.value) return selectedRootPath.value
+  if (selectedEntryPath.value) {
+    const owningRoot = sidebarStore.findOwningRoot(selectedEntryPath.value)
+    if (owningRoot?.path) return owningRoot.path
+  }
+  return sidebarStore.scanRoots.value[0]?.path || ''
+})
+const isCurrentRootRefreshing = computed(() => {
+  const rootPath = currentRefreshRootPath.value
+  if (!rootPath) return false
+  const target = sidebarStore.scanRoots.value.find((item) => item.path === rootPath)
+  return Boolean(target?.isScanning)
+})
 
 const normalizeFavoritePaths = (value) => {
   if (!Array.isArray(value)) return []
@@ -543,6 +560,13 @@ const handleAddRoot = async () => {
       await warmRepositoryStatusCache()
     }
   }
+}
+
+const handleRefreshCurrentRoot = async () => {
+  const rootPath = currentRefreshRootPath.value
+  if (!rootPath || isCurrentRootRefreshing.value) return
+  await refreshRoot(rootPath)
+  await warmRepositoryStatusCache()
 }
 
 const handleToggleProjectFavorite = async (payload = {}) => {

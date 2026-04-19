@@ -12,6 +12,15 @@
           <FolderPlus :size="15" />
           <span>添加目录</span>
         </button>
+        <button
+          class="icon-btn"
+          type="button"
+          title="刷新当前目录"
+          :disabled="!canRefreshCurrentRoot || isCurrentRootRefreshing"
+          @click="$emit('refresh-current-root')"
+        >
+          <RefreshCw :size="15" :class="{ spinning: isCurrentRootRefreshing }" />
+        </button>
         <button class="icon-btn" type="button" title="全部展开" @click="$emit('expand-all')">
           <ChevronsDown :size="15" />
         </button>
@@ -140,6 +149,7 @@ import {
   FolderSearch,
   GitBranch,
   PanelLeftClose,
+  RefreshCw,
   Search,
   Star
 } from 'lucide-vue-next'
@@ -165,6 +175,14 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  canRefreshCurrentRoot: {
+    type: Boolean,
+    default: false
+  },
+  isCurrentRootRefreshing: {
+    type: Boolean,
+    default: false
+  },
   selectedEntryPath: {
     type: String,
     default: ''
@@ -180,6 +198,7 @@ defineEmits([
   'open-group',
   'open-repository',
   'toggle-root',
+  'refresh-current-root',
   'toggle-collapse',
   'expand-all',
   'collapse-all',
@@ -409,9 +428,23 @@ const isFavorited = (path) => {
   color: rgba(255, 255, 255, 0.78);
 }
 
+.icon-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
 .root-expand-btn:hover,
 .icon-btn:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+.spinning {
+  animation: sidebar-spin 1s linear infinite;
+}
+
+@keyframes sidebar-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .root-expand-btn {
@@ -452,6 +485,9 @@ const isFavorited = (path) => {
 }
 
 .action-btn.primary {
+  flex: 0 0 auto;
+  padding: 0 8px;
+  gap: 4px;
   background: #2f6fed;
 }
 
