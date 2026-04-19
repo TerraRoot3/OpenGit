@@ -1010,7 +1010,7 @@ async function ensureNodeReady(key) {
 }
 
 async function ensurePathChainReady(targetPath, options = {}) {
-  const { expandTarget = false } = options
+  const { expandTarget = false, expandAncestors = true } = options
   const normalizedTargetPath = normalizePath(targetPath)
   const rootPath = normalizePath(props.projectPath)
   if (!normalizedTargetPath || !rootPath || !normalizedTargetPath.startsWith(rootPath)) {
@@ -1033,7 +1033,7 @@ async function ensurePathChainReady(targetPath, options = {}) {
 
     if (currentNode?.isDirectory) {
       await ensureDirectoryChildren(currentNode)
-      if (!isExpanded(currentNode.key)) {
+      if (expandAncestors && !isExpanded(currentNode.key)) {
         toggleExpandedKey(currentNode.key)
       }
     }
@@ -1043,7 +1043,7 @@ async function ensurePathChainReady(targetPath, options = {}) {
 
     if (nextNode.isDirectory && (!isLastSegment || expandTarget)) {
       await ensureDirectoryChildren(nextNode)
-      if (!isExpanded(nextNode.key)) {
+      if (expandAncestors && !isExpanded(nextNode.key)) {
         toggleExpandedKey(nextNode.key)
       }
     }
@@ -1347,7 +1347,7 @@ async function restoreWorkspaceState() {
     for (const filePath of state.openTabs) {
       if (!filePath) continue
       try {
-        const node = await ensurePathChainReady(filePath, { expandTarget: false })
+        const node = await ensurePathChainReady(filePath, { expandTarget: false, expandAncestors: false })
         if (!node || node.isDirectory) {
           continue
         }
@@ -1869,9 +1869,20 @@ async function openFile (filePath) {
 
 function toggleExpandedKey (key) {
   if (!key) return
-  const next = new Set(expandedKeys.value)
-  if (next.has(key)) next.delete(key)
-  else next.add(key)
+  const normalizedKey = normalizePath(key)
+  const next = new Set(
+    expandedKeys.value
+      .map((item) => normalizePath(item))
+      .filter(Boolean)
+  )
+  if (next.has(normalizedKey)) {
+    const descendants = Array.from(next).filter((item) => item === normalizedKey || item.startsWith(`${normalizedKey}/`))
+    for (const item of descendants) {
+      next.delete(item)
+    }
+  } else {
+    next.add(normalizedKey)
+  }
   expandedKeys.value = Array.from(next)
   saveWorkspaceState()
 }
