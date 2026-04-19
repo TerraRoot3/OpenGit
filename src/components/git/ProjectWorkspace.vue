@@ -268,7 +268,7 @@
         @pointerdown="onSplitterPointerDown"
       />
       <main class="editor-pane" :class="{ 'editor-pane--tabs': tabs.length > 0 }">
-          <div v-if="tabs.length" class="tab-bar">
+          <div v-if="tabs.length" ref="tabBarRef" class="tab-bar">
             <button
               v-for="tab in tabs"
               :key="tab.id"
@@ -361,6 +361,7 @@ const treeData = ref([])
 const expandedKeys = ref([])
 const selectedKeys = ref([])
 const treePaneRef = ref(null)
+const tabBarRef = ref(null)
 const commitMessageRef = ref(null)
 const contextMenuRef = ref(null)
 const tabContextMenuRef = ref(null)
@@ -1744,6 +1745,21 @@ watch(
 
 const activeTab = computed(() => tabs.value.find((tab) => tab.id === activeTabId.value) || null)
 
+async function ensureActiveTabVisible() {
+  if (!activeTabId.value) return
+  await nextTick()
+  const tabBar = tabBarRef.value
+  if (!tabBar) return
+  const active = tabBar.querySelector('.tab-item.active')
+  if (active && typeof active.scrollIntoView === 'function') {
+    active.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: 'auto'
+    })
+  }
+}
+
 async function openFile (filePath) {
   if (!window.electronAPI) return
 
@@ -2410,6 +2426,7 @@ watch(
     if (active) {
       await refreshGitStatuses()
       lastAppliedGitSignature.value = props.gitSignature || ''
+      void ensureActiveTabVisible()
     }
   }
 )
@@ -2469,7 +2486,18 @@ watch(
   (n) => {
     if (n === 0) {
       imageDataUrl.value = ''
+      return
     }
+    if (activeTabId.value) {
+      void ensureActiveTabVisible()
+    }
+  }
+)
+
+watch(
+  () => activeTabId.value,
+  () => {
+    void ensureActiveTabVisible()
   }
 )
 
