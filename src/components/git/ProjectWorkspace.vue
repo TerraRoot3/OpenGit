@@ -83,7 +83,11 @@
               </div>
             </div>
           </div>
-          <div class="tree-scroll">
+          <div
+            class="tree-scroll"
+            @dragover="handleWorkspaceTreeDragOver"
+            @drop="handleWorkspaceTreeScrollDrop"
+          >
             <div v-if="isModifiedFilterMode" class="workspace-modified-list">
               <template v-if="filteredModifiedEntries.length">
                 <div class="workspace-modified-list__header">
@@ -131,6 +135,8 @@
                   v-if="item.kind === 'draft'"
                   class="workspace-tree-row workspace-tree-row--draft"
                   :class="{ selected: true }"
+                  @dragover="handleWorkspaceTreeDragOver"
+                  @drop.stop.prevent="suppressWorkspaceTreeDraftDrop"
                 >
                   <span class="workspace-tree-row__indent" :style="{ width: `${item.depth * 16}px` }"></span>
                   <span class="workspace-tree-row__toggle placeholder"></span>
@@ -155,6 +161,8 @@
                   @click="handleTreeRowClick(item.node)"
                   @dblclick="handleTreeRowDoubleClick(item.node)"
                   @contextmenu.prevent="openTreeContextMenu($event, item.node)"
+                  @dragover="handleWorkspaceTreeDragOver"
+                  @drop.stop.prevent="handleWorkspaceTreeRowDrop($event, item.node)"
                 >
                   <span class="workspace-tree-row__indent" :style="{ width: `${item.depth * 16}px` }"></span>
                   <span
@@ -377,7 +385,7 @@ const activeTabId = ref(null)
 const imageDataUrl = ref('')
 
 const WORKSPACE_HEADER_HEIGHT = '37px'
-const STATUS_PRIORITY = ['U', 'D', 'R', 'A', 'M', '?']
+const STATUS_PRIORITY = ['U', 'D', 'R', 'C', 'T', 'A', 'M', '?']
 const IMAGE_FILE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg'])
 const JSON_FILE_EXT = new Set(['json', 'jsonc'])
 const SPREADSHEET_FILE_EXT = new Set(['csv', 'tsv', 'xlsx', 'xls'])
@@ -614,34 +622,56 @@ function pickHigherPriorityStatus (current, next) {
 
 function parseGitStatusMap (output) {
   const nextMap = {}
-  const nextEntries = []
+  const entryByKey = new Map()
   const lines = String(output || '').trim().split('\n').filter(line => line.trim())
+
+  const porcelainStagedFlag = (stagedStatus) =>
+    stagedStatus !== ' ' && stagedStatus !== '?' ? stagedStatus : null
+  const porcelainUnstagedFlag = (unstagedStatus) =>
+    unstagedStatus !== ' ' && unstagedStatus !== '?' ? unstagedStatus : null
 
   for (const line of lines) {
     if (line.length < 3) continue
     const stagedStatus = line.charAt(0)
     const unstagedStatus = line.charAt(1)
+    if (stagedStatus === '!' || unstagedStatus === '!') continue
+
     const status = resolveStatusLetter(stagedStatus, unstagedStatus)
-    if (!status || status === ' ') continue
+    if (!status || status === ' ' || status === '!') continue
 
     const relativePath = decodeStatusPath(line)
     if (!relativePath) continue
 
-    const absoluteFilePath = joinProjectPath(relativePath)
-    const aggregatedStatus = pickHigherPriorityStatus(nextMap[absoluteFilePath], status)
-    nextMap[absoluteFilePath] = aggregatedStatus
-    nextEntries.push({
-      path: absoluteFilePath,
-      relativePath: normalizePath(relativePath),
-      stagedStatus: stagedStatus !== ' ' && stagedStatus !== '?' ? stagedStatus : null,
-      unstagedStatus: unstagedStatus !== ' ' && unstagedStatus !== '?' ? unstagedStatus : null,
-      status: aggregatedStatus,
-      isConflict:
-        (stagedStatus === 'U' && unstagedStatus === 'U') ||
-        (stagedStatus === 'A' && unstagedStatus === 'A') ||
-        (stagedStatus === 'D' && unstagedStatus === 'D'),
-      isUntracked: stagedStatus === '?' && unstagedStatus === '?'
-    })
+    const canonicalKey = normalizePath(joinProjectPath(relativePath))
+    const aggregatedStatus = pickHigherPriorityStatus(nextMap[canonicalKey], status)
+    nextMap[canonicalKey] = aggregatedStatus
+
+    const stagedF = porcelainStagedFlag(stagedStatus)
+    const unstagedF = porcelainUnstagedFlag(unstagedStatus)
+    const lineConflict =
+      (stagedStatus === 'U' && unstagedStatus === 'U') ||
+      (stagedStatus === 'A' && unstagedStatus === 'A') ||
+      (stagedStatus === 'D' && unstagedStatus === 'D')
+    const lineUntracked = stagedStatus === '?' && unstagedStatus === '?'
+
+    const existing = entryByKey.get(canonicalKey)
+    if (existing) {
+      existing.status = nextMap[canonicalKey]
+      existing.stagedStatus = existing.stagedStatus || stagedF
+      existing.unstagedStatus = existing.unstagedStatus || unstagedF
+      existing.isConflict = existing.isConflict || lineConflict
+      existing.isUntracked = existing.isUntracked || lineUntracked
+    } else {
+      entryByKey.set(canonicalKey, {
+        path: canonicalKey,
+        relativePath: normalizePath(relativePath),
+        stagedStatus: stagedF,
+        unstagedStatus: unstagedF,
+        status: aggregatedStatus,
+        isConflict: lineConflict,
+        isUntracked: lineUntracked
+      })
+    }
 
     const segments = normalizePath(relativePath).split('/').filter(Boolean)
     segments.pop()
@@ -649,12 +679,12 @@ function parseGitStatusMap (output) {
     let currentDir = ''
     for (const segment of segments) {
       currentDir = currentDir ? `${currentDir}/${segment}` : segment
-      const absoluteDirPath = joinProjectPath(currentDir)
-      nextMap[absoluteDirPath] = pickHigherPriorityStatus(nextMap[absoluteDirPath], status)
+      const dirKey = normalizePath(joinProjectPath(currentDir))
+      nextMap[dirKey] = pickHigherPriorityStatus(nextMap[dirKey], status)
     }
   }
 
-  return { statusMap: nextMap, entries: nextEntries }
+  return { statusMap: nextMap, entries: Array.from(entryByKey.values()) }
 }
 
 async function refreshGitStatuses () {
@@ -1213,12 +1243,141 @@ function storeInternalClipboard(mode) {
   internalClipboard.value = { mode, paths: [selectedKey] }
 }
 
+function collectWorkspaceDropPaths (event) {
+  const dt = event?.dataTransfer
+  if (!dt) return []
+
+  const fromItems = Array.from(dt.items || [])
+    .map((item) => {
+      if (!item || item.kind !== 'file') return ''
+      const file = item.getAsFile?.()
+      if (!file) return ''
+      if (window.electronAPI?.getPathForFile) {
+        return window.electronAPI.getPathForFile(file) || ''
+      }
+      return file?.path || ''
+    })
+    .filter((p) => typeof p === 'string' && p.trim())
+    .map((p) => p.trim())
+
+  if (fromItems.length) {
+    return [...new Set(fromItems)]
+  }
+
+  const fromFiles = Array.from(dt.files || [])
+    .map((file) => {
+      if (!file) return ''
+      if (window.electronAPI?.getPathForFile) {
+        return window.electronAPI.getPathForFile(file) || ''
+      }
+      return file?.path || ''
+    })
+    .filter((p) => typeof p === 'string' && p.trim())
+    .map((p) => p.trim())
+
+  if (fromFiles.length) {
+    return [...new Set(fromFiles)]
+  }
+
+  const uriList = dt.getData('text/uri-list') || ''
+  if (uriList.trim()) {
+    const fromUri = uriList
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+      .map((line) => {
+        if (!/^file:\/\//i.test(line)) return ''
+        try {
+          const url = new URL(line)
+          return decodeURIComponent(url.pathname || '')
+        } catch {
+          return ''
+        }
+      })
+      .filter(Boolean)
+      .map((p) => p.trim())
+    if (fromUri.length) {
+      return [...new Set(fromUri)]
+    }
+  }
+
+  const plain = dt.getData('text/plain') || ''
+  if (!plain.trim()) return []
+
+  const fromPlain = plain
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      if (/^file:\/\//i.test(line)) {
+        try {
+          const url = new URL(line)
+          return decodeURIComponent(url.pathname || '').trim()
+        } catch {
+          return ''
+        }
+      }
+      if (line.startsWith('/')) return line
+      return ''
+    })
+    .filter(Boolean)
+
+  return [...new Set(fromPlain)]
+}
+
+async function ensurePasteOverwriteForSources (sources, targetDirectory) {
+  if (!sources?.length || !targetDirectory) {
+    return { proceed: false, overwrite: false }
+  }
+  const checkApi = window.electronAPI?.getFilesystemPasteConflicts
+  if (typeof checkApi !== 'function') {
+    return { proceed: true, overwrite: false }
+  }
+  const check = await checkApi({ sources, targetDirectory })
+  if (!check?.success) {
+    return { proceed: true, overwrite: false }
+  }
+  const names = check.conflictNames || []
+  if (!names.length) {
+    return { proceed: true, overwrite: false }
+  }
+  const message = names.length === 1
+    ? '目标文件夹中已存在同名文件或文件夹。'
+    : `目标文件夹中已存在 ${names.length} 个同名文件或文件夹。`
+  const detail = names.length <= 12
+    ? names.map((n) => `· ${n}`).join('\n')
+    : `${names.slice(0, 12).map((n) => `· ${n}`).join('\n')}\n…`
+  const confirmed = await confirm({
+    title: '确认覆盖',
+    message,
+    detail: `覆盖后将替换原有内容：\n${detail}`,
+    type: 'warning',
+    confirmText: '覆盖',
+    cancelText: '取消'
+  })
+  return confirmed ? { proceed: true, overwrite: true } : { proceed: false, overwrite: false }
+}
+
+async function copyDroppedPathsToDirectory (paths, targetDirectory) {
+  if (!paths?.length || !targetDirectory) return
+  const { proceed, overwrite } = await ensurePasteOverwriteForSources(paths, targetDirectory)
+  if (!proceed) return
+  const result = await window.electronAPI?.copyFilesystemItems({ sources: paths, targetDirectory, overwrite })
+  if (!result?.success) {
+    console.warn('复制失败:', result?.error)
+    return
+  }
+  await refreshTree()
+}
+
 async function pasteInternalClipboard() {
   const { mode, paths } = internalClipboard.value
   if (!mode || !paths.length) return false
   const targetDirectory = getPasteTargetDirectory()
+  const { proceed, overwrite } = await ensurePasteOverwriteForSources(paths, targetDirectory)
+  if (!proceed) return true
   const action = mode === 'cut' ? window.electronAPI?.moveFilesystemItems : window.electronAPI?.copyFilesystemItems
-  const result = await action?.({ sources: paths, targetDirectory })
+  const result = await action?.({ sources: paths, targetDirectory, overwrite })
   if (!result?.success) {
     console.warn('粘贴失败:', result?.error)
     return true
@@ -1235,14 +1394,45 @@ async function pasteExternalFiles(fileList) {
     .map(file => window.electronAPI?.getPathForFile?.(file))
     .filter(Boolean)
   if (!paths.length) return false
-  const targetDirectory = getPasteTargetDirectory()
-  const result = await window.electronAPI?.copyFilesystemItems({ sources: paths, targetDirectory })
-  if (!result?.success) {
-    console.warn('粘贴系统文件失败:', result?.error)
-    return true
-  }
-  await refreshTree()
+  await copyDroppedPathsToDirectory(paths, getPasteTargetDirectory())
   return true
+}
+
+function handleWorkspaceTreeDragOver (event) {
+  if (isModifiedFilterMode.value || !props.projectPath) return
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+function suppressWorkspaceTreeDraftDrop () {
+  /* 新建名称草稿行不导入文件，仅吞掉 drop 避免冒泡到 tree-scroll */
+}
+
+async function handleWorkspaceTreeRowDrop (event, node) {
+  event.stopPropagation()
+  if (isModifiedFilterMode.value || !props.projectPath) return
+  const paths = collectWorkspaceDropPaths(event)
+  if (!paths.length) return
+  event.preventDefault()
+  const targetDirectory = node.isDirectory
+    ? normalizePath(node.key)
+    : findParentDirectoryKey(node.key)
+  await copyDroppedPathsToDirectory(paths, targetDirectory)
+}
+
+async function handleWorkspaceTreeScrollDrop (event) {
+  if (isModifiedFilterMode.value || !props.projectPath) return
+  if (event.target?.closest?.('.workspace-tree-row--draft')) {
+    event.preventDefault()
+    return
+  }
+  if (event.target?.closest?.('.workspace-tree-row')) return
+  const paths = collectWorkspaceDropPaths(event)
+  if (!paths.length) return
+  event.preventDefault()
+  await copyDroppedPathsToDirectory(paths, getPasteTargetDirectory())
 }
 
 async function handleTreePaste(event) {
@@ -1408,7 +1598,9 @@ function getNodeStatusClass (node) {
   switch (getNodeStatus(node)) {
     case 'U': return 'workspace-tree-row--conflict'
     case 'D': return 'workspace-tree-row--deleted'
-    case 'R': return 'workspace-tree-row--renamed'
+    case 'R':
+    case 'C': return 'workspace-tree-row--renamed'
+    case 'T': return 'workspace-tree-row--modified'
     case 'A': return 'workspace-tree-row--added'
     case 'M': return 'workspace-tree-row--modified'
     case '?': return 'workspace-tree-row--untracked'
@@ -1472,7 +1664,9 @@ function getModifiedEntryStatusClass(entry) {
   switch (entry?.status) {
     case 'U': return 'workspace-tree-row--conflict'
     case 'D': return 'workspace-tree-row--deleted'
-    case 'R': return 'workspace-tree-row--renamed'
+    case 'R':
+    case 'C': return 'workspace-tree-row--renamed'
+    case 'T': return 'workspace-tree-row--modified'
     case 'A': return 'workspace-tree-row--added'
     case 'M': return 'workspace-tree-row--modified'
     case '?': return 'workspace-tree-row--untracked'

@@ -228,6 +228,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createDirectory: (data) => ipcRenderer.invoke('create-directory', data),
   copyFilesystemItems: (data) => ipcRenderer.invoke('copy-filesystem-items', data),
   moveFilesystemItems: (data) => ipcRenderer.invoke('move-filesystem-items', data),
+  getFilesystemPasteConflicts: (data) => ipcRenderer.invoke('get-filesystem-paste-conflicts', data),
   deleteFilesystemItems: (data) => ipcRenderer.invoke('delete-filesystem-items', data),
   
   // 监听打开 webview DevTools 请求

@@ -3,21 +3,42 @@ const path = require('path')
 const { dialog } = require('electron')
 const fsp = fs.promises
 
-async function copyEntry(sourcePath, targetPath) {
-  const stats = await fsp.stat(sourcePath)
-  if (stats.isDirectory()) {
-    await fsp.cp(sourcePath, targetPath, { recursive: true, errorOnExist: true, force: false })
-    return
-  }
-  await fsp.copyFile(sourcePath, targetPath, fs.constants.COPYFILE_EXCL)
+function sameFilesystemPath (a, b) {
+  return path.normalize(a) === path.normalize(b)
 }
 
-async function moveEntry(sourcePath, targetPath) {
+async function copyEntry (sourcePath, targetPath, overwrite = false) {
+  const stats = await fsp.stat(sourcePath)
+  if (fs.existsSync(targetPath)) {
+    if (!overwrite) {
+      const err = new Error(`目标已存在: ${path.basename(targetPath)}`)
+      err.code = 'EEXIST'
+      throw err
+    }
+    await fsp.rm(targetPath, { recursive: true, force: true })
+  }
+  if (stats.isDirectory()) {
+    await fsp.cp(sourcePath, targetPath, { recursive: true })
+    return
+  }
+  await fsp.copyFile(sourcePath, targetPath)
+}
+
+async function moveEntry (sourcePath, targetPath, overwrite = false) {
+  if (sameFilesystemPath(sourcePath, targetPath)) return
+  if (fs.existsSync(targetPath)) {
+    if (!overwrite) {
+      const err = new Error(`目标已存在: ${path.basename(targetPath)}`)
+      err.code = 'EEXIST'
+      throw err
+    }
+    await fsp.rm(targetPath, { recursive: true, force: true })
+  }
   try {
     await fsp.rename(sourcePath, targetPath)
   } catch (error) {
     if (error?.code !== 'EXDEV') throw error
-    await copyEntry(sourcePath, targetPath)
+    await copyEntry(sourcePath, targetPath, false)
     await fsp.rm(sourcePath, { recursive: true, force: true })
   }
 }
@@ -135,7 +156,31 @@ function registerFilesystemHandlers({
     }
   })
 
-  ipcMain.handle('copy-filesystem-items', async (event, { sources, targetDirectory }) => {
+  ipcMain.handle('get-filesystem-paste-conflicts', async (event, { sources, targetDirectory }) => {
+    try {
+      if (!Array.isArray(sources) || !sources.length || !targetDirectory) {
+        return { success: false, conflictNames: [], error: '缺少 sources 或 targetDirectory 参数' }
+      }
+      const conflictNames = []
+      const seen = new Set()
+      for (const sourcePath of sources) {
+        const targetPath = path.join(targetDirectory, path.basename(sourcePath))
+        if (sameFilesystemPath(sourcePath, targetPath)) continue
+        if (fs.existsSync(targetPath)) {
+          const base = path.basename(sourcePath)
+          if (seen.has(base)) continue
+          seen.add(base)
+          conflictNames.push(base)
+        }
+      }
+      return { success: true, conflictNames }
+    } catch (error) {
+      safeError('检测粘贴冲突失败:', error)
+      return { success: false, conflictNames: [], error: error.message }
+    }
+  })
+
+  ipcMain.handle('copy-filesystem-items', async (event, { sources, targetDirectory, overwrite = false }) => {
     try {
       if (!Array.isArray(sources) || !sources.length || !targetDirectory) {
         return { success: false, error: '缺少 sources 或 targetDirectory 参数' }
@@ -146,10 +191,11 @@ function registerFilesystemHandlers({
         if (targetPath.startsWith(`${sourcePath}${path.sep}`)) {
           return { success: false, error: `不能复制到自身子目录: ${path.basename(sourcePath)}` }
         }
-        if (fs.existsSync(targetPath)) {
-          return { success: false, error: `目标已存在: ${path.basename(sourcePath)}` }
+        if (sameFilesystemPath(sourcePath, targetPath)) {
+          results.push(targetPath)
+          continue
         }
-        await copyEntry(sourcePath, targetPath)
+        await copyEntry(sourcePath, targetPath, overwrite)
         results.push(targetPath)
       }
       return { success: true, paths: results }
@@ -159,7 +205,7 @@ function registerFilesystemHandlers({
     }
   })
 
-  ipcMain.handle('move-filesystem-items', async (event, { sources, targetDirectory }) => {
+  ipcMain.handle('move-filesystem-items', async (event, { sources, targetDirectory, overwrite = false }) => {
     try {
       if (!Array.isArray(sources) || !sources.length || !targetDirectory) {
         return { success: false, error: '缺少 sources 或 targetDirectory 参数' }
@@ -170,14 +216,11 @@ function registerFilesystemHandlers({
         if (targetPath.startsWith(`${sourcePath}${path.sep}`)) {
           return { success: false, error: `不能移动到自身子目录: ${path.basename(sourcePath)}` }
         }
-        if (sourcePath === targetPath) {
+        if (sameFilesystemPath(sourcePath, targetPath)) {
           results.push(targetPath)
           continue
         }
-        if (fs.existsSync(targetPath)) {
-          return { success: false, error: `目标已存在: ${path.basename(sourcePath)}` }
-        }
-        await moveEntry(sourcePath, targetPath)
+        await moveEntry(sourcePath, targetPath, overwrite)
         results.push(targetPath)
       }
       return { success: true, paths: results }
