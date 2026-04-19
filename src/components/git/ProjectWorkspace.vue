@@ -747,9 +747,6 @@ async function refreshGitStatuses () {
     if (modifiedFileEntries.value.length) {
       modifiedFileEntries.value = []
     }
-    if (!modifiedFileEntries.value.length && treeFilterMode.value === 'modified') {
-      treeFilterMode.value = 'all'
-    }
     return
   }
   const { statusMap: nextMap, entries: nextEntries } = parseGitStatusMap(result.output || result.stdout || '')
@@ -757,9 +754,6 @@ async function refreshGitStatuses () {
     gitStatusByPath.value = nextMap
   }
   modifiedFileEntries.value = nextEntries
-  if (!nextEntries.length && treeFilterMode.value === 'modified') {
-    treeFilterMode.value = 'all'
-  }
 }
 
 function sameStatusMap (left, right) {
@@ -2351,6 +2345,7 @@ async function stashModifiedFiles() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const stashMessage = `${branchName}-${timestamp}`
   const targetEntries = modifiedFileEntries.value.filter((entry) => targetPaths.includes(entry.path))
+  if (!targetEntries.length) return
 
   await runGitAction('暂存文件', async () => {
     const hasUntrackedFiles = targetEntries.some((entry) => entry.isUntracked)
@@ -2387,6 +2382,7 @@ async function commitModifiedFiles() {
   const safeRelativePaths = modifiedFileEntries.value
     .filter((entry) => targetPaths.includes(entry.path))
     .map((entry) => entry.relativePath)
+  if (!safeRelativePaths.length) return
 
   await runGitAction('提交更改', async () => {
     operationOutput.value += `暂存 ${safeRelativePaths.length} 个文件...\n`
@@ -2413,6 +2409,7 @@ async function commitAndPushModifiedFiles() {
   const safeRelativePaths = modifiedFileEntries.value
     .filter((entry) => targetPaths.includes(entry.path))
     .map((entry) => entry.relativePath)
+  if (!safeRelativePaths.length) return
 
   await runGitAction('提交并推送', async () => {
     operationOutput.value += '检查远程状态...\n'
