@@ -756,6 +756,10 @@ async function refreshGitStatuses () {
   modifiedFileEntries.value = nextEntries
 }
 
+function applyDefaultTreeFilterMode() {
+  treeFilterMode.value = modifiedFileEntries.value.length ? 'modified' : 'all'
+}
+
 function sameStatusMap (left, right) {
   const leftKeys = Object.keys(left)
   const rightKeys = Object.keys(right)
@@ -1746,6 +1750,7 @@ watch(
       await restoreWorkspaceState()
       if (props.isActive) {
         await refreshGitStatuses()
+        applyDefaultTreeFilterMode()
         lastAppliedGitSignature.value = props.gitSignature || ''
       }
     } finally {
@@ -2276,6 +2281,7 @@ async function refreshAfterGitAction({ clearCommit = false } = {}) {
     await loadCommitTemplate(props.projectPath)
   }
   await refreshGitStatuses()
+  applyDefaultTreeFilterMode()
   await refreshTree()
   emit('status-changed')
 }
