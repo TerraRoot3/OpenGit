@@ -3326,8 +3326,9 @@ defineExpose({
   background: transparent;
 }
 
+/* 图标条下列表区域：不要用 overflow 裁切，否则右侧 ::after 悬停提示会被挡住（导航在 scroll 外故正常） */
 .branches-panel--icon-rail .branches-panel-scroll {
-  overflow-x: visible;
+  overflow: visible;
 }
 
 .branches-panel-list-head {

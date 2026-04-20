@@ -64,7 +64,7 @@
             <History v-else-if="tab.routeType === 'browsing-history'" :size="14" />
             <HardDrive v-else-if="tab.routeType === 'backup-manager'" :size="14" />
             <Puzzle v-else-if="tab.routeType === 'extension-manager'" :size="14" />
-            <Terminal v-else-if="tab.routeType === 'standalone-terminal'" :size="14" />
+            <Terminal v-else-if="tab.routeType === 'standalone-terminal' || tab.routeType === 'standalone-terminal-focus'" :size="14" />
             <Globe v-else :size="14" />
           </div>
           <span class="browser-tab-title">{{ tab.isLoading && !tab.title ? '加载中...' : (tab.title || '新标签页') }}</span>
@@ -544,6 +544,15 @@ const routeConfig = {
     icon: 'Terminal',
     showWebview: false,
     defaultUrl: 'about:terminal'
+  },
+  // 多终端聚焦布局（新标签）
+  'standalone-terminal-focus': {
+    pattern: /^about:terminal-focus$/,
+    component: 'FocusTerminalStack',
+    title: '终端（聚焦）',
+    icon: 'Terminal',
+    showWebview: false,
+    defaultUrl: 'about:terminal-focus'
   },
   // 普通网页路由（默认）
   webview: {
@@ -1128,6 +1137,9 @@ watch(() => activeBrowserTabId.value, (newTabId, oldTabId) => {
   } else if (tab.routeType === 'standalone-terminal') {
     currentUrl.value = 'about:terminal'
     urlInput.value = 'about:terminal'
+  } else if (tab.routeType === 'standalone-terminal-focus') {
+    currentUrl.value = 'about:terminal-focus'
+    urlInput.value = 'about:terminal-focus'
   } else if (tab.routeType === 'new-tab') {
     // 新标签页：输入框为空，等待用户输入
         currentUrl.value = ''
@@ -1464,13 +1476,12 @@ const openBackupManager = () => {
 }
 
 const openStandaloneTerminal = () => {
-  console.log('> 打开独立终端')
   showMenu.value = false
-  const tab = createBrowserTab('about:terminal', '终端')
-  tab.type = 'standalone-terminal'
+  const tab = createBrowserTab('about:terminal-focus', '终端')
+  tab.type = 'standalone-terminal-focus'
   switchBrowserTab(tab.id)
-  currentUrl.value = 'about:terminal'
-  urlInput.value = 'about:terminal'
+  currentUrl.value = 'about:terminal-focus'
+  urlInput.value = 'about:terminal-focus'
 }
 
 const openExtensionManager = () => {
@@ -1528,7 +1539,8 @@ const baseAboutPages = [
   { url: 'about:password', title: '密码管理', icon: 'Key' },
   { url: 'about:history', title: '历史记录', icon: 'History' },
   { url: 'about:backup', title: '备份管理', icon: 'HardDrive' },
-  { url: 'about:terminal', title: '终端', icon: 'Terminal' }
+  { url: 'about:terminal-focus', title: '终端', icon: 'Terminal' },
+  { url: 'about:terminal', title: '终端（经典）', icon: 'Terminal' }
   // 扩展管理暂时隐藏
   // { url: 'about:extensions', title: '扩展管理', icon: 'Puzzle' }
 ]

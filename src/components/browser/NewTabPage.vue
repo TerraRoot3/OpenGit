@@ -95,6 +95,11 @@
       :is-active="isActive"
     />
 
+    <FocusTerminalStack
+      v-else-if="routeType === 'standalone-terminal-focus'"
+      :is-active="isActive"
+    />
+
   </div>
 </template>
 
@@ -112,6 +117,7 @@ import HistoryManager from './HistoryManager.vue'
 import BackupManager from '../BackupManager.vue'
 import ExtensionManager from '../ExtensionManager.vue'
 import StandaloneTerminal from '../terminal/StandaloneTerminal.vue'
+import FocusTerminalStack from '../terminal/FocusTerminalStack.vue'
 
 const props = defineProps({
   tabId: {

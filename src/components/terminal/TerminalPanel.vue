@@ -1,6 +1,7 @@
 <template>
   <div class="terminal-container" ref="containerRef">
-    <div class="terminal-header">
+    <div class="terminal-header" :class="{ 'terminal-header--single-pane': singlePaneChrome }">
+      <template v-if="!singlePaneChrome">
       <div class="terminal-tabs">
         <div
           v-for="tab in tabs"
@@ -62,7 +63,9 @@
             <X :size="12" />
           </button>
         </div>
-        <span v-else class="terminal-path" :title="currentCwd">{{ pathDisplay }}</span>
+        <span v-else class="terminal-path terminal-path--ellipsis-start" :title="currentCwd || ''">
+          <span class="terminal-path__ltr">{{ pathDisplay }}</span>
+        </span>
         <button class="terminal-btn terminal-btn-split" @mousedown.prevent @click="splitActiveTerminal('row')" title="水平分屏">
           <svg
             class="split-btn-icon split-horizontal"
@@ -94,6 +97,36 @@
           <RefreshCw :size="14" />
         </button>
       </div>
+      </template>
+      <template v-else>
+        <div class="terminal-path terminal-path--single-pane" :title="singlePaneChromeTooltip">
+          <span class="terminal-path__title">{{ tabTitlePart }}</span>
+          <template v-if="pathDisplay">
+            <span class="terminal-path__sep" aria-hidden="true">·</span>
+            <div class="terminal-path__cwd terminal-path--ellipsis-start">
+              <span class="terminal-path__ltr">{{ pathDisplay }}</span>
+            </div>
+          </template>
+        </div>
+        <div class="terminal-actions terminal-actions--single-pane">
+          <button class="terminal-btn" @mousedown.prevent @click="clearTerminal" title="清屏">
+            <Eraser :size="14" />
+          </button>
+          <button class="terminal-btn" @mousedown.prevent @click="restartTerminal(getProjectRootCwd() || null)" title="重启终端">
+            <RefreshCw :size="14" />
+          </button>
+          <button
+            v-if="showCloseButton"
+            class="terminal-btn"
+            type="button"
+            @mousedown.prevent.stop
+            @click="emit('close')"
+            title="关闭此终端"
+          >
+            <X :size="14" />
+          </button>
+        </div>
+      </template>
     </div>
     <div
       class="terminal-body"
@@ -140,12 +173,22 @@ import { scheduleViewportRevealSync, cancelViewportRevealSync } from './terminal
 import TerminalSplitNode from './TerminalSplitNode.vue'
 import '@xterm/xterm/css/xterm.css'
 
+const emit = defineEmits(['close', 'pane-title'])
+
 const props = defineProps({
   defaultCwd: { type: String, default: '' },
+  /** 若设置，则仅用于终端快照 localStorage 键，与 cwd 解耦；多 TerminalPanel 实例（如聚焦页）须各设不同值以免共用 __standalone__ */
+  snapshotCacheKey: { type: String, default: '' },
   isActive: { type: Boolean, default: true },
   workspaceRoots: { type: Array, default: () => [] },
   /** 独立终端页（about:terminal）无项目路径时仍自动建第一个会话，cwd 由主进程回退到用户目录 */
-  allowFirstTerminalWithoutCwd: { type: Boolean, default: false }
+  allowFirstTerminalWithoutCwd: { type: Boolean, default: false },
+  /** 聚焦堆叠页：仅单会话条，不显示 Tab/分屏，顶栏展示 cwd */
+  singlePaneChrome: { type: Boolean, default: false },
+  /** 聚焦多终端：当前格是否为键盘焦点（isActive 表示标签页是否在前台，二者分离） */
+  focusPaneFocused: { type: Boolean, default: true },
+  /** 与 singlePaneChrome 配合：显示关闭（由父级移除该面板） */
+  showCloseButton: { type: Boolean, default: false }
 })
 
 const containerRef = ref(null)
@@ -171,6 +214,7 @@ let paneDragPreviewEl = null
 let ensureDefaultPromise = null
 let persistSnapshotTimer = null
 let hasRestoredInitialSnapshot = false
+const locallyClosedPtyIds = new Set()
 
 const TERMINAL_SNAPSHOT_PREFIX = 'terminalSnapshot_v1_'
 const TERMINAL_SNAPSHOT_MAX_LINES = 1200
@@ -452,12 +496,35 @@ const currentCwd = computed(() => {
   return cwd
 })
 
+/** 顶栏展示完整 cwd；过长时由 CSS 从左侧省略（保留末尾路径段） */
 const pathDisplay = computed(() => {
   const p = currentCwd.value
-  if (!p) return ''
-  const parts = p.split('/')
-  return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : p
+  if (!p || !String(p).trim()) return ''
+  return String(p).trim()
 })
+
+/** 与 Tab 一致：主进程/Shell 上报的标题（onTitleChange 写入 tab.label） */
+const tabTitlePart = computed(() => {
+  const tab = activeTab.value
+  const label = tab?.label
+  if (typeof label === 'string' && label.trim()) return label.trim()
+  return '终端'
+})
+
+const singlePaneChromeTooltip = computed(() => {
+  const t = tabTitlePart.value
+  const p = pathDisplay.value
+  if (p) return `${t} · ${p}`
+  return t
+})
+
+watch(
+  tabTitlePart,
+  (title) => {
+    if (props.singlePaneChrome) emit('pane-title', title)
+  },
+  { immediate: true }
+)
 
 const SEARCH_OPTIONS = {
   decorations: {
@@ -468,6 +535,20 @@ const SEARCH_OPTIONS = {
     activeMatchBorder: '#67e8f9',
     activeMatchColorOverviewRuler: '#22d3ee'
   }
+}
+
+const markPtyClosedLocally = (ptyId) => {
+  if (!ptyId || typeof ptyId !== 'string') return
+  locallyClosedPtyIds.add(ptyId)
+  window.setTimeout(() => {
+    locallyClosedPtyIds.delete(ptyId)
+  }, 6000)
+}
+
+const destroyPtySilently = async (ptyId) => {
+  if (!ptyId) return
+  markPtyClosedLocally(ptyId)
+  await window.electronAPI.terminal.destroy({ id: ptyId }).catch(() => {})
 }
 
 // ---- 终端实例管理 ----
@@ -741,11 +822,29 @@ const refreshActiveTabTerminals = (focusActive = false) => {
 const applyLayout = (focusActive = true) => {
   rememberVisibleTerminalViewportState()
   nextTick(() => {
+    const leafBindings = collectLayoutLeafBindings(activeTab.value?.layout)
+    // 聚焦多终端页：每面板仅一个 PTY + 单叶布局。若仍走「先全部 display:none 再挂回」，
+    // 每次焦点切换 / flex 动画触发 resize 都会闪一下，像整屏重启。
+    const fastSinglePane =
+      props.singlePaneChrome &&
+      leafBindings.length === 1 &&
+      terminals.value.length === 1 &&
+      leafBindings[0].termId === terminals.value[0].termId
+    if (fastSinglePane) {
+      const { nodeId, termId } = leafBindings[0]
+      const term = findTerminalById(termId)
+      const paneEl = paneElements.get(nodeId)
+      if (term && paneEl) {
+        mountTermToPane(term, paneEl)
+        refreshVisibleTerminal(term, focusActive && term.termId === activeTermId.value)
+        return
+      }
+    }
+
     for (const t of terminals.value) {
       t.el.style.display = 'none'
     }
 
-    const leafBindings = collectLayoutLeafBindings(activeTab.value?.layout)
     for (const { nodeId, termId } of leafBindings) {
       const term = findTerminalById(termId)
       const paneEl = paneElements.get(nodeId)
@@ -891,6 +990,8 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
   })
   xterm.onResize(({ cols, rows }) => {
     if (term.ptyId && term.connected) {
+      // 聚焦多终端：fit 会触发 onResize，与 viewport 同步里的 resize 重复打 PTY，shell 会疯狂重绘提示符
+      if (props.singlePaneChrome) return
       window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
     }
   })
@@ -924,6 +1025,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
 
     if (createResult?.success) {
       term.ptyId = createResult.id
+      term._lastPtySig = undefined
       if (createResult.resolvedCwd && typeof createResult.resolvedCwd === 'string') {
         term.cwd = createResult.resolvedCwd
       }
@@ -962,14 +1064,77 @@ const addTerminalInDir = async (cwd, label) => {
 }
 
 const canMeasureTerminal = () => {
-  if (!props.isActive || !containerRef.value) return false
+  if (!containerRef.value) return false
+  // 聚焦多终端：未聚焦的面板仍可见，需在 flex/grid 动画中持续 fit + 贴底
+  if (!props.isActive && !props.singlePaneChrome) return false
   const rect = containerRef.value.getBoundingClientRect()
   return rect.width > 0 && rect.height > 0
 }
 
+/** 聚焦页：动画每帧 fit 若每帧都对 PTY resize，SIGWINCH 过密会像连按回车 */
+let singlePanePtyResizeTimer = null
+let lastSinglePanePtyResizeAt = 0
+const SINGLE_PANE_PTY_RESIZE_MIN_GAP_MS = 90
+
+/** 非聚焦面板：不向 PTY 每帧打 resize（Vim 会刷满 ~）。仅在尺寸稳定后补一次，窗口缩放也能跟上 */
+let deferredSinglePanePtyTimer = null
+const SINGLE_PANE_UNFOCUSED_PTY_DEBOUNCE_MS = 340
+
+const clearDeferredSinglePanePtyResize = () => {
+  if (deferredSinglePanePtyTimer) {
+    clearTimeout(deferredSinglePanePtyTimer)
+    deferredSinglePanePtyTimer = null
+  }
+}
+
+/** 与上次发给 PTY 的尺寸相同则跳过，避免重复 SIGWINCH / Vim 刷 ~ */
+function applySinglePanePtyResizeIfChanged(term) {
+  if (!term?.ptyId || !term.connected) return
+  const cols = term.xterm?.cols
+  const rows = term.xterm?.rows
+  if (!cols || !rows) return
+  const sig = `${cols}x${rows}`
+  if (term._lastPtySig === sig) return
+  term._lastPtySig = sig
+  window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
+}
+
+const scheduleDeferredSinglePanePtyResize = (term) => {
+  clearDeferredSinglePanePtyResize()
+  deferredSinglePanePtyTimer = window.setTimeout(() => {
+    deferredSinglePanePtyTimer = null
+    applySinglePanePtyResizeIfChanged(term)
+  }, SINGLE_PANE_UNFOCUSED_PTY_DEBOUNCE_MS)
+}
+
+const throttleSinglePanePtyResize = (term) => {
+  const apply = () => {
+    applySinglePanePtyResizeIfChanged(term)
+    lastSinglePanePtyResizeAt = Date.now()
+  }
+  const now = Date.now()
+  if (lastSinglePanePtyResizeAt === 0 || now - lastSinglePanePtyResizeAt >= SINGLE_PANE_PTY_RESIZE_MIN_GAP_MS) {
+    if (singlePanePtyResizeTimer) {
+      clearTimeout(singlePanePtyResizeTimer)
+      singlePanePtyResizeTimer = null
+    }
+    apply()
+    return
+  }
+  if (singlePanePtyResizeTimer) clearTimeout(singlePanePtyResizeTimer)
+  singlePanePtyResizeTimer = window.setTimeout(() => {
+    singlePanePtyResizeTimer = null
+    apply()
+  }, SINGLE_PANE_PTY_RESIZE_MIN_GAP_MS - (now - lastSinglePanePtyResizeAt))
+}
+
 const refreshVisibleTerminal = (term, focus = true) => {
   if (!term) return
-  const stickToBottom = !!term.restoreViewportToBottom
+  let stickToBottom = !!term.restoreViewportToBottom
+  if (props.singlePaneChrome && !props.focusPaneFocused) {
+    stickToBottom = true
+  }
+  const shouldFocusXterm = props.singlePaneChrome ? (focus && props.focusPaneFocused) : focus
   const forceViewportReconcile = !!term.viewportDirtyWhileHidden
   term.restoreViewportToBottom = false
   term.viewportDirtyWhileHidden = false
@@ -977,16 +1142,24 @@ const refreshVisibleTerminal = (term, focus = true) => {
     scheduleViewportRevealSync({
       term,
       canMeasure: canMeasureTerminal,
-      focus,
+      focus: shouldFocusXterm,
       stickToBottom,
       forceViewportReconcile,
       requestFrame: (callback) => requestAnimationFrame(callback),
       setTimer: (callback, delay) => window.setTimeout(callback, delay),
       clearTimer: (timerId) => window.clearTimeout(timerId),
       resizePty({ cols, rows }) {
-        if (term.ptyId && term.connected) {
-          window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
+        if (!term.ptyId || !term.connected) return
+        if (props.singlePaneChrome) {
+          if (props.focusPaneFocused) {
+            clearDeferredSinglePanePtyResize()
+            throttleSinglePanePtyResize(term)
+          } else {
+            scheduleDeferredSinglePanePtyResize(term)
+          }
+          return
         }
+        window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
       },
       reconcileViewport(immediate) {
         term.xterm?._core?.viewport?.syncScrollArea?.(immediate, true)
@@ -1180,7 +1353,10 @@ const closeTerminalById = async (termId) => {
   unbindTerminalDropEvents(term)
   cancelViewportRevealSync(term, (timerId) => window.clearTimeout(timerId))
   if (term.ptyId) {
-    await window.electronAPI.terminal.destroy({ id: term.ptyId }).catch(() => {})
+    const closingPtyId = term.ptyId
+    term.ptyId = null
+    term.connected = false
+    await destroyPtySilently(closingPtyId)
   }
   try { term.xterm.dispose() } catch (e) {}
   term.el.remove()
@@ -1350,8 +1526,11 @@ const restartTerminal = async (cwdOverride = null) => {
   const term = currentTerminal.value
   if (!term) return
   if (term.ptyId) {
-    await window.electronAPI.terminal.destroy({ id: term.ptyId }).catch(() => {})
-    term.ptyId = null; term.connected = false
+    const closingPtyId = term.ptyId
+    term.ptyId = null
+    term.connected = false
+    await destroyPtySilently(closingPtyId)
+    term._lastPtySig = undefined
   }
   term.xterm.reset()
   term.xterm.write('\x1b[33m正在重启终端...\x1b[0m\r\n')
@@ -1370,6 +1549,7 @@ const restartTerminal = async (cwdOverride = null) => {
     })
     if (res.success) {
       term.ptyId = res.id
+      term._lastPtySig = undefined
       if (res.resolvedCwd && typeof res.resolvedCwd === 'string') {
         term.cwd = res.resolvedCwd
       }
@@ -1467,7 +1647,12 @@ const runCommand = async (command, options = {}) => {
 // ---- 项目切换：缓存 & 恢复 ----
 
 const normalizeCacheKey = (path) => normalizeIncomingPath(path || '')
-const resolveStateCacheKey = (path) => normalizeCacheKey(path) || '__standalone__'
+const resolveStateCacheKey = (path) => {
+  if (typeof props.snapshotCacheKey === 'string' && props.snapshotCacheKey.trim()) {
+    return normalizeCacheKey(props.snapshotCacheKey.trim())
+  }
+  return normalizeCacheKey(path || '') || '__standalone__'
+}
 
 const getSnapshotStorageKey = (path) => {
   const normalized = resolveStateCacheKey(path)
@@ -1787,7 +1972,12 @@ const destroyTerminals = (terms) => {
   for (const t of terms) {
     unbindTerminalDropEvents(t)
     cancelViewportRevealSync(t, (timerId) => window.clearTimeout(timerId))
-    if (t.ptyId) window.electronAPI.terminal.destroy({ id: t.ptyId }).catch(() => {})
+    if (t.ptyId) {
+      const closingPtyId = t.ptyId
+      t.ptyId = null
+      t.connected = false
+      destroyPtySilently(closingPtyId)
+    }
     try { t.xterm.dispose() } catch (e) {}
     t.el.remove()
   }
@@ -1845,6 +2035,10 @@ const ipcHandler = {
     }
   },
   onExit(data) {
+    if (locallyClosedPtyIds.has(data.id)) {
+      locallyClosedPtyIds.delete(data.id)
+      return
+    }
     for (const t of terminals.value) {
       if (t.ptyId === data.id) {
         t.connected = false
@@ -1893,9 +2087,11 @@ const ipcHandler = {
 // ---- 生命周期 ----
 
 let resizeTimer = null
+let resizeRafId = null
 
-watch(() => props.isActive, (active) => {
-  if (active && terminals.value.length > 0) {
+watch(() => [props.isActive, props.focusPaneFocused], ([active, paneFocused]) => {
+  if (active && paneFocused && terminals.value.length > 0) {
+    if (props.singlePaneChrome) clearDeferredSinglePanePtyResize()
     applyLayout(true)
     return
   }
@@ -1976,10 +2172,18 @@ onMounted(() => {
   register(ipcHandler)
 
   const ro = new ResizeObserver(() => {
-    if (resizeTimer) clearTimeout(resizeTimer)
-    resizeTimer = setTimeout(() => {
-      applyLayout(false)
-    }, 100)
+    if (props.singlePaneChrome) {
+      if (resizeRafId != null) return
+      resizeRafId = requestAnimationFrame(() => {
+        resizeRafId = null
+        applyLayout(false)
+      })
+    } else {
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        applyLayout(false)
+      }, 100)
+    }
   })
   if (containerRef.value) {
     ro.observe(containerRef.value)
@@ -2004,6 +2208,16 @@ onUnmounted(() => {
     persistSnapshotTimer = null
   }
   if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null }
+  if (resizeRafId != null) {
+    cancelAnimationFrame(resizeRafId)
+    resizeRafId = null
+  }
+  if (singlePanePtyResizeTimer) {
+    clearTimeout(singlePanePtyResizeTimer)
+    singlePanePtyResizeTimer = null
+  }
+  clearDeferredSinglePanePtyResize()
+  lastSinglePanePtyResizeAt = 0
   document.removeEventListener('click', handleDocumentClick)
   document.removeEventListener('keydown', handleTerminalKeydown, true)
   window.removeEventListener('dragover', handleGlobalDragOver, true)
@@ -2040,6 +2254,53 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   min-height: 40px;
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.025);
+}
+.terminal-header--single-pane {
+  padding: 0 10px 0 12px;
+  gap: 10px;
+}
+.terminal-path--single-pane {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.75);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+.terminal-path--single-pane .terminal-path__title {
+  flex-shrink: 0;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.88);
+}
+.terminal-path--single-pane .terminal-path__sep {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.38);
+  user-select: none;
+}
+.terminal-path--single-pane .terminal-path__cwd {
+  flex: 1;
+  min-width: 0;
+}
+/* 过长时省略左侧，保留末尾目录名可见（完整路径见 title） */
+.terminal-path--ellipsis-start {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.terminal-path--ellipsis-start > .terminal-path__ltr {
+  direction: ltr;
+  unicode-bidi: embed;
+}
+.terminal-actions--single-pane {
+  flex-shrink: 0;
 }
 .terminal-tabs {
   display: flex;
@@ -2111,9 +2372,10 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
+  flex: 0 1 min(52%, 420px);
   min-width: 0;
   margin-left: 0;
+  justify-content: flex-end;
 }
 .terminal-search {
   display: flex;
@@ -2173,10 +2435,11 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
 .terminal-path {
   color: rgba(255, 255, 255, 0.5);
   font-size: 11px;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.terminal-actions .terminal-path--ellipsis-start {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 .terminal-btn {
   display: flex;

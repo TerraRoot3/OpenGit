@@ -16,6 +16,7 @@ declare module 'vue' {
     DownloadPanel: typeof import('./src/components/browser/DownloadPanel.vue')['default']
     ExtensionManager: typeof import('./src/components/ExtensionManager.vue')['default']
     FavoritesManager: typeof import('./src/components/browser/FavoritesManager.vue')['default']
+    FocusTerminalStack: typeof import('./src/components/terminal/FocusTerminalStack.vue')['default']
     GitProject: typeof import('./src/components/git/GitProject.vue')['default']
     HistoryManager: typeof import('./src/components/browser/HistoryManager.vue')['default']
     HomePage: typeof import('./src/components/HomePage.vue')['default']
