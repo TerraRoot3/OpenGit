@@ -254,8 +254,8 @@ function playFocusPulse(sessionId) {
   el.animate(
     [
       { transform: 'translateZ(0) scale(1)' },
-      { transform: 'translateZ(0) scale(1.012)' },
-      { transform: 'translateZ(0) scale(1.01)' }
+      { transform: 'translateZ(0) scale(1)' },
+      { transform: 'translateZ(0) scale(1)' }
     ],
     {
       duration: UNIFIED_ANIM_MS,
@@ -557,6 +557,8 @@ defineExpose({ runCommand })
   display: flex;
   flex-direction: column;
   background: #1a1b1e;
+  border-radius: 14px;
+  overflow: hidden;
   min-height: 0;
 }
 
@@ -577,7 +579,7 @@ defineExpose({ runCommand })
 
 .focus-terminal-toolbar {
   flex-shrink: 0;
-  padding: 4px 10px 0 0;
+  padding: 0;
   min-height: 0;
   border-bottom: 1px solid rgba(214, 176, 74, 0.18);
   background: rgba(0, 0, 0, 0.2);
@@ -585,12 +587,13 @@ defineExpose({ runCommand })
 
 .focus-terminal-tabs {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 2px;
   width: 100%;
   min-width: 0;
   overflow-x: auto;
-  padding-bottom: 0;
+  height: 40px;
+  min-height: 40px;
 }
 
 .focus-terminal-tabs::-webkit-scrollbar {
@@ -599,11 +602,12 @@ defineExpose({ runCommand })
 
 .focus-tablist {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 2px;
   flex: 0 0 auto;
   min-width: 0;
   position: relative;
+  height: 100%;
 }
 
 .focus-tab {
@@ -611,7 +615,7 @@ defineExpose({ runCommand })
   align-items: center;
   gap: 4px;
   padding: 0 8px;
-  height: 30px;
+  height: 100%;
   box-sizing: border-box;
   border-radius: 8px 8px 0 0;
   color: rgba(255, 255, 255, 0.5);
@@ -630,9 +634,9 @@ defineExpose({ runCommand })
 }
 
 .focus-tab.is-active {
-  background: rgba(74, 144, 255, 0.2);
-  color: #cfe5ff;
-  border-bottom-color: #4a90ff;
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.92);
+  border-bottom-color: transparent;
 }
 
 .focus-tab__label {
@@ -678,15 +682,15 @@ defineExpose({ runCommand })
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   margin-left: 2px;
   margin-bottom: 0;
   color: rgba(255, 255, 255, 0.75);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
@@ -829,7 +833,7 @@ defineExpose({ runCommand })
 /* 聚焦：无描边，仅层级 + 较轻外发光（大模糊易掉帧） */
 .focus-terminal-pane.is-focused {
   z-index: 2;
-  transform: translateZ(0) scale(1.01);
+  transform: translateZ(0) scale(1);
   animation: none;
   border-color: #4a90ff;
   box-shadow:
