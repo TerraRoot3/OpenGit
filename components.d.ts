@@ -37,6 +37,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SitePermissionPanel: typeof import('./src/components/browser/SitePermissionPanel.vue')['default']
+    StandaloneSplitTerminal: typeof import('./src/components/terminal/StandaloneSplitTerminal.vue')['default']
     StandaloneTerminal: typeof import('./src/components/terminal/StandaloneTerminal.vue')['default']
     TabManager: typeof import('./src/components/browser/TabManager.vue')['default']
     TerminalPanel: typeof import('./src/components/terminal/TerminalPanel.vue')['default']

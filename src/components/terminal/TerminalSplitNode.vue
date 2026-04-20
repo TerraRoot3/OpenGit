@@ -7,6 +7,7 @@
     :data-pane-root-node-id="node.nodeId"
     :class="{
       inactive: activeTermId !== node.termId,
+      'liquid-style': liquidStyle,
       'is-drop-target': dropTargetTermId === node.termId && draggingTermId && draggingTermId !== node.termId,
       'is-dragging': draggingTermId === node.termId
     }"
@@ -18,16 +19,52 @@
       @mousedown="emit('pane-focus', node.termId)"
       @mousedown.left.stop="handleDragMouseDown"
     >
-      <span class="terminal-pane-title">{{ paneLabel }}</span>
-      <button
-        v-if="closable"
-        class="pane-close-btn"
-        title="关闭分屏"
-        @mousedown.prevent.stop
-        @click.stop="emit('pane-close', node.termId)"
-      >
-        <X :size="11" />
-      </button>
+      <template v-if="liquidStyle">
+        <div class="terminal-pane-meta">
+          <span class="terminal-pane-title" :title="paneLabel">{{ paneLabel }}</span>
+          <span v-if="paneCwd" class="terminal-pane-sep" aria-hidden="true">·</span>
+          <span v-if="paneCwd" class="terminal-pane-cwd" :title="paneCwd">{{ paneCwd }}</span>
+        </div>
+        <div class="terminal-pane-actions">
+          <button
+            class="pane-action-btn"
+            title="清屏"
+            @mousedown.prevent.stop
+            @click.stop="emit('pane-clear', node.termId)"
+          >
+            <Eraser :size="11" />
+          </button>
+          <button
+            class="pane-action-btn"
+            title="重启终端"
+            @mousedown.prevent.stop
+            @click.stop="emit('pane-restart', node.termId)"
+          >
+            <RefreshCw :size="11" />
+          </button>
+          <button
+            v-if="closable"
+            class="pane-action-btn pane-close-btn"
+            title="关闭分屏"
+            @mousedown.prevent.stop
+            @click.stop="emit('pane-close', node.termId)"
+          >
+            <X :size="11" />
+          </button>
+        </div>
+      </template>
+      <template v-else>
+        <span class="terminal-pane-title" :title="paneLabel">{{ paneLabel }}</span>
+        <button
+          v-if="closable"
+          class="pane-close-btn"
+          title="关闭分屏"
+          @mousedown.prevent.stop
+          @click.stop="emit('pane-close', node.termId)"
+        >
+          <X :size="11" />
+        </button>
+      </template>
     </div>
     <div
       class="terminal-pane-content"
@@ -49,6 +86,8 @@
         :node="node.children[0]"
         :active-term-id="activeTermId"
         :pane-title-resolver="paneTitleResolver"
+        :pane-cwd-resolver="paneCwdResolver"
+        :liquid-style="liquidStyle"
         :show-pane-topbar="showPaneTopbar"
         :closable="closable"
         :dragging-term-id="draggingTermId"
@@ -56,6 +95,8 @@
         @pane-element-change="forwardPaneElementChange"
         @pane-focus="forwardPaneFocus"
         @pane-close="forwardPaneClose"
+        @pane-clear="forwardPaneClear"
+        @pane-restart="forwardPaneRestart"
         @pane-drop="forwardPaneDrop"
         @start-resize="forwardResizeStart"
         @pane-drag-start="forwardPaneDragStart"
@@ -72,6 +113,8 @@
         :node="node.children[1]"
         :active-term-id="activeTermId"
         :pane-title-resolver="paneTitleResolver"
+        :pane-cwd-resolver="paneCwdResolver"
+        :liquid-style="liquidStyle"
         :show-pane-topbar="showPaneTopbar"
         :closable="closable"
         :dragging-term-id="draggingTermId"
@@ -79,6 +122,8 @@
         @pane-element-change="forwardPaneElementChange"
         @pane-focus="forwardPaneFocus"
         @pane-close="forwardPaneClose"
+        @pane-clear="forwardPaneClear"
+        @pane-restart="forwardPaneRestart"
         @pane-drop="forwardPaneDrop"
         @start-resize="forwardResizeStart"
         @pane-drag-start="forwardPaneDragStart"
@@ -90,7 +135,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { X } from 'lucide-vue-next'
+import { X, Eraser, RefreshCw } from 'lucide-vue-next'
 
 const props = defineProps({
   node: {
@@ -104,6 +149,14 @@ const props = defineProps({
   paneTitleResolver: {
     type: Function,
     default: null
+  },
+  paneCwdResolver: {
+    type: Function,
+    default: null
+  },
+  liquidStyle: {
+    type: Boolean,
+    default: false
   },
   showPaneTopbar: {
     type: Boolean,
@@ -127,6 +180,8 @@ const emit = defineEmits([
   'pane-element-change',
   'pane-focus',
   'pane-close',
+  'pane-clear',
+  'pane-restart',
   'pane-drop',
   'start-resize',
   'pane-drag-start',
@@ -142,6 +197,11 @@ const splitAxisClass = computed(() => props.node?.direction === 'column' ? 'is-c
 const paneLabel = computed(() => {
   if (props.node?.type !== 'leaf') return '终端'
   return props.paneTitleResolver?.(props.node.termId) || '终端'
+})
+const paneCwd = computed(() => {
+  if (props.node?.type !== 'leaf') return ''
+  const cwd = props.paneCwdResolver?.(props.node.termId)
+  return typeof cwd === 'string' ? cwd : ''
 })
 const splitRatio = computed(() => {
   const ratio = Number(props.node?.ratio)
@@ -210,6 +270,8 @@ const handleDragMouseDown = (event) => {
 const forwardPaneElementChange = (payload) => emit('pane-element-change', payload)
 const forwardPaneFocus = (termId) => emit('pane-focus', termId)
 const forwardPaneClose = (termId) => emit('pane-close', termId)
+const forwardPaneClear = (termId) => emit('pane-clear', termId)
+const forwardPaneRestart = (termId) => emit('pane-restart', termId)
 const forwardPaneDrop = (...args) => emit('pane-drop', ...args)
 const forwardResizeStart = (payload) => emit('start-resize', payload)
 const forwardPaneDragStart = (payload) => emit('pane-drag-start', payload)
@@ -220,14 +282,27 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 .terminal-pane {
   width: 100%;
   height: 100%;
+  box-sizing: border-box;
   min-width: 0;
   min-height: 0;
   position: relative;
   display: flex;
   flex-direction: column;
   border: 0;
+  border-radius: 0;
   overflow: hidden;
   background: rgba(30, 30, 30, 0.5);
+  transition: border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.terminal-pane.liquid-style {
+  border: 1px solid rgba(214, 176, 74, 0.16);
+  border-radius: 10px;
+}
+
+.terminal-pane.liquid-style:not(.inactive) {
+  border-color: #4a90ff;
+  box-shadow: 0 0 0 1px rgba(74, 144, 255, 0.22), 0 0 14px rgba(74, 144, 255, 0.12);
 }
 
 .terminal-pane.is-drop-target {
@@ -258,6 +333,15 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.terminal-pane.liquid-style .terminal-pane-topbar {
+  height: 40px;
+  min-height: 40px;
+  gap: 10px;
+  padding: 0 10px 0 12px;
+  background: rgba(74, 144, 255, 0.12);
+  border-bottom: 1px solid rgba(74, 144, 255, 0.88);
+}
+
 .terminal-pane-topbar.draggable {
   cursor: grab;
 }
@@ -266,14 +350,43 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   cursor: grabbing;
 }
 
+.terminal-pane-meta {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
 .terminal-pane-title {
+  flex-shrink: 0;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.terminal-pane-sep {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.terminal-pane-cwd {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.78);
+  direction: rtl;
+  text-align: left;
+  unicode-bidi: plaintext;
+  color: rgba(255, 255, 255, 0.75);
   font-size: 11px;
-  line-height: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
 .terminal-pane-content {
@@ -295,11 +408,23 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 }
 
 .terminal-pane.inactive .terminal-pane-topbar {
-  background: rgba(214, 176, 74, 0.02);
-  border-bottom-color: rgba(214, 176, 74, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
 }
 
-.pane-close-btn {
+.terminal-pane.inactive.liquid-style .terminal-pane-topbar {
+  background: rgba(214, 176, 74, 0.025);
+  border-bottom-color: rgba(214, 176, 74, 0.16);
+}
+
+.terminal-pane-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pane-action-btn {
   width: 20px;
   height: 20px;
   border: none;
@@ -310,7 +435,21 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
+}
+
+.terminal-pane.liquid-style .pane-action-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.pane-action-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.pane-close-btn {
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .pane-close-btn:hover {

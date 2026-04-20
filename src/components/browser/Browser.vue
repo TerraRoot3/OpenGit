@@ -64,7 +64,7 @@
             <History v-else-if="tab.routeType === 'browsing-history'" :size="14" />
             <HardDrive v-else-if="tab.routeType === 'backup-manager'" :size="14" />
             <Puzzle v-else-if="tab.routeType === 'extension-manager'" :size="14" />
-            <Terminal v-else-if="tab.routeType === 'standalone-terminal' || tab.routeType === 'standalone-terminal-focus'" :size="14" />
+            <Terminal v-else-if="tab.routeType === 'standalone-terminal' || tab.routeType === 'standalone-terminal-focus' || tab.routeType === 'standalone-terminal-split'" :size="14" />
             <Globe v-else :size="14" />
           </div>
           <span class="browser-tab-title">{{ tab.isLoading && !tab.title ? '加载中...' : (tab.title || '新标签页') }}</span>
@@ -131,6 +131,10 @@
             <div class="menu-item" @click="openStandaloneTerminal">
               <Terminal :size="16" />
               <span>终端</span>
+            </div>
+            <div class="menu-item" @click="openStandaloneSplitTerminal">
+              <Terminal :size="16" />
+              <span>分屏终端</span>
             </div>
             <div class="menu-item" @click="createNewPrivateBrowserTab">
               <Globe :size="16" />
@@ -553,6 +557,14 @@ const routeConfig = {
     icon: 'Terminal',
     showWebview: false,
     defaultUrl: 'about:terminal-focus'
+  },
+  'standalone-terminal-split': {
+    pattern: /^about:terminal-split$/,
+    component: 'StandaloneSplitTerminal',
+    title: '终端（分屏）',
+    icon: 'Terminal',
+    showWebview: false,
+    defaultUrl: 'about:terminal-split'
   },
   // 普通网页路由（默认）
   webview: {
@@ -1140,6 +1152,9 @@ watch(() => activeBrowserTabId.value, (newTabId, oldTabId) => {
   } else if (tab.routeType === 'standalone-terminal-focus') {
     currentUrl.value = 'about:terminal-focus'
     urlInput.value = 'about:terminal-focus'
+  } else if (tab.routeType === 'standalone-terminal-split') {
+    currentUrl.value = 'about:terminal-split'
+    urlInput.value = 'about:terminal-split'
   } else if (tab.routeType === 'new-tab') {
     // 新标签页：输入框为空，等待用户输入
         currentUrl.value = ''
@@ -1325,6 +1340,9 @@ const handleNativeMenuAction = (action) => {
     case 'standalone-terminal':
       openStandaloneTerminal()
       break
+    case 'standalone-terminal-split':
+      openStandaloneSplitTerminal()
+      break
     case 'backup-manager':
       openBackupManager()
       break
@@ -1484,6 +1502,15 @@ const openStandaloneTerminal = () => {
   urlInput.value = 'about:terminal-focus'
 }
 
+const openStandaloneSplitTerminal = () => {
+  showMenu.value = false
+  const tab = createBrowserTab('about:terminal-split', '终端（分屏）')
+  tab.type = 'standalone-terminal-split'
+  switchBrowserTab(tab.id)
+  currentUrl.value = 'about:terminal-split'
+  urlInput.value = 'about:terminal-split'
+}
+
 const openExtensionManager = () => {
   console.log('🧩 打开扩展管理')
   showMenu.value = false
@@ -1540,6 +1567,7 @@ const baseAboutPages = [
   { url: 'about:history', title: '历史记录', icon: 'History' },
   { url: 'about:backup', title: '备份管理', icon: 'HardDrive' },
   { url: 'about:terminal-focus', title: '终端', icon: 'Terminal' },
+  { url: 'about:terminal-split', title: '终端（分屏）', icon: 'Terminal' },
   { url: 'about:terminal', title: '终端（经典）', icon: 'Terminal' }
   // 扩展管理暂时隐藏
   // { url: 'about:extensions', title: '扩展管理', icon: 'Puzzle' }

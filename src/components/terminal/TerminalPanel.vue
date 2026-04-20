@@ -3,29 +3,61 @@
     <div class="terminal-header" :class="{ 'terminal-header--single-pane': singlePaneChrome }">
       <template v-if="!singlePaneChrome">
       <div class="terminal-tabs">
-        <div
-          v-for="tab in tabs"
-          :key="tab.tabId"
-          class="terminal-tab"
-          :class="{ active: tab.tabId === activeTabId }"
-          @click="switchTab(tab.tabId)"
-        >
-          <TerminalIcon :size="12" />
-          <span class="tab-label">{{ tab.label }}</span>
-          <button
-            v-if="tabs.length > 1"
-            class="tab-close-btn"
-            @mousedown.prevent.stop
-            @click.stop="closeTab(tab.tabId)"
+        <template v-if="props.splitOnlyMode">
+          <div
+            v-for="pane in splitPaneTabs"
+            :key="pane.termId"
+            class="terminal-tab"
+            :class="{ active: pane.termId === activeTermId }"
+            @click="focusSplitPane(pane.termId)"
           >
-            <X :size="10" />
-          </button>
-        </div>
-        <button class="terminal-btn add-btn" @mousedown.prevent @click="handleAddTerminal" title="新建终端">
+            <TerminalIcon :size="12" />
+            <span class="tab-label">{{ pane.label }}</span>
+            <button
+              v-if="splitPaneTabs.length > 1"
+              class="tab-close-btn"
+              @mousedown.prevent.stop
+              @click.stop="closeSplitPane(pane.termId)"
+            >
+              <X :size="10" />
+            </button>
+          </div>
+        </template>
+        <template v-else>
+          <div
+            v-for="tab in tabs"
+            :key="tab.tabId"
+            class="terminal-tab"
+            :class="{ active: tab.tabId === activeTabId }"
+            @click="switchTab(tab.tabId)"
+          >
+            <TerminalIcon :size="12" />
+            <span class="tab-label">{{ tab.label }}</span>
+            <button
+              v-if="tabs.length > 1"
+              class="tab-close-btn"
+              @mousedown.prevent.stop
+              @click.stop="closeTab(tab.tabId)"
+            >
+              <X :size="10" />
+            </button>
+          </div>
+        </template>
+        <button
+          v-if="!props.splitOnlyMode"
+          class="terminal-btn add-btn"
+          @mousedown.prevent
+          @click="handleAddTerminal"
+          title="新建终端"
+        >
           <Plus :size="14" />
         </button>
         <!-- 多根目录时显示"在目录中打开"下拉 -->
-        <div v-if="props.workspaceRoots.length > 1" class="terminal-cwd-picker" ref="cwdMenuRef">
+        <div
+          v-if="!props.splitOnlyMode && props.workspaceRoots.length > 1"
+          class="terminal-cwd-picker"
+          ref="cwdMenuRef"
+        >
           <button class="terminal-btn" @mousedown.prevent @click="showCwdMenu = !showCwdMenu" title="在目录中打开终端">
             <FolderOpen :size="13" />
           </button>
@@ -42,6 +74,7 @@
         </div>
       </div>
       <div class="terminal-actions">
+        <template v-if="!props.splitOnlyMode">
         <div v-if="showSearchBar" class="terminal-search" :class="{ 'is-not-found': !searchHasMatch }">
           <SearchIcon :size="13" class="terminal-search-icon" />
           <input
@@ -96,6 +129,33 @@
         <button class="terminal-btn" @mousedown.prevent @click="restartTerminal(getProjectRootCwd() || null)" title="重启终端">
           <RefreshCw :size="14" />
         </button>
+        </template>
+        <template v-else>
+          <button class="terminal-btn terminal-btn-split" @mousedown.prevent @click="splitActiveTerminal('row')" title="水平分屏">
+            <svg
+              class="split-btn-icon split-horizontal"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <rect x="1" y="1" width="6" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              <rect x="9" y="1" width="6" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              <line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/>
+            </svg>
+          </button>
+          <button class="terminal-btn terminal-btn-split" @mousedown.prevent @click="splitActiveTerminal('column')" title="垂直分屏">
+            <svg
+              class="split-btn-icon split-vertical"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <rect x="1" y="1" width="14" height="6" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              <rect x="1" y="9" width="14" height="6" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.5"/>
+            </svg>
+          </button>
+        </template>
       </div>
       </template>
       <template v-else>
@@ -141,13 +201,17 @@
         :node="activeTab.layout"
         :active-term-id="activeTermId"
         :pane-title-resolver="getPaneTitle"
+        :pane-cwd-resolver="getPaneCwd"
+        :liquid-style="props.splitOnlyMode"
         :closable="activeTabTermIds.length > 1"
-        :show-pane-topbar="activeTabTermIds.length > 1"
+        :show-pane-topbar="props.splitOnlyMode ? true : activeTabTermIds.length > 1"
         :dragging-term-id="draggingPaneTermId"
         :drop-target-term-id="dropTargetPaneTermId"
         @pane-element-change="handlePaneElementChange"
         @pane-focus="focusSplitPane"
         @pane-close="closeSplitPane"
+        @pane-clear="clearTerminalById"
+        @pane-restart="restartTerminalById"
         @pane-drop="handleTerminalDrop"
         @start-resize="startResizeDrag"
         @pane-drag-start="handlePaneDragStart"
@@ -188,7 +252,9 @@ const props = defineProps({
   /** 聚焦多终端：当前格是否为键盘焦点（isActive 表示标签页是否在前台，二者分离） */
   focusPaneFocused: { type: Boolean, default: true },
   /** 与 singlePaneChrome 配合：显示关闭（由父级移除该面板） */
-  showCloseButton: { type: Boolean, default: false }
+  showCloseButton: { type: Boolean, default: false },
+  /** 分屏独立页：禁用“新建终端/目录新建”，只能通过 split 新增会话 */
+  splitOnlyMode: { type: Boolean, default: false }
 })
 
 const containerRef = ref(null)
@@ -432,9 +498,17 @@ const swapLayoutLeafTermIds = (node, leftTermId, rightTermId) => {
 const getPaneTitle = (termId) => {
   const term = findTerminalById(termId)
   if (!term) return '终端'
+  const runtimeTitle = typeof term.title === 'string' ? term.title.trim() : ''
+  if (runtimeTitle) return runtimeTitle
   const cwd = normalizeIncomingPath(term.cwd || '')
   const name = cwd ? cwd.split('/').filter(Boolean).pop() : ''
   return name || '终端'
+}
+
+const getPaneCwd = (termId) => {
+  const term = findTerminalById(termId)
+  if (!term) return ''
+  return normalizeIncomingPath(term.cwd || '')
 }
 
 const createPaneDragPreview = (termId) => {
@@ -480,6 +554,16 @@ const resolvePaneDropTargetTermId = (clientX, clientY) => {
 
 const activeTab = computed(() => findTabById(activeTabId.value))
 const activeTabTermIds = computed(() => activeTab.value?.termIds || [])
+const splitPaneTabs = computed(() => {
+  return activeTabTermIds.value.map((termId, index) => ({
+    termId,
+    label: (() => {
+      const term = findTerminalById(termId)
+      const runtimeTitle = typeof term?.title === 'string' ? term.title.trim() : ''
+      return runtimeTitle || `终端 ${index + 1}`
+    })()
+  }))
+})
 const currentTerminal = computed(() => {
   const current = findTerminalById(activeTermId.value)
   if (current) return current
@@ -962,6 +1046,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     el,
     connected: false,
     ptyId: null,
+    title: '',
     hasUserInput: restoredHasUserInput,
     restoreViewportToBottom: true,
     viewportDirtyWhileHidden: false,
@@ -1392,8 +1477,8 @@ const closeTab = async (tabId) => {
   schedulePersistedSnapshot()
 }
 
-const clearTerminal = () => {
-  const term = currentTerminal.value
+const clearTerminalById = (termId = '') => {
+  const term = termId ? findTerminalById(termId) : currentTerminal.value
   if (!term) return
   // 快照恢复的历史是直接 write 进 xterm 的，不在 PTY 里；仅发 Ctrl+L 清不掉这些行。
   try {
@@ -1404,6 +1489,10 @@ const clearTerminal = () => {
     window.electronAPI.terminal.write({ id: term.ptyId, data: '\x0c' })
   }
   term.xterm.focus()
+}
+
+const clearTerminal = () => {
+  clearTerminalById('')
 }
 
 const clearSearchDecorations = (term) => {
@@ -1520,8 +1609,8 @@ const handleTerminalKeydown = (event) => {
   }
 }
 
-const restartTerminal = async (cwdOverride = null) => {
-  const term = currentTerminal.value
+const restartTerminalById = async (termId = '', cwdOverride = null) => {
+  const term = termId ? findTerminalById(termId) : currentTerminal.value
   if (!term) return
   if (term.ptyId) {
     const closingPtyId = term.ptyId
@@ -1559,6 +1648,10 @@ const restartTerminal = async (cwdOverride = null) => {
   } catch (e) {
     term.xterm.write('\r\n\x1b[31m重启失败: ' + e.message + '\x1b[0m\r\n')
   }
+}
+
+const restartTerminal = async (cwdOverride = null) => {
+  await restartTerminalById('', cwdOverride)
 }
 
 const ensureDefaultTerminal = async (cwdOverride = '') => {
@@ -2057,6 +2150,12 @@ const ipcHandler = {
     }
   },
   onTitleChange(data) {
+    const updateTermTitle = (term) => {
+      if (term.ptyId !== data.id) return false
+      const nextTitle = typeof data.title === 'string' ? data.title.trim() : ''
+      term.title = nextTitle
+      return true
+    }
     const updateTabLabel = (term, tabList) => {
       if (term.ptyId !== data.id) return false
       const tab = Array.isArray(tabList) ? tabList.find(item => item.tabId === term.tabId) : null
@@ -2066,6 +2165,7 @@ const ipcHandler = {
       return true
     }
     for (const t of terminals.value) {
+      updateTermTitle(t)
       if (updateTabLabel(t, tabs.value)) {
         schedulePersistedSnapshot()
         return
@@ -2073,6 +2173,7 @@ const ipcHandler = {
     }
     for (const [cacheKey, cached] of terminalCache) {
       for (const t of cached.terminals) {
+        updateTermTitle(t)
         if (updateTabLabel(t, cached.tabs)) {
           persistSnapshotForPath(cacheKey, cached)
           return
@@ -2347,19 +2448,20 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   justify-content: center;
   width: 16px;
   height: 16px;
+  padding: 0;
   background: transparent;
   border: none;
   border-radius: 3px;
-  color: #666;
+  color: rgba(255, 255, 255, 0.45);
   cursor: pointer;
   opacity: 0;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
 .terminal-tab:hover .tab-close-btn { opacity: 1; }
-.terminal-tab.active .tab-close-btn { opacity: 0.6; }
+.terminal-tab.active .tab-close-btn { opacity: 0.55; }
 .tab-close-btn:hover {
   background: rgba(255, 255, 255, 0.15);
-  color: #d4d4d4;
+  color: rgba(255, 255, 255, 0.9);
   opacity: 1 !important;
 }
 .add-btn {

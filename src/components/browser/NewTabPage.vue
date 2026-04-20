@@ -100,6 +100,11 @@
       :is-active="isActive"
     />
 
+    <StandaloneSplitTerminal
+      v-else-if="routeType === 'standalone-terminal-split'"
+      :is-active="isActive"
+    />
+
   </div>
 </template>
 
@@ -118,6 +123,7 @@ import BackupManager from '../BackupManager.vue'
 import ExtensionManager from '../ExtensionManager.vue'
 import StandaloneTerminal from '../terminal/StandaloneTerminal.vue'
 import FocusTerminalStack from '../terminal/FocusTerminalStack.vue'
+import StandaloneSplitTerminal from '../terminal/StandaloneSplitTerminal.vue'
 
 const props = defineProps({
   tabId: {
