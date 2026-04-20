@@ -2263,6 +2263,17 @@ async function executeWorkspaceCommand(command) {
   })
 }
 
+async function refreshRemoteBranchStatus() {
+  if (!props.projectPath || !window.electronAPI?.refreshRemote) return null
+  try {
+    const result = await window.electronAPI.refreshRemote({ path: props.projectPath })
+    if (!result?.success) return null
+    return result.data?.currentBranchStatus || null
+  } catch {
+    return null
+  }
+}
+
 function closeOperationDialog() {
   showOperationDialog.value = false
   operationType.value = ''
@@ -2289,14 +2300,14 @@ async function runGitAction(title, executor) {
   }
 }
 
-async function refreshAfterGitAction({ clearCommit = false } = {}) {
+async function refreshAfterGitAction({ clearCommit = false, eventPayload = null } = {}) {
   if (clearCommit) {
     commitMessage.value = ''
     await loadCommitTemplate(props.projectPath)
   }
   await refreshGitStatuses()
   await refreshTree()
-  emit('status-changed')
+  emit('status-changed', eventPayload || { type: 'refresh' })
 }
 
 async function discardModifiedFiles() {
@@ -2415,7 +2426,7 @@ async function commitModifiedFiles() {
       throw new Error(commitResult?.error || commitResult?.output || '提交失败')
     }
     operationOutput.value += `${commitResult.output || ''}\n\n✅ 提交完成`
-    await refreshAfterGitAction({ clearCommit: true })
+    await refreshAfterGitAction({ clearCommit: true, eventPayload: { type: 'commit' } })
     window.setTimeout(closeOperationDialog, 300)
   }).catch((error) => {
     operationOutput.value += `\n\n❌ ${error.message}`
@@ -2459,14 +2470,29 @@ async function commitAndPushModifiedFiles() {
     if (remoteResult?.success && String(remoteResult.output || '').trim()) {
       operationOutput.value += '推送到远程仓库...\n'
       const pushResult = await executeWorkspaceCommand('git push')
-      if (!pushResult?.success) {
-        throw new Error(pushResult?.error || pushResult?.output || '推送失败')
+      const refreshedBranchStatus = await refreshRemoteBranchStatus()
+      const pushVerified = refreshedBranchStatus?.localAhead === 0
+      if (!pushResult?.success && !pushVerified) {
+        throw new Error(pushResult?.error || pushResult?.stderr || pushResult?.output || '推送失败')
       }
-      operationOutput.value += `${pushResult.output || ''}\n`
+      if (!pushResult?.success && pushVerified) {
+        operationOutput.value += '推送命令返回异常，但远程状态已校验为成功。\n'
+      }
+      operationOutput.value += `${pushResult.output || pushResult?.stderr || ''}\n`
+      operationOutput.value += '\n✅ 提交并推送完成'
+      await refreshAfterGitAction({
+        clearCommit: true,
+        eventPayload: {
+          type: 'commit-and-push',
+          branchStatus: refreshedBranchStatus || { localAhead: 0, remoteAhead: 0 }
+        }
+      })
+      window.setTimeout(closeOperationDialog, 300)
+      return
     }
 
     operationOutput.value += '\n✅ 提交并推送完成'
-    await refreshAfterGitAction({ clearCommit: true })
+    await refreshAfterGitAction({ clearCommit: true, eventPayload: { type: 'commit' } })
     window.setTimeout(closeOperationDialog, 300)
   }).catch((error) => {
     operationOutput.value += `\n\n❌ ${error.message}`

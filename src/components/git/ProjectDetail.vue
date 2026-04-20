@@ -341,11 +341,17 @@
 
             <!-- 终端 - 使用 v-show 保持存活，避免切换时重新创建 -->
             <TerminalPanel
-              v-if="terminalMounted"
+              v-if="terminalMounted && terminalMode === 'split'"
               v-show="currentView === 'terminal'"
               :default-cwd="terminalProjectPath"
               :is-active="isActive && currentView === 'terminal'"
+              split-only-mode
               ref="terminalRef"
+            />
+            <FocusTerminalStack
+              v-if="terminalMounted && terminalMode === 'liquid'"
+              v-show="currentView === 'terminal'"
+              :is-active="isActive && currentView === 'terminal'"
             />
 
           </div>
@@ -366,6 +372,7 @@
     <ProjectSettingsDialog
       v-model:visible="showProjectSettings"
       :project-path="path"
+      :terminal-mode="terminalMode"
       @confirm="onProjectSettingsConfirm"
     />
 
@@ -544,6 +551,7 @@ import ProjectPipeline from './ProjectPipeline.vue'
 import OperationDialog from '../dialog/OperationDialog.vue'
 import ProjectSettingsDialog from '../dialog/ProjectSettingsDialog.vue'
 import TerminalPanel from '../terminal/TerminalPanel.vue'
+import FocusTerminalStack from '../terminal/FocusTerminalStack.vue'
 import CustomSelect from '../common/CustomSelect.vue'
 import { useGitCommand } from '../../composables/useGitCommand'
 import {
@@ -766,6 +774,17 @@ const getSavedCurrentView = async (path) => {
   return 'ai-sessions'
 }
 
+const getProjectTerminalModeKey = (path) =>
+  `projectTerminalMode_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
+
+const getSavedTerminalMode = async (path) => {
+  try {
+    const saved = await getConfigString(getProjectTerminalModeKey(path))
+    if (saved === 'liquid') return 'liquid'
+  } catch (e) {}
+  return 'split'
+}
+
 const saveExpandState = () => {
   if (!props.path) return
   void (async () => {
@@ -797,6 +816,7 @@ const restoreExpandState = async (path) => {
 }
 
 const currentView = ref('ai-sessions')
+const terminalMode = ref('split')
 const branchesPanelWidthPx = ref(BRANCHES_PANEL_DEFAULT)
 /** 用户上次拉宽后的宽度，用于从图标条恢复 */
 const branchesPanelLastExpandedWidth = ref(BRANCHES_PANEL_DEFAULT)
@@ -1827,8 +1847,8 @@ const selectAiSessions = () => {
 }
 
 // 处理文件状态变化（提交后）
-const handleFileStatusChanged = async () => {
-  debugLog('🔄 [ProjectDetailNew] 文件状态变化')
+const handleFileStatusChanged = async (payload = {}) => {
+  debugLog('🔄 [ProjectDetailNew] 文件状态变化', payload)
   
   // 检查是否有远程仓库
   let hasRemote = false
@@ -1842,24 +1862,37 @@ const handleFileStatusChanged = async () => {
     debugLog('检查远程仓库失败:', e)
   }
   
-  // 只有有远程仓库时才增加 localAhead
-  if (hasRemote) {
+  // commit-and-push 直接以工作区校验后的状态为准，不再做 +1
+  if (payload?.type === 'commit-and-push') {
+    const nextRemoteAhead = payload?.branchStatus?.remoteAhead || 0
+    const nextLocalAhead = payload?.branchStatus?.localAhead || 0
+    if (branchStatus.value) {
+      branchStatus.value.remoteAhead = nextRemoteAhead
+      branchStatus.value.localAhead = nextLocalAhead
+    }
+    if (allBranchStatus.value && currentBranch.value && allBranchStatus.value[currentBranch.value]) {
+      allBranchStatus.value[currentBranch.value].remoteAhead = nextRemoteAhead
+      allBranchStatus.value[currentBranch.value].localAhead = nextLocalAhead
+    }
+    emitStatusUpdated(props.path, {
+      remoteAhead: nextRemoteAhead,
+      localAhead: nextLocalAhead
+    })
+  } else if (payload?.type === 'commit' && hasRemote) {
     debugLog('🔄 [ProjectDetailNew] 有远程仓库，localAhead + 1')
-  const newLocalAhead = (branchStatus.value?.localAhead || 0) + 1
-  if (branchStatus.value) {
-    branchStatus.value.localAhead = newLocalAhead
-  }
-  // 更新 allBranchStatus 中当前分支的状态
-  if (allBranchStatus.value && currentBranch.value && allBranchStatus.value[currentBranch.value]) {
-    allBranchStatus.value[currentBranch.value].localAhead = newLocalAhead
-  }
-  // 通知 GitProject 更新项目列表
-  emitStatusUpdated(props.path, {
-    remoteAhead: branchStatus.value?.remoteAhead || 0,
-    localAhead: newLocalAhead
-  })
+    const newLocalAhead = (branchStatus.value?.localAhead || 0) + 1
+    if (branchStatus.value) {
+      branchStatus.value.localAhead = newLocalAhead
+    }
+    if (allBranchStatus.value && currentBranch.value && allBranchStatus.value[currentBranch.value]) {
+      allBranchStatus.value[currentBranch.value].localAhead = newLocalAhead
+    }
+    emitStatusUpdated(props.path, {
+      remoteAhead: branchStatus.value?.remoteAhead || 0,
+      localAhead: newLocalAhead
+    })
   } else {
-    debugLog('🔄 [ProjectDetailNew] 本地仓库，不增加 localAhead')
+    debugLog('🔄 [ProjectDetailNew] 仅刷新文件状态，不调整 ahead/behind')
   }
   
   bumpCommitHistoryRevision()
@@ -2705,8 +2738,13 @@ const toggleFavorite = () => {
   })
 }
 
-const onProjectSettingsConfirm = () => {
+const onProjectSettingsConfirm = (payload = {}) => {
   debugLog('✅ 项目设置已保存')
+  const nextTerminalMode = payload?.terminalMode === 'liquid' ? 'liquid' : 'split'
+  terminalMode.value = nextTerminalMode
+  if (props.path) {
+    void setConfigString(getProjectTerminalModeKey(props.path), nextTerminalMode).catch(() => {})
+  }
   // 刷新远程分支列表
   refreshRemoteBranches()
 }
@@ -2731,6 +2769,7 @@ watch(() => props.path, async (newPath, oldPath) => {
   stopProjectGitMonitor()
   resetProjectGitMonitorState()
   if (newPath) {
+    terminalMode.value = await getSavedTerminalMode(newPath)
     isGitRepository.value = null
     activePipelineSummary.value = null
     // 恢复该项目保存的视图状态和展开状态（electron-store）

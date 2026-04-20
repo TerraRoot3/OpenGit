@@ -91,6 +91,33 @@
             </div>
           </div>
         </div>
+
+        <!-- 终端模式 -->
+        <div class="settings-section">
+          <div class="section-header">
+            <span class="section-title">终端模式</span>
+          </div>
+          <div class="section-content">
+            <div class="template-scope">
+              <label class="scope-option">
+                <input
+                  type="radio"
+                  v-model="terminalMode"
+                  value="split"
+                />
+                <span>分屏终端</span>
+              </label>
+              <label class="scope-option">
+                <input
+                  type="radio"
+                  v-model="terminalMode"
+                  value="liquid"
+                />
+                <span>灵动终端</span>
+              </label>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 底部按钮 -->
@@ -117,6 +144,10 @@ const props = defineProps({
   projectPath: {
     type: String,
     default: ''
+  },
+  terminalMode: {
+    type: String,
+    default: 'split'
   }
 })
 
@@ -131,6 +162,7 @@ const remotes = ref([])
 const editingIndex = ref(-1)
 const editingName = ref('')
 const editingUrl = ref('')
+const terminalMode = ref('split')
 
 // 加载设置
 const loadSettings = async () => {
@@ -180,6 +212,7 @@ const loadSettings = async () => {
 // 监听 visible 变化，加载设置
 watch(() => props.visible, (newVal) => {
   if (newVal) {
+    terminalMode.value = props.terminalMode === 'liquid' ? 'liquid' : 'split'
     loadSettings()
   }
 })
@@ -297,7 +330,9 @@ const confirm = async () => {
       }
     }
 
-    emit('confirm')
+    emit('confirm', {
+      terminalMode: terminalMode.value === 'liquid' ? 'liquid' : 'split'
+    })
     emit('update:visible', false)
   } catch (error) {
     console.error('保存设置失败:', error)
