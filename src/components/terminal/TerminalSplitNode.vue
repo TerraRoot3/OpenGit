@@ -289,9 +289,14 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(120, 98, 32, 0.10);
+  background: rgba(214, 176, 74, 0.05);
   pointer-events: none;
   z-index: 2;
+}
+
+.terminal-pane.inactive .terminal-pane-topbar {
+  background: rgba(214, 176, 74, 0.02);
+  border-bottom-color: rgba(214, 176, 74, 0.14);
 }
 
 .pane-close-btn {

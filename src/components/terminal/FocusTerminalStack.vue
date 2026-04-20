@@ -560,7 +560,7 @@ function paneStyle(i) {
   flex-shrink: 0;
   padding: 4px 10px 0 0;
   min-height: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(214, 176, 74, 0.18);
   background: rgba(0, 0, 0, 0.2);
 }
 
@@ -611,8 +611,9 @@ function paneStyle(i) {
 }
 
 .focus-tab.is-active {
-  background: rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.92);
+  background: rgba(74, 144, 255, 0.2);
+  color: #cfe5ff;
+  border-bottom-color: #4a90ff;
 }
 
 .focus-tab__label {
@@ -775,7 +776,7 @@ function paneStyle(i) {
   border-radius: 10px;
   overflow: hidden;
   box-sizing: border-box;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(214, 176, 74, 0.16);
   z-index: 0;
   transform: translateZ(0) scale(1);
   backface-visibility: hidden;
@@ -795,7 +796,7 @@ function paneStyle(i) {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: rgba(120, 98, 32, 0.12);
+  background: rgba(214, 176, 74, 0.06);
   pointer-events: none;
   z-index: 5;
   opacity: 1;
@@ -811,10 +812,21 @@ function paneStyle(i) {
   z-index: 2;
   transform: translateZ(0) scale(1.01);
   animation: none;
-  border-color: rgba(125, 211, 252, 0.28);
+  border-color: #4a90ff;
   box-shadow:
     0 4px 14px rgba(0, 0, 0, 0.3),
-    0 0 14px rgba(125, 211, 252, 0.1);
+    0 0 14px rgba(74, 144, 255, 0.28);
+}
+
+/* 标题栏：聚焦蓝、未聚焦偏黄，和外层边框/蒙层形成统一层级 */
+.focus-terminal-pane :deep(.terminal-header) {
+  border-bottom: 1px solid rgba(214, 176, 74, 0.16);
+  background: rgba(214, 176, 74, 0.025);
+}
+
+.focus-terminal-pane.is-focused :deep(.terminal-header) {
+  border-bottom-color: rgba(74, 144, 255, 0.88);
+  background: rgba(74, 144, 255, 0.12);
 }
 
 .layout--1 .focus-terminal-pane {
