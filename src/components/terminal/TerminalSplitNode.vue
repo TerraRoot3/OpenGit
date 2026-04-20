@@ -302,7 +302,31 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 
 .terminal-pane.liquid-style:not(.inactive) {
   border-color: #4a90ff;
-  box-shadow: 0 0 0 1px rgba(74, 144, 255, 0.22), 0 0 14px rgba(74, 144, 255, 0.12);
+  box-shadow: 0 0 14px rgba(74, 144, 255, 0.12);
+}
+
+.terminal-pane.liquid-style:not(.inactive)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(74, 144, 255, 0.9);
+  border-radius: inherit;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* 右侧独立描边兜底：避免最右 pane 因子像素/裁切导致右边线丢失 */
+.terminal-pane.liquid-style:not(.inactive)::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(74, 144, 255, 0.95);
+  pointer-events: none;
+  z-index: 7;
 }
 
 .terminal-pane.is-drop-target {
@@ -460,8 +484,11 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   display: flex;
   width: 100%;
   height: 100%;
+  padding: 1px;
+  box-sizing: border-box;
   min-width: 0;
   min-height: 0;
+  overflow-x: visible;
 }
 
 .terminal-split-tree.is-row {
@@ -484,12 +511,18 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   height: 100%;
 }
 
+/* 最右侧 pane 右描边安全区，避免贴边时被父容器裁切 */
+.terminal-split-tree.is-row > .terminal-split-child:last-child {
+  padding-right: 3px;
+  box-sizing: border-box;
+}
+
 .terminal-split-tree.is-column > .terminal-split-child {
   width: 100%;
 }
 
 .terminal-split-divider {
-  flex: 0 0 2px;
+  flex: 0 0 4px;
   position: relative;
   z-index: 4;
   background: transparent;
