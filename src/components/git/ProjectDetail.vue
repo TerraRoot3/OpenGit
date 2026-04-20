@@ -2744,10 +2744,25 @@ const toggleFavorite = () => {
   })
 }
 
-const onProjectSettingsConfirm = (payload = {}) => {
+const unmountTerminalForModeChange = async () => {
+  terminalMounted.value = false
+  terminalRef.value = null
+  liquidTerminalRef.value = null
+  await nextTick()
+}
+
+const onProjectSettingsConfirm = async (payload = {}) => {
   debugLog('✅ 项目设置已保存')
   const nextTerminalMode = payload?.terminalMode === 'liquid' ? 'liquid' : 'split'
+  const terminalModeChanged = terminalMode.value !== nextTerminalMode
+  if (terminalModeChanged && terminalMounted.value) {
+    await unmountTerminalForModeChange()
+  }
   terminalMode.value = nextTerminalMode
+  if (terminalModeChanged && currentView.value === 'terminal') {
+    terminalMounted.value = true
+    await nextTick()
+  }
   if (props.path) {
     void setConfigString(getProjectTerminalModeKey(props.path), nextTerminalMode).catch(() => {})
   }

@@ -51,7 +51,7 @@
       name="focus-pane"
       tag="div"
       class="focus-terminal-layout"
-      :class="[layoutRootClass, { 'is-5to4-transition': isFiveToFourTransition }]"
+      :class="[layoutRootClass, { 'is-5to4-transition': isFiveToFourTransition, 'is-wrap-transition': isWrapTransition }]"
       :style="layoutRootStyle"
     >
       <!-- 单一 v-for：切勿在 n=5 时换另一套 DOM（上三下二），否则从 4→5 会卸载重建全部 TerminalPanel，快照重放 + 旧 PTY 断开 -->
@@ -82,7 +82,7 @@
 </template>
 
 <script setup>
-import { TransitionGroup, computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { TransitionGroup, computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Plus, X } from 'lucide-vue-next'
 import TerminalPanel from './TerminalPanel.vue'
 import { useFocusTerminalStore } from '../../stores/focusTerminalStore.js'
@@ -98,6 +98,7 @@ const {
   layoutReady,
   MAX_SESSIONS,
   hydrate,
+  resetLayout,
   addSession,
   removeSession,
   focusSession
@@ -165,7 +166,9 @@ const panelRefById = new Map()
 const prevPaneRects = new Map()
 let pendingCountFrom = count.value
 const isFiveToFourTransition = ref(false)
+const isWrapTransition = ref(false)
 let fiveToFourTimer = null
+let wrapTransitionTimer = null
 const UNIFIED_ANIM_MS = 360
 
 function setPaneElRef(id, el) {
@@ -219,6 +222,16 @@ watch(
   count,
   (next, prev) => {
     pendingCountFrom = prev
+    const prevRows = getLayoutRowCount(prev)
+    const nextRows = getLayoutRowCount(next)
+    isWrapTransition.value = prevRows !== nextRows
+    if (wrapTransitionTimer) clearTimeout(wrapTransitionTimer)
+    if (isWrapTransition.value) {
+      wrapTransitionTimer = setTimeout(() => {
+        isWrapTransition.value = false
+        wrapTransitionTimer = null
+      }, UNIFIED_ANIM_MS)
+    }
     if (prev === 5 && next === 4) {
       isFiveToFourTransition.value = true
       if (fiveToFourTimer) clearTimeout(fiveToFourTimer)
@@ -235,8 +248,8 @@ watch(
   count,
   (next) => {
     nextTick(() => {
-      // 5 -> 4 变化跨度较大（3+2 -> 2x2），跳过 FLIP 可明显降低这一跳卡顿
-      if (pendingCountFrom === 5 && next === 4) {
+      // 跨行和 5 -> 4 这类大重排阶段跳过 FLIP，避免终端内容缩放重采样导致掉帧。
+      if (isWrapTransition.value || (pendingCountFrom === 5 && next === 4)) {
         prevPaneRects.clear()
         return
       }
@@ -299,6 +312,13 @@ function computeGridDims(n) {
   })
   const best = candidates[0]
   return { cols: best.cols, rows: best.rows }
+}
+
+function getLayoutRowCount(n) {
+  if (n <= 0) return 0
+  if (n <= 3) return 1
+  if (n === 5 || n === 6 || n === 7) return 2
+  return computeGridDims(n).rows
 }
 
 /** 聚焦格相对更大：3:1（原 2:1） */
@@ -540,6 +560,12 @@ async function runCommand(command, options = {}) {
 }
 
 defineExpose({ runCommand })
+
+onUnmounted(() => {
+  if (fiveToFourTimer) clearTimeout(fiveToFourTimer)
+  if (wrapTransitionTimer) clearTimeout(wrapTransitionTimer)
+  resetLayout()
+})
 </script>
 
 <style scoped>
@@ -770,12 +796,12 @@ defineExpose({ runCommand })
 
 .focus-pane-enter-from {
   opacity: 0;
-  transform: scale(0.96);
+  transform: translate3d(0, 10px, 0);
 }
 
 .focus-pane-leave-to {
   opacity: 0;
-  transform: scale(0.96);
+  transform: translate3d(0, -10px, 0);
 }
 
 .focus-pane-move {
@@ -789,6 +815,16 @@ defineExpose({ runCommand })
 
 .is-5to4-transition .focus-pane-leave-to {
   opacity: 0;
+  transform: none;
+}
+
+.is-wrap-transition .focus-pane-enter-active,
+.is-wrap-transition .focus-pane-leave-active {
+  transition: opacity var(--focus-pane-enter-dur) var(--focus-list-ease);
+}
+
+.is-wrap-transition .focus-pane-enter-from,
+.is-wrap-transition .focus-pane-leave-to {
   transform: none;
 }
 
@@ -811,6 +847,13 @@ defineExpose({ runCommand })
     transform 0.36s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.36s cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.is-wrap-transition .focus-terminal-pane {
+  transition:
+    border-color 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: auto;
 }
 
 /* 非聚焦：与分屏非激活一致的暖色蒙层（用 opacity 过渡，聚焦切换更柔和） */

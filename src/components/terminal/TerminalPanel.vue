@@ -284,6 +284,7 @@ const locallyClosedPtyIds = new Set()
 
 const TERMINAL_SNAPSHOT_PREFIX = 'terminalSnapshot_v1_'
 const TERMINAL_SNAPSHOT_MAX_LINES = 1200
+const TERMINAL_DISK_PERSISTENCE_ENABLED = false
 const TERMINAL_RESTORE_NOTICE = '\r\n\x1b[33m已恢复上次终端内容，新的终端会话已创建。\x1b[0m\r\n'
 const TERMINAL_RESTORE_EXITED_NOTICE = '\r\n\x1b[33m已恢复上次终端内容，原终端会话已结束。\x1b[0m\r\n'
 const SPLIT_RATIO_MIN = 0.15
@@ -1863,6 +1864,7 @@ const buildSnapshotFromState = (path, state = {}) => {
 }
 
 const persistSnapshotForPath = (path, state = {}) => {
+  if (!TERMINAL_DISK_PERSISTENCE_ENABLED) return false
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return false
   const snapshot = buildSnapshotFromState(path, state)
   const storageKey = getSnapshotStorageKey(path)
@@ -1880,6 +1882,7 @@ const persistSnapshotForPath = (path, state = {}) => {
 }
 
 const readPersistedSnapshot = (path) => {
+  if (!TERMINAL_DISK_PERSISTENCE_ENABLED) return null
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return null
   const storageKey = getSnapshotStorageKey(path)
 
@@ -1897,6 +1900,7 @@ const readPersistedSnapshot = (path) => {
 }
 
 const clearPersistedSnapshot = (path) => {
+  if (!TERMINAL_DISK_PERSISTENCE_ENABLED) return
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return
   try {
     window.localStorage.removeItem(getSnapshotStorageKey(path))
@@ -1904,6 +1908,7 @@ const clearPersistedSnapshot = (path) => {
 }
 
 const flushPersistedSnapshot = (path = props.defaultCwd, state = null) => {
+  if (!TERMINAL_DISK_PERSISTENCE_ENABLED) return
   if (persistSnapshotTimer) {
     window.clearTimeout(persistSnapshotTimer)
     persistSnapshotTimer = null
@@ -1923,6 +1928,7 @@ const flushPersistedSnapshot = (path = props.defaultCwd, state = null) => {
 }
 
 const schedulePersistedSnapshot = (path = props.defaultCwd, state = null) => {
+  if (!TERMINAL_DISK_PERSISTENCE_ENABLED) return
   if (typeof window === 'undefined') return
   if (persistSnapshotTimer) {
     window.clearTimeout(persistSnapshotTimer)
@@ -1965,6 +1971,7 @@ const saveCurrentState = (path) => {
 }
 
 const restorePersistedState = async (path) => {
+  if (!TERMINAL_DISK_PERSISTENCE_ENABLED) return false
   const cacheKey = resolveStateCacheKey(path)
   const snapshot = readPersistedSnapshot(cacheKey)
   if (!snapshot) return false
@@ -2024,7 +2031,9 @@ const restoreState = async (path) => {
   const cacheKey = resolveStateCacheKey(path)
   const cached = terminalCache.get(cacheKey)
   if (!cached) {
-    return restorePersistedState(cacheKey)
+    return TERMINAL_DISK_PERSISTENCE_ENABLED
+      ? restorePersistedState(cacheKey)
+      : false
   }
 
   tabs.value = (Array.isArray(cached.tabs) ? cached.tabs : []).map((tab) => {
