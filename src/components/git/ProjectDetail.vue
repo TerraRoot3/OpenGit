@@ -351,7 +351,9 @@
             <FocusTerminalStack
               v-if="terminalMounted && terminalMode === 'liquid'"
               v-show="currentView === 'terminal'"
+              :default-cwd="terminalProjectPath"
               :is-active="isActive && currentView === 'terminal'"
+              ref="liquidTerminalRef"
             />
 
           </div>
@@ -654,6 +656,7 @@ const emit = defineEmits([
 const fileStatusRef = ref(null)
 const stashListRef = ref(null)
 const terminalRef = ref(null)
+const liquidTerminalRef = ref(null)
 const newTagNameInputRef = ref(null)
 
 /** 传给嵌入式终端的项目根（解码 git: 路由里可能出现的 %20 等），保证主进程拿到真实绝对路径 */
@@ -1944,9 +1947,12 @@ const handleResumeAiSession = async (session) => {
   await nextTick()
 
   if (props.isActive) {
-    await terminalRef.value?.runCommand?.(command, {
-      cwd: session.cwd || terminalProjectPath.value
-    })
+    const targetCwd = session.cwd || terminalProjectPath.value
+    if (terminalMode.value === 'liquid') {
+      await liquidTerminalRef.value?.runCommand?.(command, { cwd: targetCwd })
+    } else {
+      await terminalRef.value?.runCommand?.(command, { cwd: targetCwd })
+    }
   }
 }
 

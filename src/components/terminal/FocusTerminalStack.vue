@@ -65,6 +65,8 @@
         @mousedown="focusSession(s.id)"
       >
         <TerminalPanel
+          :ref="(el) => setPanelRef(s.id, el)"
+          :default-cwd="defaultCwd"
           :snapshot-cache-key="paneSnapshotKey(s.id)"
           single-pane-chrome
           :show-close-button="sessions.length > 1"
@@ -86,7 +88,8 @@ import TerminalPanel from './TerminalPanel.vue'
 import { useFocusTerminalStore } from '../../stores/focusTerminalStore.js'
 
 defineProps({
-  isActive: { type: Boolean, default: true }
+  isActive: { type: Boolean, default: true },
+  defaultCwd: { type: String, default: '' }
 })
 
 const {
@@ -158,6 +161,7 @@ const focusIndex = computed(() =>
 
 const count = computed(() => sessions.value.length)
 const paneElById = new Map()
+const panelRefById = new Map()
 const prevPaneRects = new Map()
 let pendingCountFrom = count.value
 const isFiveToFourTransition = ref(false)
@@ -167,6 +171,11 @@ const UNIFIED_ANIM_MS = 360
 function setPaneElRef(id, el) {
   if (el instanceof HTMLElement) paneElById.set(id, el)
   else paneElById.delete(id)
+}
+
+function setPanelRef(id, panel) {
+  if (panel) panelRefById.set(id, panel)
+  else panelRefById.delete(id)
 }
 
 function capturePaneRects() {
@@ -521,6 +530,16 @@ function paneStyle(i) {
   }
   return { minWidth: 0, minHeight: 0 }
 }
+
+async function runCommand(command, options = {}) {
+  const targetId = focusedId.value || sessions.value[0]?.id
+  if (!targetId) return false
+  const panel = panelRefById.get(targetId)
+  if (!panel?.runCommand) return false
+  return panel.runCommand(command, options)
+}
+
+defineExpose({ runCommand })
 </script>
 
 <style scoped>
