@@ -51,7 +51,7 @@
       name="focus-pane"
       tag="div"
       class="focus-terminal-layout"
-      :class="layoutRootClass"
+      :class="[layoutRootClass, { 'is-5to4-transition': isFiveToFourTransition }]"
       :style="layoutRootStyle"
     >
       <!-- 单一 v-for：切勿在 n=5 时换另一套 DOM（上三下二），否则从 4→5 会卸载重建全部 TerminalPanel，快照重放 + 旧 PTY 断开 -->
@@ -67,7 +67,7 @@
         <TerminalPanel
           :snapshot-cache-key="paneSnapshotKey(s.id)"
           single-pane-chrome
-          :show-close-button="false"
+          :show-close-button="sessions.length > 1"
           :allow-first-terminal-without-cwd="true"
           :is-active="isActive"
           :focus-pane-focused="focusedId === s.id"
@@ -80,7 +80,7 @@
 </template>
 
 <script setup>
-import { TransitionGroup, computed, nextTick, onMounted, reactive, watch } from 'vue'
+import { TransitionGroup, computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { Plus, X } from 'lucide-vue-next'
 import TerminalPanel from './TerminalPanel.vue'
 import { useFocusTerminalStore } from '../../stores/focusTerminalStore.js'
@@ -159,6 +159,10 @@ const focusIndex = computed(() =>
 const count = computed(() => sessions.value.length)
 const paneElById = new Map()
 const prevPaneRects = new Map()
+let pendingCountFrom = count.value
+const isFiveToFourTransition = ref(false)
+let fiveToFourTimer = null
+const UNIFIED_ANIM_MS = 360
 
 function setPaneElRef(id, el) {
   if (el instanceof HTMLElement) paneElById.set(id, el)
@@ -193,7 +197,7 @@ function playPaneFlip() {
         { transformOrigin: 'center center', transform: 'scale(1, 1)', opacity: 1 }
       ],
       {
-        duration: 260,
+        duration: UNIFIED_ANIM_MS,
         easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
         fill: 'both'
       }
@@ -202,12 +206,62 @@ function playPaneFlip() {
   prevPaneRects.clear()
 }
 
-watch(count, capturePaneRects, { flush: 'pre' })
 watch(
   count,
-  () => {
+  (next, prev) => {
+    pendingCountFrom = prev
+    if (prev === 5 && next === 4) {
+      isFiveToFourTransition.value = true
+      if (fiveToFourTimer) clearTimeout(fiveToFourTimer)
+      fiveToFourTimer = setTimeout(() => {
+        isFiveToFourTransition.value = false
+        fiveToFourTimer = null
+      }, UNIFIED_ANIM_MS)
+    }
+    capturePaneRects()
+  },
+  { flush: 'pre' }
+)
+watch(
+  count,
+  (next) => {
     nextTick(() => {
+      // 5 -> 4 变化跨度较大（3+2 -> 2x2），跳过 FLIP 可明显降低这一跳卡顿
+      if (pendingCountFrom === 5 && next === 4) {
+        prevPaneRects.clear()
+        return
+      }
       playPaneFlip()
+    })
+  },
+  { flush: 'post' }
+)
+
+function playFocusPulse(sessionId) {
+  if (isFiveToFourTransition.value) return
+  const el = paneElById.get(sessionId)
+  if (!(el instanceof HTMLElement) || !el.isConnected) return
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return
+  el.animate(
+    [
+      { transform: 'translateZ(0) scale(1)' },
+      { transform: 'translateZ(0) scale(1.012)' },
+      { transform: 'translateZ(0) scale(1.01)' }
+    ],
+    {
+      duration: UNIFIED_ANIM_MS,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      fill: 'none'
+    }
+  )
+}
+
+watch(
+  focusedId,
+  (nextId, prevId) => {
+    if (!nextId || nextId === prevId) return
+    nextTick(() => {
+      playFocusPulse(nextId)
     })
   },
   { flush: 'post' }
@@ -428,11 +482,42 @@ function paneStyle(i) {
   }
   if (n === 6) {
     const base = { minWidth: 0, minHeight: 0 }
+    const fi = focusIndex.value
+    if (fi <= 2) {
+      if (i <= 2) {
+        if (fi === 0) {
+          if (i === 0) return { ...base, gridColumn: '1 / span 6', gridRow: 1 }
+          if (i === 1) return { ...base, gridColumn: '7 / span 3', gridRow: 1 }
+          return { ...base, gridColumn: '10 / span 3', gridRow: 1 }
+        }
+        if (fi === 1) {
+          if (i === 0) return { ...base, gridColumn: '1 / span 3', gridRow: 1 }
+          if (i === 1) return { ...base, gridColumn: '4 / span 6', gridRow: 1 }
+          return { ...base, gridColumn: '10 / span 3', gridRow: 1 }
+        }
+        if (i === 0) return { ...base, gridColumn: '1 / span 3', gridRow: 1 }
+        if (i === 1) return { ...base, gridColumn: '4 / span 3', gridRow: 1 }
+        return { ...base, gridColumn: '7 / span 6', gridRow: 1 }
+      }
+      const bi = i - 3
+      return { ...base, gridColumn: `${bi * 4 + 1} / span 4`, gridRow: 2 }
+    }
     if (i <= 2) {
       return { ...base, gridColumn: `${i * 4 + 1} / span 4`, gridRow: 1 }
     }
-    const bi = i - 3
-    return { ...base, gridColumn: `${bi * 4 + 1} / span 4`, gridRow: 2 }
+    if (fi === 3) {
+      if (i === 3) return { ...base, gridColumn: '1 / span 6', gridRow: 2 }
+      if (i === 4) return { ...base, gridColumn: '7 / span 3', gridRow: 2 }
+      return { ...base, gridColumn: '10 / span 3', gridRow: 2 }
+    }
+    if (fi === 4) {
+      if (i === 3) return { ...base, gridColumn: '1 / span 3', gridRow: 2 }
+      if (i === 4) return { ...base, gridColumn: '4 / span 6', gridRow: 2 }
+      return { ...base, gridColumn: '10 / span 3', gridRow: 2 }
+    }
+    if (i === 3) return { ...base, gridColumn: '1 / span 3', gridRow: 2 }
+    if (i === 4) return { ...base, gridColumn: '4 / span 3', gridRow: 2 }
+    return { ...base, gridColumn: '7 / span 6', gridRow: 2 }
   }
   return { minWidth: 0, minHeight: 0 }
 }
@@ -440,14 +525,14 @@ function paneStyle(i) {
 
 <style scoped>
 .focus-terminal-stack {
-  --focus-pane-transition: 0.46s cubic-bezier(0.22, 1, 0.36, 1);
+  --focus-pane-transition: 0.36s cubic-bezier(0.22, 1, 0.36, 1);
   /* 标签 / 分格列表进出场：与网格重排分开，少用 scale 避免与 grid 打架 */
   --focus-list-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --focus-tab-enter-dur: 0.34s;
-  --focus-tab-leave-dur: 0.24s;
+  --focus-tab-enter-dur: 0.36s;
+  --focus-tab-leave-dur: 0.36s;
   --focus-pane-enter-dur: 0.36s;
-  --focus-pane-leave-dur: 0.26s;
-  --focus-pane-move-dur: 0.4s;
+  --focus-pane-leave-dur: 0.36s;
+  --focus-pane-move-dur: 0.36s;
   width: 100%;
   height: 100%;
   display: flex;
@@ -464,6 +549,10 @@ function paneStyle(i) {
     --focus-pane-enter-dur: 0.01s;
     --focus-pane-leave-dur: 0.01s;
     --focus-pane-move-dur: 0.01s;
+  }
+
+  .focus-terminal-pane.is-focused {
+    animation: none;
   }
 }
 
@@ -621,9 +710,7 @@ function paneStyle(i) {
 
 /* TransitionGroup：标签（与「+」同侧，新标签从右侧轻量滑入；关闭向左淡出） */
 .focus-tab-enter-active {
-  transition:
-    opacity var(--focus-tab-enter-dur) var(--focus-list-ease),
-    transform var(--focus-tab-enter-dur) var(--focus-list-ease);
+  transition: none;
 }
 
 .focus-tab-leave-active {
@@ -633,8 +720,8 @@ function paneStyle(i) {
 }
 
 .focus-tab-enter-from {
-  opacity: 0;
-  transform: translate3d(14px, 4px, 0);
+  opacity: 1;
+  transform: none;
 }
 
 .focus-tab-leave-to {
@@ -643,7 +730,7 @@ function paneStyle(i) {
 }
 
 .focus-tab-move {
-  transition: transform var(--focus-pane-move-dur) var(--focus-list-ease);
+  transition: none;
 }
 
 /* 分格：进场轻微上移 + 淡入；退场仅淡出（避免 scale + 格线同时变导致糊、抖） */
@@ -671,6 +758,16 @@ function paneStyle(i) {
   transition: none;
 }
 
+/* 5->4 专项：禁用 scale，仅快速淡出，减少大重排阶段卡顿 */
+.is-5to4-transition .focus-pane-leave-active {
+  transition: opacity 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.is-5to4-transition .focus-pane-leave-to {
+  opacity: 0;
+  transform: none;
+}
+
 .focus-terminal-pane {
   position: relative;
   min-width: 0;
@@ -680,16 +777,16 @@ function paneStyle(i) {
   box-sizing: border-box;
   border: 1px solid rgba(255, 255, 255, 0.06);
   z-index: 0;
-  transform: translateZ(0);
+  transform: translateZ(0) scale(1);
   backface-visibility: hidden;
   contain: layout paint;
   isolation: isolate;
   will-change: transform;
   transform-origin: center center;
   transition:
-    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+    transform 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.36s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* 非聚焦：与分屏非激活一致的暖色蒙层（用 opacity 过渡，聚焦切换更柔和） */
@@ -702,7 +799,7 @@ function paneStyle(i) {
   pointer-events: none;
   z-index: 5;
   opacity: 1;
-  transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.36s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .focus-terminal-pane.is-focused::after {
@@ -713,6 +810,7 @@ function paneStyle(i) {
 .focus-terminal-pane.is-focused {
   z-index: 2;
   transform: translateZ(0) scale(1.01);
+  animation: none;
   border-color: rgba(125, 211, 252, 0.28);
   box-shadow:
     0 4px 14px rgba(0, 0, 0, 0.3),

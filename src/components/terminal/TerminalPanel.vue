@@ -1154,8 +1154,6 @@ const refreshVisibleTerminal = (term, focus = true) => {
           if (props.focusPaneFocused) {
             clearDeferredSinglePanePtyResize()
             throttleSinglePanePtyResize(term)
-          } else {
-            scheduleDeferredSinglePanePtyResize(term)
           }
           return
         }
