@@ -59,9 +59,9 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
   width: 360px;
   max-height: 320px;
   overflow: auto;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--app-border-strong);
   border-radius: 10px;
-  background: rgba(28, 28, 31, 0.96);
+  background: var(--app-dialog-bg);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
   z-index: 10;
 }
@@ -71,7 +71,7 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .download-panel-actions {
@@ -82,17 +82,17 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
 
 .download-panel-empty {
   padding: 14px 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--app-text-secondary);
   font-size: 12px;
 }
 
 .download-row {
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .download-name {
-  color: #fff;
+  color: var(--app-text-primary);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
@@ -103,7 +103,7 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
   margin-top: 6px;
   display: flex;
   gap: 8px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--app-text-secondary);
   font-size: 11px;
 }
 
@@ -114,9 +114,9 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
 }
 
 .download-btn {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
+  border: 1px solid var(--app-border-strong);
+  background: var(--app-hover);
+  color: var(--app-text-primary);
   border-radius: 6px;
   font-size: 11px;
   line-height: 1;
@@ -125,12 +125,12 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
 }
 
 .download-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--app-hover) 70%, white 30%);
 }
 
 .download-btn.subtle {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--app-text-secondary);
 }
 
 .download-btn.icon {

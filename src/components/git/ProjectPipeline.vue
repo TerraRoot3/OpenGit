@@ -367,9 +367,9 @@ onUnmounted(() => {
 <style scoped>
 .pipeline-section {
   flex: 1;
-  background: transparent;
+  background: var(--app-project-bg);
   border: none;
-  border-radius: 14px;
+  border-radius: var(--app-selected-radius);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -379,6 +379,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   min-height: 0;
+  background: var(--app-project-bg);
 }
 
 .pipeline-list-panel {
@@ -386,7 +387,7 @@ onUnmounted(() => {
   min-width: 240px;
   display: flex;
   flex-direction: column;
-  background: transparent;
+  background: var(--app-project-bg);
   overflow: hidden;
 }
 
@@ -395,7 +396,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: transparent;
+  background: var(--app-project-bg);
   overflow: hidden;
 }
 
@@ -405,7 +406,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--app-project-bg);
   color: rgba(255, 255, 255, 0.92);
   font-size: 13px;
   font-weight: 500;
@@ -479,7 +480,8 @@ onUnmounted(() => {
 }
 
 .pipeline-item.active {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--app-sidebar-selected-bg);
+  border-radius: var(--app-selected-radius);
 }
 
 .pipeline-row {

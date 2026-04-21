@@ -1939,12 +1939,12 @@ onUnmounted(() => {
   --detail-right-min-width: clamp(420px, 40vw, 960px);
   display: flex;
   flex-direction: column;
-  background-color: transparent;
+  background-color: var(--app-project-bg);
   color: rgba(255, 255, 255, 0.9);
   flex: 1;
   height: 100%;
   border: none;
-  border-radius: 14px;
+  border-radius: var(--app-selected-radius);
   overflow: hidden;
 }
 
@@ -1964,9 +1964,7 @@ onUnmounted(() => {
   overflow-x: auto;
   overflow-y: auto;
   flex-shrink: 0;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
-    transparent;
+  background: var(--app-project-bg);
 }
 
 /* 
@@ -2037,7 +2035,7 @@ onUnmounted(() => {
   font-size: 13px;
   position: sticky;
   top: 0;
-  background-color: rgba(39, 40, 45, 0.96);
+  background-color: var(--app-project-bg);
   backdrop-filter: blur(6px);
   z-index: 20;
   user-select: none;
@@ -2119,8 +2117,8 @@ onUnmounted(() => {
 }
 
 .git-log .log-highlight {
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+  background: var(--app-sidebar-selected-bg);
+  border-radius: var(--app-selected-radius);
 }
 
 .git-log tbody tr {
@@ -2255,7 +2253,7 @@ onUnmounted(() => {
 
 .panel-header {
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--app-project-bg);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2302,7 +2300,8 @@ onUnmounted(() => {
 }
 
 .file-item.active {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--app-sidebar-selected-bg);
+  border-radius: var(--app-selected-radius);
 }
 
 .file-icon {
@@ -2610,7 +2609,7 @@ onUnmounted(() => {
 }
 
 .commit-ref.is-head {
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow: none;
 }
 
 .commit-ref.is-local:not(.is-head) {

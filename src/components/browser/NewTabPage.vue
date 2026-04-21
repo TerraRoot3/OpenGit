@@ -1,5 +1,9 @@
 <template>
-  <div class="new-tab-page" :class="{ 'is-active': isActive }" :style="{ display: displayStyle }">
+  <div
+    class="new-tab-page"
+    :class="[`route-${routeType}`, { 'is-active': isActive }]"
+    :style="{ display: displayStyle }"
+  >
     <!-- 新标签页（空白页）显示首页内容 -->
     <HomePage 
       v-if="routeType === 'new-tab'"
@@ -205,6 +209,10 @@ const handleNavigateCurrent = (url) => {
   overflow: hidden;
   flex-direction: column;
   /* display 由 computed style 控制 */
+}
+
+.new-tab-page.route-single-project {
+  background: var(--app-project-bg);
 }
 
 .new-tab-page.is-active {

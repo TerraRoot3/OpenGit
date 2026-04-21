@@ -2462,8 +2462,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: transparent;
-  border-radius: 14px;
+  background: var(--app-project-bg);
+  border-radius: var(--app-selected-radius);
   overflow: hidden;
   border: none;
 }
@@ -2475,7 +2475,7 @@ defineExpose({
   height: 40px;
   min-height: 40px;
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--app-project-bg);
 }
 .terminal-header--single-pane {
   padding: 0 10px 0 12px;
@@ -2541,24 +2541,25 @@ defineExpose({
   padding: 0 8px;
   height: 100%;
   box-sizing: border-box;
-  border-radius: 8px 8px 0 0;
-  color: rgba(255, 255, 255, 0.5);
+  border-radius: 0;
+  color: rgba(255, 255, 255, 0.68);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
   border-bottom: 2px solid transparent;
-  transition: all 0.15s;
+  transition: background-color 0.2s ease, color 0.2s ease;
   flex-shrink: 0;
 }
 .terminal-tab:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.82);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
 }
 .terminal-tab.active {
-  background: rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.92);
+  background: var(--app-tab-selected-bg);
+  box-shadow: none;
+  color: var(--app-text-primary);
   border-bottom-color: transparent;
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--app-selected-radius);
 }
 .tab-label {
   max-width: 120px;
@@ -2608,12 +2609,12 @@ defineExpose({
   min-width: 220px;
   max-width: 280px;
   padding: 0 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: none;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
 }
 .terminal-search.is-not-found {
-  border-color: rgba(239, 68, 68, 0.85);
+  background: rgba(239, 68, 68, 0.14);
 }
 .terminal-search-icon {
   flex-shrink: 0;
@@ -2683,17 +2684,15 @@ defineExpose({
   color: rgba(255, 255, 255, 0.9);
 }
 .terminal-btn:focus-visible {
-  outline: 1px solid rgba(125, 211, 252, 0.8);
-  outline-offset: 0;
+  outline: none;
 }
 .terminal-btn-split {
   width: 26px;
-  border: 1px solid transparent;
+  border: none;
 }
 .terminal-btn-split:hover {
   background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.12);
 }
 .split-btn-icon {
   width: 14px;
@@ -2709,11 +2708,11 @@ defineExpose({
   padding: 0;
   overflow: hidden;
   position: relative;
-  background: #1b1c1f;
+  background: var(--app-project-bg);
 }
 .terminal-body.drag-over {
   background: rgba(14, 116, 144, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.55);
+  box-shadow: none;
 }
 .terminal-single-pane {
   width: 100%;

@@ -661,7 +661,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  background: #1b1c1f;
+  background: var(--app-shell-bg);
   overflow: hidden;
 }
 
@@ -671,8 +671,8 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   min-width: 0;
   height: 100%;
-  background: #232326;
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06);
+  background: var(--app-sidebar-bg);
+  box-shadow: inset -1px 0 0 var(--app-border);
 }
 
 .workspace-pane {
@@ -682,7 +682,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   height: 100%;
   position: relative;
-  background: #1b1c1f;
+  background: var(--app-workspace-bg);
   overflow: hidden;
 }
 
@@ -703,13 +703,13 @@ onBeforeUnmount(() => {
   left: 4px;
   width: 1px;
   height: 100%;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--app-border);
   transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .sidebar-resizer:hover::before {
-  background: rgba(77, 135, 255, 0.85);
-  box-shadow: 0 0 0 1px rgba(77, 135, 255, 0.25);
+  background: var(--app-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-primary) 34%, transparent);
 }
 
 .sidebar-collapsed-rail {
@@ -721,12 +721,12 @@ onBeforeUnmount(() => {
   width: 52px;
   height: 100%;
   padding-top: 30px;
-  background: #232326;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--app-sidebar-bg);
+  border-right: 1px solid var(--app-border);
 }
 
 .app-shell.resizing .workspace-pane {
-  box-shadow: inset 1px 0 0 rgba(77, 135, 255, 0.28);
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--app-primary) 34%, transparent);
 }
 
 .rail-btn {
@@ -737,12 +737,12 @@ onBeforeUnmount(() => {
   height: 34px;
   border: 0;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--app-hover);
+  color: var(--app-text-primary);
   cursor: pointer;
 }
 
 .rail-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, var(--app-hover) 72%, white 28%);
 }
 </style>

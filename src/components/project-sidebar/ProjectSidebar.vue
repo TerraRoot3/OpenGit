@@ -246,8 +246,8 @@ const isFavorited = (path) => {
   width: 100%;
   min-width: 0;
   height: 100%;
-  background: #232326;
-  color: #f1f1f1;
+  background: var(--app-sidebar-bg);
+  color: var(--app-text-primary);
   overflow: hidden;
 }
 
@@ -258,8 +258,12 @@ const isFavorited = (path) => {
   min-width: 0;
   gap: 10px;
   padding: 30px 14px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0));
+  border-bottom: 1px solid var(--app-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--app-sidebar-bg-soft) 36%, transparent),
+    transparent
+  );
 }
 
 .header-title-row,
@@ -319,9 +323,9 @@ const isFavorited = (path) => {
   padding: 0 10px;
   height: 34px;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--app-hover);
   border: 1px solid transparent;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--app-text-secondary);
   outline: none;
 }
 
@@ -339,7 +343,7 @@ const isFavorited = (path) => {
   border: 0;
   outline: none;
   background: transparent;
-  color: #fff;
+  color: var(--app-text-primary);
   font-size: 13px;
   line-height: 34px;
   box-shadow: none;
@@ -366,7 +370,7 @@ const isFavorited = (path) => {
   align-items: center;
   gap: 8px;
   padding: 14px 12px;
-  color: rgba(255, 255, 255, 0.58);
+  color: var(--app-text-muted);
   font-size: 13px;
 }
 
@@ -395,13 +399,21 @@ const isFavorited = (path) => {
 
 .group-row:hover,
 .child-row:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--app-hover);
 }
 
 .group-row.selected,
 .child-row.selected {
-  background: linear-gradient(180deg, rgba(77, 135, 255, 0.24), rgba(77, 135, 255, 0.14));
-  box-shadow: inset 0 0 0 1px rgba(103, 156, 255, 0.42);
+  background: var(--app-sidebar-selected-bg);
+  box-shadow: inset 0 0 0 1px var(--app-sidebar-selected-border);
+}
+
+.group-row.selected .root-name,
+.group-row.selected .root-meta,
+.child-row.selected .child-name,
+.child-row.selected .child-git-meta,
+.child-row.selected .child-status {
+  color: var(--app-text-primary);
 }
 
 .root-main {
@@ -424,8 +436,8 @@ const isFavorited = (path) => {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.78);
+  background: var(--app-hover);
+  color: var(--app-text-secondary);
 }
 
 .icon-btn:disabled {
@@ -435,7 +447,7 @@ const isFavorited = (path) => {
 
 .root-expand-btn:hover,
 .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--app-hover) 65%, white 35%);
 }
 
 .spinning {
@@ -456,12 +468,12 @@ const isFavorited = (path) => {
   padding: 0;
   margin-left: 8px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.56);
+  color: var(--app-text-muted);
 }
 
 .root-expand-btn:hover {
   background: transparent;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--app-text-primary);
 }
 
 .action-btn {
@@ -474,8 +486,8 @@ const isFavorited = (path) => {
   min-width: 0;
   padding: 0 10px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--app-hover);
+  color: var(--app-text-primary);
 }
 
 .action-btn span {
@@ -488,11 +500,12 @@ const isFavorited = (path) => {
   flex: 0 0 auto;
   padding: 0 8px;
   gap: 4px;
-  background: #2f6fed;
+  background: var(--app-selected-bg);
+  box-shadow: inset 0 0 0 1px var(--app-selected-border);
 }
 
 .action-btn.primary:hover {
-  background: #3d7af2;
+  background: color-mix(in srgb, var(--app-selected-bg) 85%, white 15%);
 }
 
 .root-text,
@@ -541,12 +554,12 @@ const isFavorited = (path) => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.54);
+  color: var(--app-text-muted);
 }
 
 .child-kind {
   margin-left: 8px;
-  color: rgba(255, 255, 255, 0.36);
+  color: color-mix(in srgb, var(--app-text-muted) 80%, transparent);
 }
 
 .root-meta {
@@ -557,7 +570,7 @@ const isFavorited = (path) => {
   min-width: 22px;
   margin-left: 8px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--app-text-secondary);
 }
 
 .child-list {
@@ -590,7 +603,7 @@ const isFavorited = (path) => {
 }
 
 .repo-branch-row {
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--app-text-secondary);
   font-size: 12px;
 }
 
@@ -616,14 +629,14 @@ const isFavorited = (path) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--app-text-muted);
   margin-left: 4px;
   margin-right: 4px;
   transition: all 0.2s ease;
 }
 
 .pending-files-icon:hover {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--app-text-secondary);
 }
 
 .push-count {

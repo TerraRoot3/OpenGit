@@ -2635,14 +2635,14 @@ watch(
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: #1b1c1f;
+  background: var(--app-project-bg);
   color: rgba(255, 255, 255, 0.88);
-  border-radius: 11px;
+  border-radius: var(--app-selected-radius);
   overflow: hidden;
   box-sizing: border-box;
   /* 仅左右留白，避免 margin 纵向吃掉 flex 可用高度 */
   margin: 0 10px 0 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  box-shadow: none;
 }
 
 .workspace-split {
@@ -2651,6 +2651,7 @@ watch(
   flex: 1 1 0%;
   min-height: 0;
   min-width: 0;
+  background: var(--app-project-bg);
 }
 
 .tree-pane {
@@ -2661,7 +2662,7 @@ watch(
   max-width: 520px;
   min-height: 0;
   align-self: stretch;
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--app-project-bg);
   overflow: hidden;
   outline: none;
 }
@@ -2869,7 +2870,8 @@ watch(
 }
 
 .workspace-modified-row.selected {
-  background: rgba(77, 135, 255, 0.14);
+  background: var(--app-sidebar-selected-bg);
+  border-radius: var(--app-selected-radius);
 }
 
 .workspace-modified-check {
@@ -2926,12 +2928,13 @@ watch(
 }
 
 .workspace-tree-row.selected {
-  background: rgba(77, 135, 255, 0.14);
+  background: var(--app-sidebar-selected-bg);
+  border-radius: var(--app-selected-radius);
 }
 
 .workspace-tree-row--drop-target {
   background: rgba(95, 146, 255, 0.2);
-  box-shadow: inset 0 0 0 1px rgba(120, 170, 255, 0.55);
+  box-shadow: none;
 }
 
 .workspace-tree-row__indent {
@@ -3252,8 +3255,8 @@ watch(
   height: v-bind(WORKSPACE_HEADER_HEIGHT);
   min-height: v-bind(WORKSPACE_HEADER_HEIGHT);
   box-sizing: border-box;
-  background: #252526;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--app-sidebar-bg);
+  border-bottom: none;
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -3273,19 +3276,22 @@ watch(
   border: none;
   border-radius: 0;
   background: transparent;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.68);
   font-size: 12px;
   cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .tab-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.85);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .tab-item.active {
-  background: #17181a;
-  color: rgba(255, 255, 255, 0.92);
+  background: var(--app-tab-selected-bg);
+  box-shadow: none;
+  border-radius: var(--app-selected-radius);
+  color: var(--app-text-primary);
 }
 
 .tab-title {

@@ -289,55 +289,39 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   display: flex;
   flex-direction: column;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--app-selected-radius);
   overflow: hidden;
-  background: rgba(30, 30, 30, 0.5);
+  background: color-mix(in srgb, var(--app-surface-1) 88%, transparent);
   transition: border-color 0.22s ease, box-shadow 0.22s ease;
 }
 
 .terminal-pane.liquid-style {
-  border: 1px solid rgba(214, 176, 74, 0.16);
-  border-radius: 10px;
+  border: none;
+  border-radius: var(--app-selected-radius);
 }
 
 .terminal-pane.liquid-style:not(.inactive) {
-  border-color: #4a90ff;
-  box-shadow: 0 0 14px rgba(74, 144, 255, 0.12);
+  box-shadow: none;
 }
 
 .terminal-pane.liquid-style:not(.inactive)::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 1px solid rgba(74, 144, 255, 0.9);
-  border-radius: inherit;
-  box-sizing: border-box;
-  pointer-events: none;
-  z-index: 6;
+  content: none;
 }
 
 /* 右侧独立描边兜底：避免最右 pane 因子像素/裁切导致右边线丢失 */
 .terminal-pane.liquid-style:not(.inactive)::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 1px;
-  background: rgba(74, 144, 255, 0.95);
-  pointer-events: none;
-  z-index: 7;
+  content: none;
 }
 
 .terminal-pane.is-drop-target {
-  border-color: rgba(34, 211, 238, 0.85);
-  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.45), 0 0 0 1px rgba(34, 211, 238, 0.3);
-  background: rgba(14, 116, 144, 0.16);
+  border-color: var(--app-info-border);
+  box-shadow: none;
+  background: color-mix(in srgb, var(--app-info-bg) 75%, transparent);
 }
 
 .terminal-pane.is-drop-target .terminal-pane-topbar {
-  background: rgba(34, 211, 238, 0.16);
-  border-bottom-color: rgba(34, 211, 238, 0.35);
+  background: color-mix(in srgb, var(--app-info-bg) 75%, transparent);
+  border-bottom-color: var(--app-info-border);
 }
 
 .terminal-pane.is-dragging {
@@ -353,8 +337,8 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   justify-content: space-between;
   gap: 8px;
   padding: 0 6px 0 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--app-hover);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .terminal-pane.liquid-style .terminal-pane-topbar {
@@ -362,8 +346,8 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   min-height: 40px;
   gap: 10px;
   padding: 0 10px 0 12px;
-  background: rgba(74, 144, 255, 0.12);
-  border-bottom: 1px solid rgba(74, 144, 255, 0.88);
+  background: color-mix(in srgb, var(--app-sidebar-selected-bg) 82%, transparent);
+  border-bottom: 1px solid var(--app-sidebar-selected-border);
 }
 
 .terminal-pane-topbar.draggable {
@@ -390,14 +374,14 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--app-text-primary);
   font-size: 11px;
   line-height: 1.3;
 }
 
 .terminal-pane-sep {
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--app-text-muted);
 }
 
 .terminal-pane-cwd {
@@ -408,7 +392,7 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   direction: rtl;
   text-align: left;
   unicode-bidi: plaintext;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--app-text-secondary);
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
@@ -426,19 +410,19 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(214, 176, 74, 0.05);
+  background: color-mix(in srgb, var(--app-warning-bg) 70%, transparent);
   pointer-events: none;
   z-index: 2;
 }
 
 .terminal-pane.inactive .terminal-pane-topbar {
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom-color: rgba(255, 255, 255, 0.06);
+  background: var(--app-hover);
+  border-bottom-color: var(--app-border);
 }
 
 .terminal-pane.inactive.liquid-style .terminal-pane-topbar {
-  background: rgba(214, 176, 74, 0.025);
-  border-bottom-color: rgba(214, 176, 74, 0.16);
+  background: color-mix(in srgb, var(--app-warning-bg) 55%, transparent);
+  border-bottom-color: var(--app-warning-border);
 }
 
 .terminal-pane-actions {
@@ -454,7 +438,7 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--app-text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -468,16 +452,16 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 }
 
 .pane-action-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.96);
+  background: color-mix(in srgb, var(--app-hover) 65%, white 35%);
+  color: var(--app-text-primary);
 }
 
 .pane-close-btn {
-  color: rgba(255, 255, 255, 0.86);
+  color: var(--app-text-primary);
 }
 
 .pane-close-btn:hover {
-  background: rgba(220, 80, 80, 0.85);
+  background: var(--app-danger-bg);
 }
 
 .terminal-split-tree {
@@ -546,7 +530,7 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   right: 0;
   width: 2px;
   margin: 0 auto;
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--app-border-strong);
 }
 
 .terminal-split-divider.is-column {
@@ -558,11 +542,11 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   bottom: 0;
   height: 2px;
   margin: auto 0;
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--app-border-strong);
 }
 
 .terminal-split-divider:hover::before {
-  background: rgba(34, 211, 238, 0.65);
+  background: color-mix(in srgb, var(--app-primary) 68%, white 32%);
   opacity: 1;
 }
 </style>

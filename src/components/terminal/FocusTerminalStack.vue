@@ -660,8 +660,8 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #1a1b1e;
-  border-radius: 14px;
+  background: var(--app-workspace-bg);
+  border-radius: var(--app-selected-radius);
   overflow: hidden;
   min-height: 0;
 }
@@ -685,8 +685,8 @@ onUnmounted(() => {
   flex-shrink: 0;
   padding: 0;
   min-height: 0;
-  border-bottom: 1px solid rgba(214, 176, 74, 0.18);
-  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-surface-1) 82%, transparent);
 }
 
 .focus-terminal-tabs {
@@ -721,26 +721,28 @@ onUnmounted(() => {
   padding: 0 8px;
   height: 100%;
   box-sizing: border-box;
-  border-radius: 8px 8px 0 0;
-  color: rgba(255, 255, 255, 0.5);
+  border-radius: 0;
+  color: rgba(255, 255, 255, 0.68);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
   border-bottom: 2px solid transparent;
-  transition: background 0.15s, color 0.15s;
+  transition: background-color 0.2s ease, color 0.2s ease;
   user-select: none;
 }
 
 .focus-tab:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.82);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .focus-tab.is-active {
-  background: rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.92);
+  background: var(--app-tab-selected-bg);
+  box-shadow: none;
+  color: var(--app-text-primary);
   border-bottom-color: transparent;
+  border-radius: var(--app-selected-radius);
 }
 
 .focus-tab__label {
@@ -761,7 +763,7 @@ onUnmounted(() => {
   background: transparent;
   border: none;
   border-radius: 3px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--app-text-muted);
   cursor: pointer;
   opacity: 0;
   transition: background 0.15s, color 0.15s, opacity 0.15s;
@@ -776,8 +778,8 @@ onUnmounted(() => {
 }
 
 .focus-tab__close:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--app-hover) 60%, white 40%);
+  color: var(--app-text-primary);
   opacity: 1 !important;
 }
 
@@ -791,7 +793,7 @@ onUnmounted(() => {
   padding: 0;
   margin-left: 2px;
   margin-bottom: 0;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--app-text-secondary);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -800,9 +802,9 @@ onUnmounted(() => {
 }
 
 .toolbar-add-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.92);
+  background: var(--app-hover);
+  border-color: var(--app-border-strong);
+  color: var(--app-text-primary);
 }
 
 .toolbar-add-btn:disabled {
@@ -872,10 +874,10 @@ onUnmounted(() => {
   position: absolute;
   min-width: 0;
   min-height: 0;
-  border-radius: 14px;
+  border-radius: var(--app-selected-radius);
   overflow: hidden;
   box-sizing: border-box;
-  border: 1px solid rgba(214, 176, 74, 0.16);
+  border: none;
   z-index: 0;
   contain: layout paint;
   isolation: isolate;
@@ -895,7 +897,7 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: rgba(214, 176, 74, 0.06);
+  background: color-mix(in srgb, var(--app-warning-bg) 70%, transparent);
   pointer-events: none;
   z-index: 5;
   opacity: 1;
@@ -910,21 +912,19 @@ onUnmounted(() => {
 .focus-terminal-pane.is-focused {
   z-index: 2;
   animation: none;
-  border-color: #4a90ff;
-  box-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.3),
-    0 0 14px rgba(74, 144, 255, 0.28);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 /* 标题栏：聚焦蓝、未聚焦偏黄，和外层边框/蒙层形成统一层级 */
 .focus-terminal-pane :deep(.terminal-header) {
-  border-bottom: 1px solid rgba(214, 176, 74, 0.16);
-  background: rgba(214, 176, 74, 0.025);
+  border-bottom: 1px solid var(--app-warning-border);
+  background: color-mix(in srgb, var(--app-warning-bg) 55%, transparent);
 }
 
 .focus-terminal-pane.is-focused :deep(.terminal-header) {
-  border-bottom-color: rgba(74, 144, 255, 0.88);
-  background: rgba(74, 144, 255, 0.12);
+  border-bottom-color: var(--app-info-border);
+  background: color-mix(in srgb, var(--app-info-bg) 70%, transparent);
 }
 
 </style>

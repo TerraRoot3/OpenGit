@@ -45,7 +45,7 @@
           <div
             v-for="session in selectedProviderSessions"
             :key="session.sessionId"
-            class="session-item"
+            :class="['session-item', { active: selectedSessionId === session.sessionId }]"
             @click="openSummaryDialog(session)"
             role="button"
             tabindex="0"
@@ -499,9 +499,9 @@ onUnmounted(() => {
 <style scoped>
 .ai-sessions-section {
   flex: 1;
-  background: transparent;
+  background: var(--app-project-bg);
   border: none;
-  border-radius: 14px;
+  border-radius: var(--app-selected-radius);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -511,6 +511,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   min-height: 0;
+  background: var(--app-project-bg);
 }
 
 .provider-panel {
@@ -519,7 +520,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: transparent;
+  background: var(--app-project-bg);
 }
 
 .provider-header,
@@ -528,7 +529,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--app-project-bg);
   color: rgba(255, 255, 255, 0.92);
   font-size: 13px;
   font-weight: 500;
@@ -585,7 +586,13 @@ onUnmounted(() => {
 }
 
 .provider-item.active {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--app-sidebar-selected-bg);
+  border-radius: var(--app-selected-radius);
+}
+
+.session-item.active {
+  background: var(--app-sidebar-selected-bg);
+  border-radius: var(--app-selected-radius);
 }
 
 .provider-item-main,
@@ -629,7 +636,7 @@ onUnmounted(() => {
   min-height: 0;
   max-width: 100%;
   overflow: hidden;
-  background: transparent;
+  background: var(--app-project-bg);
 }
 
 .session-tip {
