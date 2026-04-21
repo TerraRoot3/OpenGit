@@ -425,12 +425,12 @@ const confirm = async () => {
 
 .terminal-scrollback-setting__label {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-sem-text-primary);
 }
 
 .terminal-scrollback-setting__value {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.58);
+  color: var(--theme-sem-text-muted);
 }
 
 .terminal-scrollback-setting__input {
@@ -440,20 +440,20 @@ const confirm = async () => {
   border-radius: 10px;
   border: none;
   outline: none;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 84%, white 16%);
-  color: var(--theme-sem-text-primary);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
+  color: var(--theme-sem-text-on-accent);
   font-size: 13px;
 }
 
 .terminal-scrollback-setting__hint {
   font-size: 12px;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.52);
+  color: var(--theme-sem-text-muted);
 }
 
 .dialog-header {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--theme-sem-border-default);
 }
 
 .dialog-header h3 {
@@ -496,7 +496,7 @@ const confirm = async () => {
   gap: 4px;
   padding: 4px 10px;
   background: var(--theme-sem-accent-primary);
-  color: #fff;
+  color: var(--theme-sem-text-primary);
   border: none;
   border-radius: 4px;
   font-size: 12px;
@@ -509,7 +509,7 @@ const confirm = async () => {
 }
 
 .section-content {
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
   border-radius: 8px;
   padding: 12px;
 }
@@ -517,7 +517,7 @@ const confirm = async () => {
 .template-input {
   width: 100%;
   background: color-mix(in srgb, var(--theme-sem-bg-project) 92%, black 8%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 6px;
   padding: 10px;
   color: var(--theme-sem-text-primary);
@@ -543,7 +543,7 @@ const confirm = async () => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-sem-text-secondary);
   cursor: pointer;
 }
 
@@ -557,7 +557,7 @@ const confirm = async () => {
   gap: 8px;
   margin-top: 12px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--theme-sem-text-secondary);
   cursor: pointer;
 }
 
@@ -566,7 +566,7 @@ const confirm = async () => {
 }
 
 .empty-remotes {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-size: 13px;
   text-align: center;
   padding: 16px;
@@ -598,7 +598,7 @@ const confirm = async () => {
 
 .remote-url {
   flex: 1;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
   font-family: 'Monaco', 'Menlo', monospace;
   overflow: hidden;
@@ -617,17 +617,17 @@ const confirm = async () => {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-sem-text-muted);
   transition: all 0.2s;
 }
 
 .edit-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
   color: var(--theme-sem-accent-primary);
 }
 
 .delete-btn:hover {
-  background: rgba(255, 100, 100, 0.2);
+  background: color-mix(in srgb, var(--theme-sem-danger-bg) 88%, transparent);
   color: var(--theme-sem-accent-danger);
 }
 
@@ -640,8 +640,8 @@ const confirm = async () => {
 .remote-name-input {
   width: 80px;
   padding: 6px 8px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 4px;
   color: var(--theme-sem-text-primary);
   font-size: 12px;
@@ -651,10 +651,10 @@ const confirm = async () => {
   flex: 1;
   min-width: 150px;
   padding: 6px 8px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 4px;
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-sem-text-on-accent);
   font-size: 12px;
 }
 
@@ -679,7 +679,7 @@ const confirm = async () => {
 
 .save-btn {
   background: var(--theme-sem-accent-success-strong);
-  color: #fff;
+  color: var(--theme-sem-text-on-accent);
 }
 
 .save-btn:hover {
@@ -687,17 +687,17 @@ const confirm = async () => {
 }
 
 .cancel-edit-btn {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.7);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
+  color: var(--theme-sem-text-secondary);
 }
 
 .cancel-edit-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: color-mix(in srgb, var(--theme-sem-border-strong) 72%, transparent);
 }
 
 .dialog-footer {
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--theme-sem-border-default);
   display: flex;
   justify-content: flex-end;
   gap: 10px;
@@ -713,17 +713,17 @@ const confirm = async () => {
 }
 
 .cancel-btn {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
+  color: var(--theme-sem-text-secondary);
 }
 
 .cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--theme-sem-hover);
 }
 
 .confirm-btn {
   background: var(--theme-sem-accent-primary);
-  color: #fff;
+  color: var(--theme-sem-text-primary);
 }
 
 .confirm-btn:hover {

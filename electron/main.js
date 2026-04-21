@@ -1169,6 +1169,21 @@ ipcMain.handle('browser-show-url-suggestions', async (event, payload = {}) => {
 
     const itemsB64 = Buffer.from(JSON.stringify(items), 'utf8').toString('base64')
     const b64Js = JSON.stringify(itemsB64)
+    const theme = (payload && typeof payload.theme === 'object' && payload.theme) || {}
+    const popupTheme = {
+      colorScheme: theme.colorScheme === 'light' ? 'light' : 'dark',
+      menuBg: typeof theme.menuBg === 'string' && theme.menuBg ? theme.menuBg : '#2a2b2f',
+      surface: typeof theme.surface === 'string' && theme.surface ? theme.surface : 'rgba(255,255,255,0.06)',
+      border: typeof theme.border === 'string' && theme.border ? theme.border : 'rgba(255,255,255,0.08)',
+      borderStrong: typeof theme.borderStrong === 'string' && theme.borderStrong ? theme.borderStrong : 'rgba(255,255,255,0.14)',
+      textPrimary: typeof theme.textPrimary === 'string' && theme.textPrimary ? theme.textPrimary : 'rgba(255,255,255,0.9)',
+      textSecondary: typeof theme.textSecondary === 'string' && theme.textSecondary ? theme.textSecondary : 'rgba(255,255,255,0.72)',
+      textMuted: typeof theme.textMuted === 'string' && theme.textMuted ? theme.textMuted : 'rgba(255,255,255,0.45)',
+      hover: typeof theme.hover === 'string' && theme.hover ? theme.hover : 'rgba(255,255,255,0.06)',
+      selectedBg: typeof theme.selectedBg === 'string' && theme.selectedBg ? theme.selectedBg : 'rgba(255,255,255,0.1)',
+      selectedBorder: typeof theme.selectedBorder === 'string' && theme.selectedBorder ? theme.selectedBorder : 'rgba(255,255,255,0.14)'
+    }
+    const themeB64 = Buffer.from(JSON.stringify(popupTheme), 'utf8').toString('base64')
     let sel = Number(payload.selectedIndex) || 0
     if (sel < 0) sel = 0
     if (sel >= items.length) sel = 0
@@ -1178,8 +1193,9 @@ ipcMain.handle('browser-show-url-suggestions', async (event, payload = {}) => {
     if (existing && !existing.isDestroyed() && existing.__resultTargetWC === targetWindow.webContents) {
       try {
         const jsB64 = JSON.stringify(itemsB64)
+        const jsThemeB64 = JSON.stringify(themeB64)
         await existing.webContents.executeJavaScript(
-          `typeof window.__urlSuggestionReplaceFromB64 === 'function' && window.__urlSuggestionReplaceFromB64(${jsB64}, ${sel})`
+          `typeof window.__urlSuggestionReplaceFromB64 === 'function' && window.__urlSuggestionReplaceFromB64(${jsB64}, ${sel}, ${jsThemeB64})`
         )
         await measureAndSetUrlSuggestionBounds(existing, {
           targetX,
@@ -1225,31 +1241,43 @@ ipcMain.handle('browser-show-url-suggestions', async (event, payload = {}) => {
 <head>
 <meta charset="utf-8"/>
 <style>
+:root{
+  --popup-menu-bg:#2a2b2f;
+  --popup-surface:rgba(255,255,255,0.06);
+  --popup-border:rgba(255,255,255,0.08);
+  --popup-border-strong:rgba(255,255,255,0.14);
+  --popup-text-primary:rgba(255,255,255,0.9);
+  --popup-text-secondary:rgba(255,255,255,0.72);
+  --popup-text-muted:rgba(255,255,255,0.45);
+  --popup-hover:rgba(255,255,255,0.06);
+  --popup-selected-bg:rgba(255,255,255,0.1);
+  --popup-selected-border:rgba(255,255,255,0.14);
+}
 html,body{margin:0;padding:0;background:transparent;overflow:hidden;
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   -webkit-font-smoothing:antialiased;}
 .list{
   width:100%;box-sizing:border-box;max-height:${panelMax}px;overflow-x:hidden;overflow-y:auto;
-  background:#2a2b2f;border:1px solid rgba(255,255,255,0.08);border-radius:12px;
+  background:var(--popup-menu-bg);border:1px solid var(--popup-border);border-radius:12px;
   box-shadow:0 12px 28px rgba(0,0,0,0.32);padding:0;
 }
 .list::-webkit-scrollbar{width:8px;}
-.list::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:4px;}
+.list::-webkit-scrollbar-thumb{background:var(--popup-border-strong);border-radius:4px;}
 .item{
   display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;
-  color:rgba(255,255,255,0.9);font-size:14px;line-height:1.35;
+  color:var(--popup-text-primary);font-size:14px;line-height:1.35;
   transition:background 0.12s ease;
 }
 .item:first-child{border-top-left-radius:11px;border-top-right-radius:11px;}
 .item:last-child{border-bottom-left-radius:11px;border-bottom-right-radius:11px;}
 .item:only-child{border-radius:11px;}
-.item:hover{background:rgba(255,255,255,0.06);}
-.item.active{background:rgba(255,255,255,0.1);}
-.fav{width:16px;height:16px;flex-shrink:0;border-radius:3px;object-fit:contain;background:rgba(255,255,255,0.06);}
-.fav-sp{width:16px;height:16px;flex-shrink:0;border-radius:3px;background:rgba(255,255,255,0.06);}
+.item:hover{background:var(--popup-hover);}
+.item.active{background:var(--popup-selected-bg);}
+.fav{width:16px;height:16px;flex-shrink:0;border-radius:3px;object-fit:contain;background:var(--popup-surface);}
+.fav-sp{width:16px;height:16px;flex-shrink:0;border-radius:3px;background:var(--popup-surface);}
 .txt{display:flex;flex-direction:column;min-width:0;flex:1;gap:2px;}
-.url{color:rgba(255,255,255,0.88);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.title{color:rgba(255,255,255,0.45);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.url{color:var(--popup-text-primary);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.title{color:var(--popup-text-muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 </style>
 </head>
 <body>
@@ -1257,8 +1285,10 @@ html,body{margin:0;padding:0;background:transparent;overflow:hidden;
 <script>
 const { ipcRenderer } = require('electron');
 let items = JSON.parse(Buffer.from(${b64Js}, 'base64').toString('utf8'));
+let theme = JSON.parse(Buffer.from(${JSON.stringify(themeB64)}, 'base64').toString('utf8'));
 let selectedIndex = ${sel};
 const list = document.getElementById('list');
+const root = document.documentElement;
 function send(t, extra) {
   ipcRenderer.send('browser-url-suggestion-action', Object.assign({ type: t }, extra || {}));
 }
@@ -1273,10 +1303,28 @@ function clampSel() {
   if (selectedIndex < 0) selectedIndex = items.length - 1;
   if (selectedIndex >= items.length) selectedIndex = 0;
 }
-window.__urlSuggestionReplaceFromB64 = (b64, s) => {
+function applyTheme(nextTheme) {
+  if (!nextTheme || typeof nextTheme !== 'object') return;
+  theme = nextTheme;
+  root.style.colorScheme = nextTheme.colorScheme === 'light' ? 'light' : 'dark';
+  root.style.setProperty('--popup-menu-bg', nextTheme.menuBg || '#2a2b2f');
+  root.style.setProperty('--popup-surface', nextTheme.surface || 'rgba(255,255,255,0.06)');
+  root.style.setProperty('--popup-border', nextTheme.border || 'rgba(255,255,255,0.08)');
+  root.style.setProperty('--popup-border-strong', nextTheme.borderStrong || 'rgba(255,255,255,0.14)');
+  root.style.setProperty('--popup-text-primary', nextTheme.textPrimary || 'rgba(255,255,255,0.9)');
+  root.style.setProperty('--popup-text-secondary', nextTheme.textSecondary || 'rgba(255,255,255,0.72)');
+  root.style.setProperty('--popup-text-muted', nextTheme.textMuted || 'rgba(255,255,255,0.45)');
+  root.style.setProperty('--popup-hover', nextTheme.hover || 'rgba(255,255,255,0.06)');
+  root.style.setProperty('--popup-selected-bg', nextTheme.selectedBg || 'rgba(255,255,255,0.1)');
+  root.style.setProperty('--popup-selected-border', nextTheme.selectedBorder || 'rgba(255,255,255,0.14)');
+}
+window.__urlSuggestionReplaceFromB64 = (b64, s, themeB64) => {
   try {
     items = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
     selectedIndex = Math.max(0, Math.min(Math.floor(Number(s) || 0), items.length - 1));
+    if (themeB64) {
+      applyTheme(JSON.parse(Buffer.from(themeB64, 'base64').toString('utf8')));
+    }
     clampSel();
     render();
   } catch (err) {}
@@ -1307,6 +1355,7 @@ window.__urlSuggestionSetIndex = (i) => {
   clampSel();
   render();
 };
+applyTheme(theme);
 render();
 </script>
 </body>
@@ -1785,10 +1834,25 @@ ipcMain.handle('browser-show-native-menu', async (event) => {
   }
 })
 
-ipcMain.handle('browser-show-floating-menu', async (event, { x, y } = {}) => {
+ipcMain.handle('browser-show-floating-menu', async (event, payload = {}) => {
   try {
     const targetWindow = BrowserWindow.fromWebContents(event.sender)
     if (!targetWindow || targetWindow.isDestroyed()) return null
+
+    const { x, y } = payload || {}
+    const theme = (payload && typeof payload.theme === 'object' && payload.theme) || {}
+    const popupTheme = {
+      colorScheme: theme.colorScheme === 'light' ? 'light' : 'dark',
+      menuBg: typeof theme.menuBg === 'string' && theme.menuBg ? theme.menuBg : '#2d2d2d',
+      surface: typeof theme.surface === 'string' && theme.surface ? theme.surface : 'rgba(255,255,255,0.06)',
+      border: typeof theme.border === 'string' && theme.border ? theme.border : 'rgba(255,255,255,0.1)',
+      borderStrong: typeof theme.borderStrong === 'string' && theme.borderStrong ? theme.borderStrong : 'rgba(255,255,255,0.14)',
+      textPrimary: typeof theme.textPrimary === 'string' && theme.textPrimary ? theme.textPrimary : 'rgba(255,255,255,0.9)',
+      textSecondary: typeof theme.textSecondary === 'string' && theme.textSecondary ? theme.textSecondary : 'rgba(255,255,255,0.72)',
+      textMuted: typeof theme.textMuted === 'string' && theme.textMuted ? theme.textMuted : 'rgba(255,255,255,0.45)',
+      hover: typeof theme.hover === 'string' && theme.hover ? theme.hover : 'rgba(255,255,255,0.1)'
+    }
+    const themeB64 = Buffer.from(JSON.stringify(popupTheme), 'utf8').toString('base64')
 
     const menuWidth = 168
     const menuHeight = 320
@@ -1833,21 +1897,32 @@ ipcMain.handle('browser-show-floating-menu', async (event, { x, y } = {}) => {
 <head>
 <meta charset="utf-8" />
 <style>
+  :root {
+    --popup-menu-bg: #2d2d2d;
+    --popup-surface: rgba(255,255,255,0.06);
+    --popup-border: rgba(255,255,255,0.1);
+    --popup-border-strong: rgba(255,255,255,0.14);
+    --popup-text-primary: rgba(255,255,255,0.9);
+    --popup-text-secondary: rgba(255,255,255,0.72);
+    --popup-text-muted: rgba(255,255,255,0.45);
+    --popup-hover: rgba(255,255,255,0.1);
+  }
   html, body {
     width: 100%;
     margin: 0;
     padding: 0;
     background: transparent;
     overflow: hidden;
+    color-scheme: ${popupTheme.colorScheme};
   }
   .menu {
     width: 100%;
     box-sizing: border-box;
-    background: #2d2d2d;
-    border: 1px solid rgba(255,255,255,0.1);
+    background: var(--popup-menu-bg);
+    border: 1px solid var(--popup-border);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    color: rgba(255,255,255,0.9);
+    color: var(--popup-text-primary);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     user-select: none;
     padding: 4px 0;
@@ -1862,7 +1937,7 @@ ipcMain.handle('browser-show-floating-menu', async (event, { x, y } = {}) => {
     font-size: 14px;
     cursor: pointer;
   }
-  .item:hover { background: rgba(255,255,255,0.1); }
+  .item:hover { background: var(--popup-hover); }
   .icon {
     width: 16px;
     text-align: center;
@@ -1871,7 +1946,7 @@ ipcMain.handle('browser-show-floating-menu', async (event, { x, y } = {}) => {
   .divider {
     height: 1px;
     margin: 4px 0;
-    background: rgba(255,255,255,0.1);
+    background: var(--popup-border);
   }
 </style>
 </head>
@@ -1890,6 +1965,17 @@ ipcMain.handle('browser-show-floating-menu', async (event, { x, y } = {}) => {
   </div>
   <script>
     const { ipcRenderer } = require('electron');
+    const theme = JSON.parse(Buffer.from(${JSON.stringify(themeB64)}, 'base64').toString('utf8'));
+    const root = document.documentElement;
+    root.style.colorScheme = theme.colorScheme === 'light' ? 'light' : 'dark';
+    root.style.setProperty('--popup-menu-bg', theme.menuBg || '#2d2d2d');
+    root.style.setProperty('--popup-surface', theme.surface || 'rgba(255,255,255,0.06)');
+    root.style.setProperty('--popup-border', theme.border || 'rgba(255,255,255,0.1)');
+    root.style.setProperty('--popup-border-strong', theme.borderStrong || 'rgba(255,255,255,0.14)');
+    root.style.setProperty('--popup-text-primary', theme.textPrimary || 'rgba(255,255,255,0.9)');
+    root.style.setProperty('--popup-text-secondary', theme.textSecondary || 'rgba(255,255,255,0.72)');
+    root.style.setProperty('--popup-text-muted', theme.textMuted || 'rgba(255,255,255,0.45)');
+    root.style.setProperty('--popup-hover', theme.hover || 'rgba(255,255,255,0.1)');
     const send = (action) => ipcRenderer.send('browser-floating-menu-action', { action });
     document.querySelectorAll('.item').forEach(el => {
       el.addEventListener('click', () => send(el.dataset.action || null));

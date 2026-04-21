@@ -1245,6 +1245,22 @@ const showDownloadPanel = ref(false)
 // 菜单位置
 const menuPosition = ref({ top: 0, right: 0 })
 const getMenuButtonElement = () => document.querySelector('.tabs-bar-menu-wrapper .toolbar-btn, .toolbar-menu-wrapper .toolbar-btn')
+const collectNativePopupTheme = () => {
+  const themeStyles = window.getComputedStyle(document.documentElement)
+  return {
+    colorScheme: themeStyles.colorScheme === 'light' ? 'light' : 'dark',
+    menuBg: themeStyles.getPropertyValue('--theme-sem-bg-menu').trim(),
+    surface: themeStyles.getPropertyValue('--theme-sem-surface-1').trim(),
+    border: themeStyles.getPropertyValue('--theme-sem-border-default').trim(),
+    borderStrong: themeStyles.getPropertyValue('--theme-sem-border-strong').trim(),
+    textPrimary: themeStyles.getPropertyValue('--theme-sem-text-primary').trim(),
+    textSecondary: themeStyles.getPropertyValue('--theme-sem-text-secondary').trim(),
+    textMuted: themeStyles.getPropertyValue('--theme-sem-text-muted').trim(),
+    hover: themeStyles.getPropertyValue('--theme-sem-hover').trim(),
+    selectedBg: themeStyles.getPropertyValue('--theme-comp-sidebar-item-active-bg').trim(),
+    selectedBorder: themeStyles.getPropertyValue('--theme-comp-sidebar-item-active-border').trim()
+  }
+}
 
 // 切换菜单显示
 const toggleMenu = () => {
@@ -1255,7 +1271,8 @@ const toggleMenu = () => {
     const anchor = {
       // 与旧版 right: 0 保持一致：按窗口右边缘对齐
       x: Math.round(window.screenX + window.innerWidth),
-      y: Math.round(window.screenY + rect.bottom + 4)
+      y: Math.round(window.screenY + rect.bottom + 4),
+      theme: collectNativePopupTheme()
     }
     window.electronAPI.showBrowserFloatingMenu(anchor).then((action) => {
       if (!action) return
@@ -1863,6 +1880,7 @@ async function runNativeUrlSuggestionsPopup() {
     displayUrl: item.displayUrl || item.url,
     favicon: item.favicon || ''
   }))
+  const popupTheme = collectNativePopupTheme()
 
   try {
     nativeUrlSuggestionsOpen.value = true
@@ -1871,7 +1889,8 @@ async function runNativeUrlSuggestionsPopup() {
       y: Math.round(window.screenY + rect.bottom + 4),
       width: Math.round(rect.width),
       items: itemsPayload,
-      selectedIndex: suggestionIndex.value
+      selectedIndex: suggestionIndex.value,
+      theme: popupTheme
     })
     if (!result || result.success === false) {
       nativeUrlSuggestionsOpen.value = false
@@ -4306,7 +4325,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   margin: 4px 0;
   box-sizing: border-box;
   position: relative;
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--theme-sem-text-secondary);
   font-size: 13px;
   font-weight: 500;
   -webkit-app-region: no-drag; /* 标签不可拖拽窗口 */
@@ -4376,7 +4395,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--theme-sem-text-secondary);
 }
 
 .browser-tab-icon .tab-favicon {
@@ -4387,7 +4406,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-item.active .browser-tab-icon {
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--theme-sem-text-primary);
 }
 
 .browser-tab-item.active {
@@ -4416,8 +4435,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 .browser-tab-tooltip {
   position: fixed;
   padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.85);
-  color: #fff;
+  background: var(--theme-sem-bg-tooltip);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
   white-space: nowrap;
   border-radius: 4px;
@@ -4443,7 +4462,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 .browser-tab-title {
   flex: 1;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--theme-sem-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4454,11 +4473,11 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-item:hover .browser-tab-title {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .browser-tab-item.active .browser-tab-title {
-  color: rgba(255, 255, 255, 0.95); /* 浅色文字 */
+  color: var(--theme-sem-text-primary);
   font-weight: 500; /* 保持与未选中状态相同的字重，避免视觉上的放大效果 */
 }
 
@@ -4472,7 +4491,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   background: transparent;
   border-radius: 3px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   opacity: 0.34;
   transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
   flex-shrink: 0;
@@ -4485,7 +4504,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-item.active .browser-tab-close {
-  color: rgba(255, 255, 255, 0.7); /* 浅色关闭按钮 */
+  color: var(--theme-sem-text-secondary);
   opacity: 0.56;
 }
 
@@ -4494,8 +4513,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
+  color: var(--theme-sem-text-primary);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
   opacity: 1;
 }
 
@@ -4509,7 +4528,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   background: transparent;
   border-radius: 10px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--theme-sem-text-secondary);
   transition: background-color 0.2s ease, color 0.2s ease;
   flex-shrink: 0;
   margin-left: 4px;
@@ -4521,7 +4540,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 .browser-tab-new:hover {
   background: var(--theme-sem-hover);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .browser-toolbar {
@@ -4579,7 +4598,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 .toolbar-menu {
   position: fixed; /* 使用 fixed 定位，不受父容器影响 */
   background: var(--theme-sem-bg-menu);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 12px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
   min-width: 160px;
@@ -4639,14 +4658,23 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   flex: 1;
   width: 100%;
   padding: 6px 104px 6px 12px; /* 右侧留出空间给地址栏动作按钮组 */
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 10px;
   font-size: 14px;
   outline: none;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, white 12%);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 78%, var(--theme-sem-surface-1) 22%);
   color: var(--theme-sem-text-primary);
+  -webkit-text-fill-color: var(--theme-sem-text-primary);
+  caret-color: var(--theme-sem-accent-primary);
+  color-scheme: inherit;
   -webkit-app-region: no-drag; /* URL输入框不可拖拽窗口 */
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-sem-border-default) 42%, transparent);
+}
+
+.url-input::selection {
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 24%, transparent);
+  color: var(--theme-sem-text-primary);
 }
 
 /* about: 自动补全提示（无 Electron 浮层 API 时的降级，在地址栏下方展开） */
@@ -4659,8 +4687,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   max-height: min(42vh, 360px);
   overflow-x: hidden;
   overflow-y: auto;
-  background: var(--theme-sem-bg-menu);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--theme-sem-bg-menu) 92%, var(--theme-sem-surface-1) 8%);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 12px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
   z-index: 10000;
@@ -4688,7 +4716,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .suggestion-icon {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-sem-text-muted);
   flex-shrink: 0;
 }
 
@@ -4734,7 +4762,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   background: transparent; /* 无背景 */
   border-radius: 10px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.58);
+  color: var(--theme-sem-text-muted);
   transition: background-color 0.15s ease, color 0.15s ease;
   -webkit-app-region: no-drag; /* 收藏按钮不可拖拽窗口 */
   padding: 0;
@@ -4743,7 +4771,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 .url-input-favorite-btn:hover {
   background: var(--theme-sem-hover);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .url-input-favorite-btn.active {
@@ -4751,21 +4779,22 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .url-input-favorite-btn.disabled {
-  color: rgba(255, 255, 255, 0.3);
+  color: color-mix(in srgb, var(--theme-sem-text-muted) 56%, transparent);
   cursor: not-allowed;
 }
 
 .url-input-favorite-btn.disabled:hover {
-  color: rgba(255, 255, 255, 0.3);
+  color: color-mix(in srgb, var(--theme-sem-text-muted) 56%, transparent);
 }
 
 .url-input::placeholder {
-  color: var(--theme-sem-text-muted);
+  color: var(--theme-sem-text-secondary);
 }
 
 .url-input:focus {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
+  border-color: var(--theme-sem-accent-primary);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 72%, var(--theme-sem-surface-1) 28%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-sem-accent-primary) 16%, transparent);
 }
 
 .toolbar-btn {
@@ -4778,24 +4807,24 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   background: transparent;
   border-radius: 10px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.58);
+  color: var(--theme-sem-text-muted);
   transition: background-color 0.15s ease, color 0.15s ease;
   -webkit-app-region: no-drag; /* 工具栏按钮不可拖拽窗口 */
 }
 
 .toolbar-btn:hover:not(:disabled) {
   background: var(--theme-sem-hover);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .toolbar-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-  color: rgba(255, 255, 255, 0.4);
+  color: color-mix(in srgb, var(--theme-sem-text-muted) 72%, transparent);
 }
 
 .toolbar-btn.active {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   background: var(--theme-sem-hover);
 }
 

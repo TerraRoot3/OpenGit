@@ -315,21 +315,21 @@ const getRefStyle = (refName: string, color = '#5b8def') => {
   if (refName.includes('HEAD ->')) {
     return {
       backgroundColor: color,
-      color: '#ffffff'
+      color: 'var(--theme-sem-text-on-accent)'
     }
   }
 
   if (refName.startsWith('origin/')) {
     return {
       backgroundColor: `${color}cc`,
-      color: '#ffffff',
+      color: 'var(--theme-sem-text-on-accent)',
       border: `1px solid ${color}`
     }
   }
 
   return {
     backgroundColor: color,
-    color: '#ffffff',
+    color: 'var(--theme-sem-text-on-accent)',
     border: `1px solid ${color}`
   }
 }
@@ -686,20 +686,20 @@ const formatDiffOutput = (diffText: string) => {
     // 先转义HTML，再添加样式标签
     const escapedLine = escapeHtml(line)
     
-    // 添加行号标记和颜色（使用内联样式，无行间距，背景撑满 - 暗黑主题）
+    // 添加行号标记和颜色（使用主题变量，保证浅色主题下也可读）
     if (line.startsWith('+++') || line.startsWith('---')) {
-      return `<span style="color: #9ca3af !important; background-color: #374151 !important; font-weight: 500; display: block; padding: 2px 8px; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
+      return `<span style="color: var(--theme-sem-text-secondary) !important; background-color: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent) !important; font-weight: 500; display: block; padding: 2px 8px; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
     } else if (line.startsWith('@@')) {
-      return `<span style="color: #60a5fa !important; background-color: rgba(59, 130, 246, 0.2) !important; font-weight: 500; display: block; padding: 2px 8px; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
+      return `<span style="color: var(--theme-sem-accent-info) !important; background-color: var(--theme-sem-info-bg) !important; font-weight: 500; display: block; padding: 2px 8px; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
     } else if (line.startsWith('+') && !line.startsWith('+++')) {
-      return `<span style="color: #4ade80 !important; background-color: rgba(34, 197, 94, 0.15) !important; display: block; padding: 2px 8px; border-left: 3px solid #22c55e; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
+      return `<span style="color: var(--theme-sem-file-added) !important; background-color: var(--theme-sem-success-bg) !important; display: block; padding: 2px 8px; border-left: 3px solid var(--theme-sem-file-added); margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
     } else if (line.startsWith('-') && !line.startsWith('---')) {
-      return `<span style="color: #f87171 !important; background-color: rgba(239, 68, 68, 0.15) !important; display: block; padding: 2px 8px; border-left: 3px solid #ef4444; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
+      return `<span style="color: var(--theme-sem-file-deleted) !important; background-color: var(--theme-sem-danger-bg) !important; display: block; padding: 2px 8px; border-left: 3px solid var(--theme-sem-file-deleted); margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
     } else if (line.startsWith('diff ') || line.startsWith('index ')) {
-      return `<span style="color: #9ca3af !important; background-color: #374151 !important; display: block; padding: 2px 8px; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
+      return `<span style="color: var(--theme-sem-text-secondary) !important; background-color: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent) !important; display: block; padding: 2px 8px; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
     } else {
       // 普通上下文行
-      return `<span style="color: rgba(255, 255, 255, 0.8) !important; background-color: #1e1e1e !important; display: block; padding: 2px 8px; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
+      return `<span style="color: var(--theme-sem-text-secondary) !important; background-color: transparent !important; display: block; padding: 2px 8px; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.6;">${escapedLine}</span>`
     }
   })
   
@@ -1940,7 +1940,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background-color: var(--theme-sem-bg-project);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   flex: 1;
   height: 100%;
   border: none;
@@ -2039,7 +2039,7 @@ onUnmounted(() => {
   backdrop-filter: blur(6px);
   z-index: 20;
   user-select: none;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-sem-text-secondary);
   box-sizing: border-box;
 }
 
@@ -2063,15 +2063,15 @@ onUnmounted(() => {
   width: 4px;
   height: 100%;
   cursor: col-resize;
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--theme-sem-hover) 42%, transparent);
   z-index: 30;
-  border-right: 2px solid rgba(255, 255, 255, 0.08);
+  border-right: 2px solid var(--theme-sem-border-default);
   transition: all 0.2s;
 }
 
 .git-log th .resizer:hover {
-  border-right-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
+  border-right-color: var(--theme-sem-border-strong);
+  background: color-mix(in srgb, var(--theme-sem-hover) 76%, transparent);
 }
 
 .git-log th p {
@@ -2134,12 +2134,12 @@ onUnmounted(() => {
   font-size: 12px;
   overflow: hidden !important;
   background: transparent;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   transition: background-color 0.18s ease;
 }
 
 .git-log tbody tr:nth-child(even):not(.log-highlight) {
-  background: rgba(255, 255, 255, 0.018);
+  background: color-mix(in srgb, var(--theme-sem-hover) 26%, transparent);
 }
 
 .git-log tbody td {
@@ -2156,7 +2156,7 @@ onUnmounted(() => {
   box-sizing: border-box !important;
   overflow: hidden !important;
   background: transparent;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .git-log tbody td p {
@@ -2184,7 +2184,7 @@ onUnmounted(() => {
 }
 
 .git-log tbody tr:hover:not(.log-highlight) {
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: var(--theme-sem-hover);
 }
 
 /* 分隔线样式 */
@@ -2192,26 +2192,26 @@ onUnmounted(() => {
   height: 5px;
   min-height: 5px;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--theme-sem-hover) 72%, transparent);
   cursor: ns-resize;
   position: relative;
   transition: background 0.2s;
 }
 
 .resizer-horizontal:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
 }
 
 .resizer-vertical {
   width: 5px;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--theme-sem-hover) 72%, transparent);
   cursor: ew-resize;
   position: relative;
   transition: background 0.2s;
 }
 
 .resizer-vertical:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
 }
 
 /* 详情区域（固定高度，不随上方拖拽变化） */
@@ -2259,14 +2259,14 @@ onUnmounted(() => {
   align-items: center;
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   height: 40px;
   min-height: 40px;
   box-sizing: border-box;
 }
 
 .file-count {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-size: 12px;
 }
 
@@ -2287,7 +2287,7 @@ onUnmounted(() => {
   font-size: 12px;
   border-radius: 10px;
   margin: 0 0 4px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .file-list > :first-child,
@@ -2330,14 +2330,14 @@ onUnmounted(() => {
 }
 
 .file-stats {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-size: 11px;
 }
 
 .empty-state {
   padding: 16px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-size: 13px;
   flex: 1;
   display: flex;
@@ -2354,7 +2354,7 @@ onUnmounted(() => {
 .info-label {
   min-width: 60px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
 }
 
 .info-value {
@@ -2395,16 +2395,16 @@ onUnmounted(() => {
 .search-input {
   width: 100%;
   padding: 8px 32px 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
   font-size: 13px;
   outline: none;
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--theme-sem-hover) 42%, transparent);
+  color: var(--theme-sem-text-primary);
 }
 
 .search-input:focus {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--theme-sem-border-strong);
   box-shadow: none;
 }
 
@@ -2413,7 +2413,7 @@ onUnmounted(() => {
   right: 8px;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   font-size: 16px;
   padding: 0;
@@ -2426,8 +2426,8 @@ onUnmounted(() => {
 }
 
 .clear-search-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
+  color: var(--theme-sem-text-secondary);
 }
 
 .search-filters {
@@ -2449,7 +2449,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--theme-sem-text-secondary);
 }
 
 .scope-field span {
@@ -2465,21 +2465,21 @@ onUnmounted(() => {
   height: 32px;
   padding: 0 34px 0 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--theme-sem-border-strong);
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-  background-color: rgba(20, 21, 24, 0.86);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='rgba(255,255,255,0.72)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-color: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='rgba(120,134,156,0.88)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
   background-size: 12px 8px;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-sem-text-primary);
   outline: none;
 }
 
 .scope-select:focus {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--theme-sem-border-strong);
   box-shadow: none;
 }
 
@@ -2488,7 +2488,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-sem-text-secondary);
 }
 
 .filter-checkbox input[type="checkbox"] {
@@ -2503,7 +2503,7 @@ onUnmounted(() => {
   font-size: 12px;
   line-height: 1.5;
   background: transparent;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .file-diff pre {
@@ -2535,7 +2535,7 @@ onUnmounted(() => {
   line-height: 32px !important;
   margin: 0 !important;
   padding: 0 !important;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-sem-text-primary);
 }
 
 .commit-refs {
@@ -2552,7 +2552,7 @@ onUnmounted(() => {
   padding: 1px 8px;
   font-size: 10px;
   border-radius: 6px;
-  color: white;
+  color: var(--theme-sem-text-primary);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -2569,7 +2569,7 @@ onUnmounted(() => {
 }
 
 .commit-ref.tag {
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: color-mix(in srgb, var(--theme-sem-hover) 48%, transparent);
   border: 1px solid;
   padding: 2px 7px;
   font-size: 10px;
@@ -2622,7 +2622,7 @@ onUnmounted(() => {
 .context-menu {
   position: fixed;
   background: var(--theme-sem-bg-menu);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 12px;
   padding: 6px 0;
   min-width: 160px;
@@ -2636,7 +2636,7 @@ onUnmounted(() => {
   cursor: pointer;
   transition: background-color 0.15s ease;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   border-radius: 8px;
 }
 
@@ -2644,7 +2644,7 @@ onUnmounted(() => {
 
 .context-menu-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
   margin: 6px 6px;
 }
 

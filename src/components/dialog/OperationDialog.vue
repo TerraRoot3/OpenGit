@@ -134,7 +134,7 @@ watch(() => props.output, () => {
   justify-content: center;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--theme-sem-border-default);
 }
 
 .operation-header h3 {
@@ -158,13 +158,13 @@ watch(() => props.output, () => {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-sem-text-primary);
   white-space: pre-wrap;
   word-wrap: break-word;
   background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
   padding: 12px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--theme-sem-border-strong);
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -179,18 +179,18 @@ watch(() => props.output, () => {
 }
 
 .output-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: color-mix(in srgb, var(--theme-sem-border-strong) 72%, transparent);
   border-radius: 3px;
 }
 
 .output-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: color-mix(in srgb, var(--theme-sem-border-strong) 72%, transparent);
 }
 
 /* 进度条 */
 .operation-progress-bar {
   height: 4px;
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
   overflow: hidden;
 }
 
@@ -224,7 +224,7 @@ watch(() => props.output, () => {
 /* 底部操作栏 */
 .operation-footer {
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--theme-sem-border-default);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -238,13 +238,13 @@ watch(() => props.output, () => {
   font-size: 13px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   transition: color 0.2s ease;
 }
 
 .toggle-output-btn:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .cancel-btn {
@@ -253,7 +253,7 @@ watch(() => props.output, () => {
   font-weight: 500;
   border: none;
   background: var(--theme-sem-accent-danger-strong);
-  color: white;
+  color: var(--theme-sem-text-on-accent);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;

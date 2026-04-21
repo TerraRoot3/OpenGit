@@ -1,6 +1,7 @@
 <template>
-  <div 
+  <div
     class="home-page"
+    :class="{ 'home-page--light-theme': isLightTheme }"
     :style="backgroundStyle"
   >
     <!-- 背景图片 -->
@@ -52,7 +53,7 @@
             <span 
               v-else
               class="favorite-icon-text"
-              :class="{ 'text-dark': !fav.customColor || fav.customColor === '#ffffff' || fav.customColor === '#fff' }"
+              :class="{ 'text-dark': shouldUseDarkFavoriteText(fav) }"
             >
               {{ getFavoriteText(fav) }}
             </span>
@@ -190,6 +191,9 @@ const { favorites, loadFavorites } = useFavorites()
 const themeStore = useThemeStore()
 const currentTheme = computed(() => themeStore.currentTheme.value)
 const themeOptions = computed(() => Object.values(themeStore.themeDefinitions))
+const isLightTheme = computed(() => {
+  return themeStore.themeDefinitions[currentTheme.value]?.appearance === 'light'
+})
 
 // 按排序显示的收藏列表
 const sortedFavorites = computed(() => {
@@ -241,7 +245,8 @@ const backgroundStyle = computed(() => {
     position: 'relative',
     width: '100%',
     height: '100%',
-    overflow: 'auto'
+    overflow: 'auto',
+    background: 'linear-gradient(180deg, var(--theme-sem-bg-app) 0%, var(--theme-sem-bg-workspace) 100%)'
   }
 })
 
@@ -263,15 +268,16 @@ const backgroundImageStyle = computed(() => {
 
 // 计算遮罩样式
 const overlayStyle = computed(() => {
-  // 如果有背景图片，使用黑色遮罩；否则使用深灰色背景
   if (backgroundImage.value) {
     return {
-      backgroundColor: `rgba(0, 0, 0, ${overlayOpacity.value / 100})`
+      backgroundColor: 'var(--theme-sem-bg-overlay)',
+      opacity: overlayOpacity.value / 100
     }
   }
-  // 没有背景图片时，使用深灰色背景（不透明）
+
   return {
-    backgroundColor: '#2d2d2d'
+    background: 'linear-gradient(180deg, var(--theme-sem-bg-app) 0%, var(--theme-sem-bg-workspace) 100%)',
+    opacity: 1
   }
 })
 
@@ -489,11 +495,20 @@ const getFavoriteIconStyle = (fav) => {
     return {}
   }
   
-  // 优先使用收藏里设置的图标背景色，没有设置的默认白色
-  const color = fav.customColor || '#ffffff'
+  // 无自定义颜色时，根据主题外观切换默认背景，避免浅色主题下出现大块纯白。
+  const color = fav.customColor || (isLightTheme.value ? 'var(--theme-sem-surface-2)' : '#ffffff')
   return {
     background: color
   }
+}
+
+const shouldUseDarkFavoriteText = (fav) => {
+  if (!fav?.customColor) {
+    return true
+  }
+
+  const normalizedColor = String(fav.customColor).trim().toLowerCase()
+  return normalizedColor === '#ffffff' || normalizedColor === '#fff' || normalizedColor === 'white'
 }
 
 const handleNavigate = (url) => {
@@ -577,6 +592,7 @@ onUnmounted(() => {
   display: block !important;
   visibility: visible !important;
   opacity: 1 !important;
+  background: linear-gradient(180deg, var(--theme-sem-bg-app) 0%, var(--theme-sem-bg-workspace) 100%);
 }
 
 .background-image {
@@ -596,9 +612,8 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   z-index: 1;
-  transition: background-color 0.3s ease;
-  /* 如果没有背景图片，使用深灰色背景 */
-  background: #2d2d2d;
+  transition: background-color 0.3s ease, opacity 0.3s ease;
+  background: linear-gradient(180deg, var(--theme-sem-bg-app) 0%, var(--theme-sem-bg-workspace) 100%);
 }
 
 .home-content {
@@ -625,7 +640,7 @@ onUnmounted(() => {
   border-radius: 50%;
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -636,7 +651,7 @@ onUnmounted(() => {
 }
 
 .settings-btn:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   transform: scale(1.1);
 }
 
@@ -657,7 +672,7 @@ onUnmounted(() => {
 
 .date {
   font-size: 20px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
 }
 
@@ -732,7 +747,7 @@ onUnmounted(() => {
 
 .favorite-label {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   text-align: center;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   width: 100%;
@@ -741,6 +756,34 @@ onUnmounted(() => {
   word-break: break-word;
   line-height: 1.4;
   overflow: visible;
+}
+
+.home-page--light-theme .clock {
+  color: var(--theme-sem-text-primary);
+  text-shadow: 0 2px 10px rgba(162, 173, 187, 0.18);
+}
+
+.home-page--light-theme .date,
+.home-page--light-theme .favorite-label {
+  text-shadow: 0 1px 4px rgba(162, 173, 187, 0.16);
+}
+
+.home-page--light-theme .favorite-icon {
+  box-shadow: 0 8px 18px rgba(116, 134, 160, 0.14);
+}
+
+.home-page--light-theme .favorite-item:hover .favorite-icon {
+  box-shadow: 0 10px 22px rgba(116, 134, 160, 0.18);
+}
+
+.home-page--light-theme .favorite-icon-text {
+  color: var(--theme-sem-text-on-accent);
+  text-shadow: 0 1px 2px rgba(41, 52, 68, 0.14);
+}
+
+.home-page--light-theme .favorite-icon-text.text-dark {
+  color: var(--theme-sem-text-primary);
+  text-shadow: none;
 }
 
 /* 设置抽屉 */
@@ -760,19 +803,19 @@ onUnmounted(() => {
   right: 0;
   bottom: 0;
   width: 380px;
-  background: rgba(30, 30, 30, 0.92);
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 92%, transparent);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 1px solid var(--theme-sem-border-default);
   overflow: hidden;
 }
 
 .settings-drawer-header {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--theme-sem-border-default);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -783,7 +826,7 @@ onUnmounted(() => {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .settings-drawer-close {
@@ -792,7 +835,7 @@ onUnmounted(() => {
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -801,8 +844,8 @@ onUnmounted(() => {
 }
 
 .settings-drawer-close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .settings-drawer-body {
@@ -815,8 +858,8 @@ onUnmounted(() => {
 .settings-sidebar {
   width: 76px;
   flex-shrink: 0;
-  background: rgba(0, 0, 0, 0.2);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 84%, var(--theme-sem-hover) 16%);
+  border-right: 1px solid var(--theme-sem-border-default);
   padding: 0;
   overflow-y: auto;
 }
@@ -824,19 +867,20 @@ onUnmounted(() => {
 .settings-sidebar-item {
   padding: 10px 12px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .settings-sidebar-item:hover {
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--theme-sem-text-primary);
+  background: var(--theme-sem-hover);
 }
 
 .settings-sidebar-item.active {
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.15);
+  color: var(--theme-sem-text-primary);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 /* 右侧设置内容 */
@@ -858,10 +902,10 @@ onUnmounted(() => {
 
 .theme-option {
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.035);
-  color: rgba(255, 255, 255, 0.88);
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 76%, transparent);
+  color: var(--theme-sem-text-primary);
   padding: 12px 14px;
   display: flex;
   align-items: center;
@@ -872,8 +916,8 @@ onUnmounted(() => {
 }
 
 .theme-option:hover {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.14);
+  background: var(--theme-sem-hover);
+  border-color: var(--theme-sem-border-strong);
   transform: translateY(-1px);
 }
 
@@ -888,7 +932,7 @@ onUnmounted(() => {
   height: 44px;
   border-radius: 12px;
   flex-shrink: 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px var(--theme-sem-border-default);
 }
 
 .theme-swatch-slate-dual {
@@ -903,6 +947,10 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #0f141d 0%, #293548 52%, #4f78b8 100%);
 }
 
+.theme-swatch-mist-paper {
+  background: linear-gradient(135deg, #f7f6f2 0%, #dfe6ef 52%, #416fcf 100%);
+}
+
 .theme-option-meta {
   display: flex;
   flex-direction: column;
@@ -913,12 +961,12 @@ onUnmounted(() => {
 .theme-option-name {
   font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-sem-text-primary);
 }
 
 .theme-option-appearance {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.56);
+  color: var(--theme-sem-text-muted);
 }
 
 /* 抽屉动画 */
@@ -945,7 +993,7 @@ onUnmounted(() => {
   margin-bottom: 12px;
   font-size: 14px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .settings-item-content {
@@ -956,41 +1004,41 @@ onUnmounted(() => {
 
 .settings-btn-primary {
   padding: 8px 16px;
-  border: 1px solid #667eea;
+  border: 1px solid var(--theme-sem-accent-primary);
   border-radius: 6px;
-  background: #667eea;
-  color: #fff;
+  background: var(--theme-sem-accent-primary);
+  color: var(--theme-sem-text-on-accent);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .settings-btn-primary:hover {
-  background: #5568d3;
-  border-color: #5568d3;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 86%, black 14%);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 86%, black 14%);
 }
 
 .settings-btn-secondary {
   padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 6px;
-  background: #3d3d3d;
-  color: rgba(255, 255, 255, 0.7);
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 86%, transparent);
+  color: var(--theme-sem-text-secondary);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .settings-btn-secondary:hover {
-  background: #4d4d4d;
-  border-color: rgba(255, 255, 255, 0.3);
+  background: var(--theme-sem-hover);
+  border-color: var(--theme-sem-border-strong);
 }
 
 .settings-slider {
   width: 100%;
   height: 6px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.2);
+  background: color-mix(in srgb, var(--theme-sem-border-strong) 72%, transparent);
   outline: none;
   -webkit-appearance: none;
 }
@@ -1001,13 +1049,13 @@ onUnmounted(() => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #667eea;
+  background: var(--theme-sem-accent-primary);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .settings-slider::-webkit-slider-thumb:hover {
-  background: #5568d3;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 86%, black 14%);
   transform: scale(1.1);
 }
 
@@ -1015,14 +1063,14 @@ onUnmounted(() => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #667eea;
+  background: var(--theme-sem-accent-primary);
   cursor: pointer;
   border: none;
   transition: all 0.2s;
 }
 
 .settings-slider::-moz-range-thumb:hover {
-  background: #5568d3;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 86%, black 14%);
   transform: scale(1.1);
 }
 </style>

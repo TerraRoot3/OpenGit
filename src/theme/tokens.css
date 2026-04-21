@@ -29,10 +29,17 @@
   --theme-base-color-abyss-900: #293548;
   --theme-base-color-abyss-880: #33415a;
   --theme-base-color-abyss-860: #3d5070;
+  --theme-base-color-paper-50: #f7f6f2;
+  --theme-base-color-paper-75: #f2f2ee;
+  --theme-base-color-paper-100: #eceeea;
+  --theme-base-color-paper-150: #e3e8ee;
+  --theme-base-color-paper-200: #d7dee7;
+  --theme-base-color-paper-300: #c5ced9;
 
   --theme-base-color-blue-300: #93c5fd;
   --theme-base-color-blue-400: #8eb9ff;
   --theme-base-color-blue-500: #4f8cff;
+  --theme-base-color-blue-600: #416fcf;
   --theme-base-color-cyan-400: #57d3ff;
   --theme-base-color-sea-300: #9ec4f0;
   --theme-base-color-sea-400: #7da8db;
@@ -46,6 +53,12 @@
   --theme-base-color-moss-500: #4e8f64;
   --theme-base-color-sage-300: #97c7a0;
   --theme-base-color-sage-500: #5fa16c;
+  --theme-base-color-violet-300: #c4b5fd;
+  --theme-base-color-violet-500: #8b5cf6;
+  --theme-base-color-orange-300: #fdba74;
+  --theme-base-color-orange-500: #f97316;
+  --theme-base-color-teal-300: #99f6e4;
+  --theme-base-color-teal-500: #14b8a6;
   --theme-base-color-amber-300: #f4d37d;
   --theme-base-color-amber-500: #f59e0b;
   --theme-base-color-sand-300: #dfc78d;
@@ -88,6 +101,7 @@ html[data-theme='slate-dual'] {
   --theme-sem-text-primary: rgba(247, 250, 255, 0.94);
   --theme-sem-text-secondary: rgba(221, 229, 241, 0.78);
   --theme-sem-text-muted: rgba(191, 201, 216, 0.56);
+  --theme-sem-text-on-accent: rgba(248, 251, 255, 0.96);
 
   --theme-sem-border-default: rgba(162, 181, 211, 0.08);
   --theme-sem-border-strong: rgba(162, 181, 211, 0.12);
@@ -131,6 +145,36 @@ html[data-theme='slate-dual'] {
   --theme-comp-tab-active-border: rgba(142, 170, 212, 0.18);
   --theme-comp-tab-active-accent: var(--theme-base-color-blue-400);
   --theme-comp-child-header-bg: color-mix(in srgb, var(--theme-base-color-slate-900) 88%, #6b89b5 12%);
+  --theme-comp-action-pull-bg: color-mix(in srgb, var(--theme-sem-warning-bg) 78%, var(--theme-sem-bg-project) 22%);
+  --theme-comp-action-pull-border: color-mix(in srgb, var(--theme-sem-accent-warning) 26%, var(--theme-sem-border-default) 74%);
+  --theme-comp-action-pull-text: var(--theme-sem-accent-warning);
+  --theme-comp-action-pull-hover-bg: color-mix(in srgb, var(--theme-comp-action-pull-bg) 82%, var(--theme-sem-accent-warning) 18%);
+  --theme-comp-action-push-bg: color-mix(in srgb, var(--theme-sem-info-bg) 80%, var(--theme-sem-bg-project) 20%);
+  --theme-comp-action-push-border: color-mix(in srgb, var(--theme-sem-accent-info) 24%, var(--theme-sem-border-default) 76%);
+  --theme-comp-action-push-text: var(--theme-sem-accent-info);
+  --theme-comp-action-push-hover-bg: color-mix(in srgb, var(--theme-comp-action-push-bg) 84%, var(--theme-sem-accent-info) 16%);
+  --theme-comp-action-mr-bg: color-mix(in srgb, rgba(139, 92, 246, 0.18) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-mr-border: rgba(196, 181, 253, 0.18);
+  --theme-comp-action-mr-text: var(--theme-base-color-violet-300);
+  --theme-comp-action-mr-hover-bg: color-mix(in srgb, rgba(139, 92, 246, 0.28) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-gitlab-bg: color-mix(in srgb, rgba(249, 115, 22, 0.18) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-gitlab-border: rgba(253, 186, 116, 0.18);
+  --theme-comp-action-gitlab-text: var(--theme-base-color-orange-300);
+  --theme-comp-action-gitlab-hover-bg: color-mix(in srgb, rgba(249, 115, 22, 0.28) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-visit-bg: color-mix(in srgb, rgba(20, 184, 166, 0.18) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-visit-border: rgba(153, 246, 228, 0.18);
+  --theme-comp-action-visit-text: var(--theme-base-color-teal-300);
+  --theme-comp-action-visit-hover-bg: color-mix(in srgb, rgba(20, 184, 166, 0.28) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-favorite-bg: color-mix(in srgb, rgba(250, 204, 21, 0.1) 90%, var(--theme-sem-bg-project) 10%);
+  --theme-comp-action-favorite-border: rgba(250, 204, 21, 0.18);
+  --theme-comp-action-favorite-text: var(--theme-sem-accent-warning);
+  --theme-comp-action-favorite-hover-bg: color-mix(in srgb, rgba(250, 204, 21, 0.2) 80%, var(--theme-sem-bg-project) 20%);
+  --theme-comp-action-favorite-active-bg: color-mix(in srgb, rgba(250, 204, 21, 0.28) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-favorite-active-text: #facc15;
+  --theme-comp-action-neutral-bg: color-mix(in srgb, var(--theme-sem-surface-2) 62%, var(--theme-sem-bg-project) 38%);
+  --theme-comp-action-neutral-border: var(--theme-sem-border-default);
+  --theme-comp-action-neutral-text: var(--theme-sem-text-primary);
+  --theme-comp-action-neutral-hover-bg: color-mix(in srgb, var(--theme-comp-action-neutral-bg) 84%, var(--theme-sem-hover) 16%);
 }
 
 html[data-theme='graphite-moss'] {
@@ -150,6 +194,7 @@ html[data-theme='graphite-moss'] {
   --theme-sem-text-primary: rgba(241, 245, 240, 0.92);
   --theme-sem-text-secondary: rgba(229, 236, 228, 0.72);
   --theme-sem-text-muted: rgba(215, 224, 214, 0.52);
+  --theme-sem-text-on-accent: rgba(246, 249, 245, 0.96);
 
   --theme-sem-border-default: rgba(184, 201, 186, 0.08);
   --theme-sem-border-strong: rgba(184, 201, 186, 0.12);
@@ -193,6 +238,36 @@ html[data-theme='graphite-moss'] {
   --theme-comp-tab-active-border: rgba(152, 196, 163, 0.14);
   --theme-comp-tab-active-accent: var(--theme-base-color-moss-400);
   --theme-comp-child-header-bg: rgba(255, 255, 255, 0.028);
+  --theme-comp-action-pull-bg: color-mix(in srgb, var(--theme-sem-warning-bg) 80%, var(--theme-sem-bg-project) 20%);
+  --theme-comp-action-pull-border: rgba(223, 199, 141, 0.18);
+  --theme-comp-action-pull-text: var(--theme-sem-accent-warning);
+  --theme-comp-action-pull-hover-bg: color-mix(in srgb, var(--theme-comp-action-pull-bg) 84%, var(--theme-sem-accent-warning) 16%);
+  --theme-comp-action-push-bg: color-mix(in srgb, var(--theme-sem-info-bg) 80%, var(--theme-sem-bg-project) 20%);
+  --theme-comp-action-push-border: rgba(159, 216, 207, 0.18);
+  --theme-comp-action-push-text: var(--theme-sem-accent-info);
+  --theme-comp-action-push-hover-bg: color-mix(in srgb, var(--theme-comp-action-push-bg) 84%, var(--theme-sem-accent-info) 16%);
+  --theme-comp-action-mr-bg: color-mix(in srgb, rgba(125, 103, 201, 0.2) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-mr-border: rgba(183, 170, 235, 0.18);
+  --theme-comp-action-mr-text: #c8baf4;
+  --theme-comp-action-mr-hover-bg: color-mix(in srgb, rgba(125, 103, 201, 0.3) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-gitlab-bg: color-mix(in srgb, rgba(182, 140, 78, 0.22) 86%, var(--theme-sem-bg-project) 14%);
+  --theme-comp-action-gitlab-border: rgba(223, 199, 141, 0.18);
+  --theme-comp-action-gitlab-text: #e4c58f;
+  --theme-comp-action-gitlab-hover-bg: color-mix(in srgb, rgba(182, 140, 78, 0.32) 80%, var(--theme-sem-bg-project) 20%);
+  --theme-comp-action-visit-bg: color-mix(in srgb, rgba(95, 161, 108, 0.2) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-visit-border: rgba(151, 199, 160, 0.18);
+  --theme-comp-action-visit-text: #a6d6b0;
+  --theme-comp-action-visit-hover-bg: color-mix(in srgb, rgba(95, 161, 108, 0.3) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-favorite-bg: color-mix(in srgb, rgba(182, 140, 78, 0.16) 90%, var(--theme-sem-bg-project) 10%);
+  --theme-comp-action-favorite-border: rgba(223, 199, 141, 0.16);
+  --theme-comp-action-favorite-text: var(--theme-sem-accent-warning);
+  --theme-comp-action-favorite-hover-bg: color-mix(in srgb, rgba(182, 140, 78, 0.26) 84%, var(--theme-sem-bg-project) 16%);
+  --theme-comp-action-favorite-active-bg: color-mix(in srgb, rgba(182, 140, 78, 0.34) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-favorite-active-text: #f1cc88;
+  --theme-comp-action-neutral-bg: color-mix(in srgb, var(--theme-sem-surface-2) 60%, var(--theme-sem-bg-project) 40%);
+  --theme-comp-action-neutral-border: var(--theme-sem-border-default);
+  --theme-comp-action-neutral-text: var(--theme-sem-text-primary);
+  --theme-comp-action-neutral-hover-bg: color-mix(in srgb, var(--theme-comp-action-neutral-bg) 84%, var(--theme-sem-hover) 16%);
 }
 
 html[data-theme='abyss-blue'] {
@@ -212,6 +287,7 @@ html[data-theme='abyss-blue'] {
   --theme-sem-text-primary: rgba(245, 249, 255, 0.94);
   --theme-sem-text-secondary: rgba(218, 228, 243, 0.78);
   --theme-sem-text-muted: rgba(184, 198, 218, 0.56);
+  --theme-sem-text-on-accent: rgba(247, 250, 255, 0.96);
 
   --theme-sem-border-default: rgba(152, 177, 211, 0.08);
   --theme-sem-border-strong: rgba(152, 177, 211, 0.12);
@@ -255,4 +331,129 @@ html[data-theme='abyss-blue'] {
   --theme-comp-tab-active-border: rgba(137, 167, 214, 0.18);
   --theme-comp-tab-active-accent: var(--theme-base-color-sea-400);
   --theme-comp-child-header-bg: color-mix(in srgb, var(--theme-base-color-abyss-920) 88%, #5d7ea8 12%);
+  --theme-comp-action-pull-bg: color-mix(in srgb, var(--theme-sem-warning-bg) 80%, var(--theme-sem-bg-project) 20%);
+  --theme-comp-action-pull-border: rgba(228, 202, 136, 0.18);
+  --theme-comp-action-pull-text: var(--theme-sem-accent-warning);
+  --theme-comp-action-pull-hover-bg: color-mix(in srgb, var(--theme-comp-action-pull-bg) 84%, var(--theme-sem-accent-warning) 16%);
+  --theme-comp-action-push-bg: color-mix(in srgb, var(--theme-sem-info-bg) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-push-border: rgba(158, 196, 240, 0.18);
+  --theme-comp-action-push-text: var(--theme-sem-accent-info);
+  --theme-comp-action-push-hover-bg: color-mix(in srgb, var(--theme-comp-action-push-bg) 84%, var(--theme-sem-accent-info) 16%);
+  --theme-comp-action-mr-bg: color-mix(in srgb, rgba(98, 111, 208, 0.2) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-mr-border: rgba(186, 193, 255, 0.18);
+  --theme-comp-action-mr-text: #c6d0ff;
+  --theme-comp-action-mr-hover-bg: color-mix(in srgb, rgba(98, 111, 208, 0.3) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-gitlab-bg: color-mix(in srgb, rgba(212, 130, 73, 0.22) 86%, var(--theme-sem-bg-project) 14%);
+  --theme-comp-action-gitlab-border: rgba(228, 202, 136, 0.16);
+  --theme-comp-action-gitlab-text: #f0bc82;
+  --theme-comp-action-gitlab-hover-bg: color-mix(in srgb, rgba(212, 130, 73, 0.32) 80%, var(--theme-sem-bg-project) 20%);
+  --theme-comp-action-visit-bg: color-mix(in srgb, rgba(90, 168, 158, 0.2) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-visit-border: rgba(159, 216, 207, 0.18);
+  --theme-comp-action-visit-text: #a7e0d4;
+  --theme-comp-action-visit-hover-bg: color-mix(in srgb, rgba(90, 168, 158, 0.3) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-favorite-bg: color-mix(in srgb, rgba(228, 202, 136, 0.14) 90%, var(--theme-sem-bg-project) 10%);
+  --theme-comp-action-favorite-border: rgba(228, 202, 136, 0.16);
+  --theme-comp-action-favorite-text: var(--theme-sem-accent-warning);
+  --theme-comp-action-favorite-hover-bg: color-mix(in srgb, rgba(228, 202, 136, 0.24) 84%, var(--theme-sem-bg-project) 16%);
+  --theme-comp-action-favorite-active-bg: color-mix(in srgb, rgba(228, 202, 136, 0.34) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-favorite-active-text: #ffdb88;
+  --theme-comp-action-neutral-bg: color-mix(in srgb, var(--theme-sem-surface-2) 62%, var(--theme-sem-bg-project) 38%);
+  --theme-comp-action-neutral-border: var(--theme-sem-border-default);
+  --theme-comp-action-neutral-text: var(--theme-sem-text-primary);
+  --theme-comp-action-neutral-hover-bg: color-mix(in srgb, var(--theme-comp-action-neutral-bg) 84%, var(--theme-sem-hover) 16%);
+}
+
+html[data-theme='mist-paper'] {
+  color-scheme: light;
+
+  /* Semantic tokens */
+  --theme-sem-bg-app: #eef2f7;
+  --theme-sem-bg-workspace: #e8edf4;
+  --theme-sem-bg-project: #f5f7fb;
+  --theme-sem-bg-sidebar: #e2e8f0;
+  --theme-sem-bg-sidebar-soft: #d4dde8;
+  --theme-sem-surface-1: #dde5ef;
+  --theme-sem-surface-2: #cdd7e4;
+  --theme-sem-bg-dialog: color-mix(in srgb, white 70%, #d6deea 30%);
+  --theme-sem-bg-menu: color-mix(in srgb, white 74%, #d0d9e6 26%);
+  --theme-sem-bg-tooltip: rgba(248, 250, 253, 0.98);
+  --theme-sem-bg-overlay: rgba(126, 143, 166, 0.22);
+
+  --theme-sem-text-primary: rgba(33, 44, 60, 0.96);
+  --theme-sem-text-secondary: rgba(62, 76, 95, 0.88);
+  --theme-sem-text-muted: rgba(96, 110, 129, 0.72);
+  --theme-sem-text-on-accent: rgba(248, 250, 255, 0.96);
+
+  --theme-sem-border-default: rgba(104, 122, 148, 0.18);
+  --theme-sem-border-strong: rgba(104, 122, 148, 0.28);
+
+  --theme-sem-hover: rgba(92, 122, 170, 0.14);
+  --theme-sem-selected-bg: color-mix(in srgb, #d8e2f1 62%, #88a7d7 38%);
+  --theme-sem-selected-border: rgba(89, 117, 163, 0.28);
+
+  --theme-sem-accent-primary: var(--theme-base-color-blue-600);
+  --theme-sem-accent-primary-strong: var(--theme-base-color-blue-500);
+  --theme-sem-accent-info: #5f7da8;
+  --theme-sem-accent-warning: #b48a3e;
+  --theme-sem-accent-warning-strong: #966c1e;
+  --theme-sem-accent-success: #2f7d6e;
+  --theme-sem-accent-success-strong: #1f5f52;
+  --theme-sem-accent-danger: #bf6e78;
+  --theme-sem-accent-danger-strong: #aa5560;
+
+  --theme-sem-info-bg: rgba(79, 140, 255, 0.16);
+  --theme-sem-info-border: rgba(79, 140, 255, 0.24);
+  --theme-sem-warning-bg: rgba(180, 138, 62, 0.18);
+  --theme-sem-warning-border: rgba(180, 138, 62, 0.28);
+  --theme-sem-success-bg: rgba(70, 141, 126, 0.18);
+  --theme-sem-danger-bg: rgba(191, 110, 120, 0.18);
+
+  --theme-sem-file-added: #2f8a70;
+  --theme-sem-file-modified: #b18534;
+  --theme-sem-file-deleted: #bd646f;
+  --theme-sem-file-renamed: #4c77b2;
+  --theme-sem-file-conflict: #c07c3f;
+  --theme-sem-file-untracked: #6d7787;
+
+  /* Component alias tokens */
+  --theme-comp-radius-control: var(--theme-base-radius-md);
+  --theme-comp-radius-panel: var(--theme-base-radius-lg);
+  --theme-comp-radius-selected: var(--theme-base-radius-md);
+
+  --theme-comp-sidebar-item-active-bg: color-mix(in srgb, #d6e0ef 58%, #84a3d5 42%);
+  --theme-comp-sidebar-item-active-border: rgba(89, 117, 163, 0.24);
+  --theme-comp-tab-active-bg: color-mix(in srgb, #edf2f9 58%, #8daada 42%);
+  --theme-comp-tab-active-border: rgba(89, 117, 163, 0.26);
+  --theme-comp-tab-active-accent: var(--theme-base-color-blue-500);
+  --theme-comp-child-header-bg: color-mix(in srgb, #edf2f8 66%, #d2dbe8 34%);
+  --theme-comp-action-pull-bg: color-mix(in srgb, #f2e7cf 82%, white 18%);
+  --theme-comp-action-pull-border: rgba(180, 138, 62, 0.22);
+  --theme-comp-action-pull-text: #a77a28;
+  --theme-comp-action-pull-hover-bg: color-mix(in srgb, #ecdab8 82%, white 18%);
+  --theme-comp-action-push-bg: color-mix(in srgb, #d8e4f6 82%, white 18%);
+  --theme-comp-action-push-border: rgba(89, 117, 163, 0.22);
+  --theme-comp-action-push-text: #5f7da8;
+  --theme-comp-action-push-hover-bg: color-mix(in srgb, #ccd9ef 82%, white 18%);
+  --theme-comp-action-mr-bg: color-mix(in srgb, #e7ddf8 84%, white 16%);
+  --theme-comp-action-mr-border: rgba(140, 112, 188, 0.18);
+  --theme-comp-action-mr-text: #9f88d8;
+  --theme-comp-action-mr-hover-bg: color-mix(in srgb, #ddd0f2 82%, white 18%);
+  --theme-comp-action-gitlab-bg: color-mix(in srgb, #f5dfcf 84%, white 16%);
+  --theme-comp-action-gitlab-border: rgba(196, 123, 62, 0.18);
+  --theme-comp-action-gitlab-text: #d6964a;
+  --theme-comp-action-gitlab-hover-bg: color-mix(in srgb, #efcfb8 82%, white 18%);
+  --theme-comp-action-visit-bg: color-mix(in srgb, #d8f1ee 84%, white 16%);
+  --theme-comp-action-visit-border: rgba(72, 158, 146, 0.18);
+  --theme-comp-action-visit-text: #78d7cb;
+  --theme-comp-action-visit-hover-bg: color-mix(in srgb, #caece7 82%, white 18%);
+  --theme-comp-action-favorite-bg: color-mix(in srgb, #f5ecc8 84%, white 16%);
+  --theme-comp-action-favorite-border: rgba(180, 138, 62, 0.18);
+  --theme-comp-action-favorite-text: #e1b83a;
+  --theme-comp-action-favorite-hover-bg: color-mix(in srgb, #efe2b4 82%, white 18%);
+  --theme-comp-action-favorite-active-bg: color-mix(in srgb, #eddba0 84%, white 16%);
+  --theme-comp-action-favorite-active-text: #cc9c1d;
+  --theme-comp-action-neutral-bg: color-mix(in srgb, #eef2f8 72%, #d7dfeb 28%);
+  --theme-comp-action-neutral-border: rgba(104, 122, 148, 0.18);
+  --theme-comp-action-neutral-text: var(--theme-sem-text-primary);
+  --theme-comp-action-neutral-hover-bg: color-mix(in srgb, #e4ebf5 78%, #d2dbe8 22%);
 }

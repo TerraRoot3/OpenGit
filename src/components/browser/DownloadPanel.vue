@@ -125,7 +125,7 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
 }
 
 .download-btn:hover {
-  background: color-mix(in srgb, var(--theme-sem-hover) 70%, white 30%);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
 }
 
 .download-btn.subtle {

@@ -2688,7 +2688,7 @@ watch(
   display: flex;
   flex-direction: column;
   background: var(--theme-sem-bg-project);
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-sem-text-secondary);
   border-radius: var(--theme-comp-radius-selected);
   overflow: hidden;
   box-sizing: border-box;
@@ -2731,8 +2731,8 @@ watch(
   align-items: stretch;
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.45);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--theme-sem-text-muted);
+  border-bottom: 1px solid var(--theme-sem-border-default);
   background: var(--theme-comp-child-header-bg);
 }
 
@@ -2773,14 +2773,14 @@ watch(
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.54);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .tree-toolbar__action:hover {
   background: var(--theme-sem-hover);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .tree-filter-wrap {
@@ -2796,22 +2796,22 @@ watch(
   justify-content: space-between;
   gap: 8px;
   padding: 0 10px 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, white 12%);
-  color: rgba(255, 255, 255, 0.88);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .tree-filter-button:hover {
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, var(--theme-sem-hover) 18%);
+  border-color: var(--theme-sem-border-strong);
 }
 
 .tree-filter-button__arrow {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
 }
 
 .tree-filter-menu {
@@ -2821,7 +2821,7 @@ watch(
   width: 100%;
   min-width: 148px;
   padding: 8px 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 14px;
   background: var(--theme-sem-bg-menu);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
@@ -2839,7 +2839,7 @@ watch(
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
   cursor: pointer;
 }
@@ -2849,7 +2849,7 @@ watch(
 }
 
 .tree-filter-menu__item.active {
-  color: #fff;
+  color: var(--theme-sem-text-primary);
   background: var(--theme-comp-sidebar-item-active-bg);
   box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
@@ -2859,9 +2859,9 @@ watch(
   height: 32px;
   display: flex;
   align-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, white 12%);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
@@ -2870,8 +2870,8 @@ watch(
 }
 
 .tree-search:focus-within {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
+  border-color: var(--theme-sem-border-strong);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, var(--theme-sem-hover) 18%);
 }
 
 .tree-search__input {
@@ -2881,13 +2881,13 @@ watch(
   padding: 0 10px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
   outline: none;
 }
 
 .tree-search__input::placeholder {
-  color: rgba(255, 255, 255, 0.32);
+  color: var(--theme-sem-text-muted);
 }
 
 .tree-scroll {
@@ -2930,7 +2930,7 @@ watch(
   gap: 8px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--theme-sem-text-primary);
   text-align: left;
   cursor: pointer;
   border-radius: 10px;
@@ -2950,7 +2950,7 @@ watch(
   align-items: center;
   gap: 6px;
   min-width: 0;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
 }
 
@@ -2961,6 +2961,8 @@ watch(
 .workspace-modified-row__name {
   min-width: 0;
   white-space: nowrap;
+  color: var(--theme-sem-text-primary);
+  font-weight: 500;
 }
 
 .workspace-modified-row__path {
@@ -2968,13 +2970,13 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.36);
+  color: var(--theme-sem-text-muted);
   font-size: 11px;
 }
 
 .workspace-modified-empty {
   padding: 16px 12px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--theme-sem-text-muted);
   font-size: 12px;
 }
 
@@ -2988,7 +2990,7 @@ watch(
   padding: 0 10px 0 0;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
@@ -3021,7 +3023,7 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--theme-sem-text-muted);
 }
 
 .workspace-tree-row__toggle.placeholder {
@@ -3106,13 +3108,15 @@ watch(
 }
 
 .workspace-tree-row__icon--file {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--theme-sem-text-secondary);
 }
 
 .workspace-tree-row__name {
   flex: 0 0 auto;
   min-width: max-content;
   white-space: nowrap;
+  color: var(--theme-sem-text-primary);
+  font-weight: 500;
 }
 
 .workspace-tree-row__status {
@@ -3133,10 +3137,10 @@ watch(
   min-width: 0;
   height: 24px;
   padding: 0 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--theme-sem-hover) 55%, transparent);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
   outline: none;
 }
@@ -3150,8 +3154,8 @@ watch(
   display: grid;
   grid-template-rows: auto auto auto;
   gap: 8px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 86%, black 14%);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-surface-1) 12%);
+  border-top: 1px solid var(--theme-sem-border-default);
 }
 
 .workspace-git-actions__top,
@@ -3166,17 +3170,21 @@ watch(
   max-height: 88px;
   resize: vertical;
   padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.88);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
   line-height: 1.5;
   outline: none;
 }
 
+.workspace-git-actions__message:focus {
+  border-color: var(--theme-sem-accent-primary);
+}
+
 .workspace-git-actions__message::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--theme-sem-text-muted);
 }
 
 .workspace-git-actions__btn {
@@ -3186,32 +3194,32 @@ watch(
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s ease, filter 0.15s ease;
+  transition: opacity 0.15s ease, filter 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 
 .workspace-git-actions__btn:disabled {
-  opacity: 0.45;
+  opacity: 0.62;
   cursor: default;
 }
 
 .workspace-git-actions__btn--stash {
-  background: color-mix(in srgb, var(--theme-sem-accent-primary) 18%, transparent);
-  color: color-mix(in srgb, var(--theme-sem-accent-primary) 62%, white 38%);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 22%, white 78%);
+  color: var(--theme-sem-accent-primary);
 }
 
 .workspace-git-actions__btn--discard {
-  background: var(--theme-sem-danger-bg);
-  color: var(--theme-sem-accent-danger);
+  background: color-mix(in srgb, var(--theme-sem-danger-bg) 72%, white 28%);
+  color: var(--theme-sem-accent-danger-strong);
 }
 
 .workspace-git-actions__btn--commit {
   background: var(--theme-sem-accent-primary);
-  color: #fff;
+  color: var(--theme-sem-text-on-accent);
 }
 
 .workspace-git-actions__btn--push {
-  background: var(--theme-sem-success-bg);
-  color: var(--theme-sem-accent-success);
+  background: color-mix(in srgb, var(--theme-sem-success-bg) 76%, white 24%);
+  color: var(--theme-sem-accent-success-strong);
 }
 
 .workspace-git-actions__btn:not(:disabled):hover {
@@ -3225,7 +3233,7 @@ watch(
   border-radius: 8px;
   background: var(--theme-sem-bg-menu);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   z-index: 3000;
 }
 
@@ -3233,7 +3241,7 @@ watch(
   margin: 0 6px;
   padding: 9px 10px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.86);
+  color: var(--theme-sem-text-secondary);
   cursor: pointer;
   white-space: nowrap;
   border-radius: 8px;
@@ -3254,7 +3262,7 @@ watch(
 .context-menu-divider {
   height: 1px;
   margin: 6px 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--theme-sem-hover) 82%, transparent);
 }
 
 .workspace-tree-row--conflict {
@@ -3286,7 +3294,7 @@ watch(
   flex-shrink: 0;
   cursor: col-resize;
   position: relative;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--theme-sem-hover) 82%, transparent);
   z-index: 2;
   transition: background 0.15s ease, box-shadow 0.15s ease;
 }
@@ -3351,7 +3359,7 @@ watch(
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
@@ -3359,7 +3367,7 @@ watch(
 
 .tab-item:hover {
   background: var(--theme-sem-hover);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .tab-item.active {
@@ -3372,6 +3380,7 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
 }
 
 .tab-close {
@@ -3399,8 +3408,8 @@ watch(
 
 .tab-close:hover {
   opacity: 1;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
+  color: var(--theme-sem-text-primary);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
 }
 
 .preview-body {
@@ -3417,7 +3426,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--theme-sem-text-muted);
   font-size: 13px;
 }
 
@@ -3462,7 +3471,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--theme-sem-text-muted);
   font-size: 13px;
   padding: 24px;
   text-align: center;

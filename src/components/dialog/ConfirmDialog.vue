@@ -100,7 +100,7 @@ defineExpose({ show })
   min-width: 360px;
   max-width: 480px;
   animation: slideIn 0.2s ease-out;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--theme-sem-border-strong);
 }
 
 @keyframes slideIn {
@@ -139,7 +139,7 @@ defineExpose({ show })
 .confirm-message {
   margin: 0;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   line-height: 1.6;
 }
 
@@ -149,7 +149,7 @@ defineExpose({ show })
   background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, black 12%);
   border-radius: 6px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--theme-sem-text-secondary);
   font-family: 'Monaco', 'Menlo', monospace;
   word-break: break-all;
 }
@@ -159,7 +159,7 @@ defineExpose({ show })
   justify-content: flex-end;
   gap: 12px;
   padding: 16px 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--theme-sem-border-default);
 }
 
 .btn-cancel,
@@ -174,18 +174,18 @@ defineExpose({ show })
 }
 
 .btn-cancel {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
+  color: var(--theme-sem-text-secondary);
 }
 
 .btn-cancel:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .btn-confirm {
   background: var(--theme-sem-accent-primary);
-  color: #fff;
+  color: var(--theme-sem-text-on-accent);
 }
 
 .btn-confirm:hover {
@@ -206,6 +206,6 @@ defineExpose({ show })
 }
 
 .btn-confirm.warning:hover {
-  background: color-mix(in srgb, var(--theme-sem-warning-bg) 82%, white 18%);
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 92%, var(--theme-sem-hover) 8%);
 }
 </style>

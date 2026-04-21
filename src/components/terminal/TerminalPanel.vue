@@ -274,6 +274,7 @@ const activeTabId = ref(null)
 const terminals = ref([])
 const activeTermId = ref(null)
 const terminalCache = new Map()
+let terminalThemeObserver = null
 const paneElements = new Map()
 const showCwdMenu = ref(false)
 const cwdMenuRef = ref(null)
@@ -1220,6 +1221,30 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
 
 const handleAddTerminal = async () => {
   await addTerminal(getProjectRootCwd() || null)
+}
+
+const applyCurrentThemeToTerminal = (term) => {
+  if (!term?.xterm) return
+
+  term.xterm.options.theme = createXtermTheme()
+
+  try {
+    if (Number.isFinite(term.xterm.rows) && term.xterm.rows > 0) {
+      term.xterm.refresh(0, term.xterm.rows - 1)
+    }
+  } catch (error) {}
+}
+
+const refreshAllTerminalThemes = () => {
+  for (const term of terminals.value) {
+    applyCurrentThemeToTerminal(term)
+  }
+
+  for (const [, cached] of terminalCache) {
+    for (const term of cached.terminals || []) {
+      applyCurrentThemeToTerminal(term)
+    }
+  }
 }
 
 const addTerminalInDir = async (cwd, label) => {
@@ -2497,6 +2522,13 @@ onMounted(() => {
   document.addEventListener('keydown', handleTerminalKeydown, true)
   window.addEventListener('dragover', handleGlobalDragOver, true)
   window.addEventListener('drop', handleGlobalDrop, true)
+  terminalThemeObserver = new MutationObserver(() => {
+    refreshAllTerminalThemes()
+  })
+  terminalThemeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme']
+  })
 })
 
 onUnmounted(() => {
@@ -2519,6 +2551,8 @@ onUnmounted(() => {
     clearTimeout(singlePanePtyResizeTimer)
     singlePanePtyResizeTimer = null
   }
+  terminalThemeObserver?.disconnect()
+  terminalThemeObserver = null
   clearDeferredSinglePanePtyResize()
   lastSinglePanePtyResizeAt = 0
   document.removeEventListener('click', handleDocumentClick)
@@ -2592,7 +2626,7 @@ defineExpose({
   gap: 6px;
   font-size: 11px;
   line-height: 1.3;
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--theme-sem-text-secondary);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   user-select: none;
   -webkit-user-select: none;
@@ -2603,21 +2637,21 @@ defineExpose({
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-sem-text-secondary);
 }
 .terminal-path--single-pane .terminal-path__sep {
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.38);
+  color: var(--theme-sem-text-muted);
   user-select: none;
 }
 .terminal-path--single-pane .terminal-path__cwd {
   flex: 1;
   min-width: 0;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-sem-text-primary);
 }
 
 .terminal-path--single-pane .terminal-path__cwd .terminal-path__ltr {
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-sem-text-primary);
 }
 /* 过长时省略左侧，保留末尾目录名可见（完整路径见 title） */
 .terminal-path--ellipsis-start {
@@ -2656,7 +2690,7 @@ defineExpose({
   border-radius: 10px;
   user-select: none;
   -webkit-user-select: none;
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -2666,7 +2700,7 @@ defineExpose({
 }
 .terminal-tab:hover {
   background: var(--theme-sem-hover);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 .terminal-tab.active {
   background: var(--theme-comp-tab-active-bg);
@@ -2689,7 +2723,7 @@ defineExpose({
   background: transparent;
   border: none;
   border-radius: 3px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   opacity: 0.28;
   transition: background 0.15s, color 0.15s, opacity 0.15s;
@@ -2697,8 +2731,8 @@ defineExpose({
 .terminal-tab:hover .tab-close-btn { opacity: 0.72; }
 .terminal-tab.active .tab-close-btn { opacity: 0.56; }
 .tab-close-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--theme-sem-hover) 88%, transparent);
+  color: var(--theme-sem-text-primary);
   opacity: 1 !important;
 }
 .add-btn {
@@ -2722,7 +2756,7 @@ defineExpose({
   min-width: 220px;
   max-width: 280px;
   padding: 0 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
   background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, white 12%);
   transition: background-color 0.15s ease, border-color 0.15s ease;
@@ -2733,7 +2767,7 @@ defineExpose({
 }
 .terminal-search-icon {
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.54);
+  color: var(--theme-sem-text-muted);
 }
 .terminal-search-input {
   flex: 1;
@@ -2743,14 +2777,14 @@ defineExpose({
   border: none;
   outline: none;
   background: transparent;
-  color: #d4d4d4;
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
 }
 .terminal-search-input::placeholder {
-  color: rgba(255, 255, 255, 0.32);
+  color: var(--theme-sem-text-muted);
 }
 .terminal-search:focus-within {
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: var(--theme-sem-border-strong);
   background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
 }
 .terminal-search-btn {
@@ -2763,20 +2797,20 @@ defineExpose({
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.46);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 .terminal-search-btn:hover {
   background: var(--theme-sem-hover);
-  color: #f3f4f6;
+  color: var(--theme-sem-text-primary);
 }
 .terminal-search-btn.close:hover {
   background: rgba(239, 68, 68, 0.18);
   color: #fecaca;
 }
 .terminal-path {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-size: 11px;
 }
 .terminal-actions .terminal-path--ellipsis-start {
@@ -2793,14 +2827,14 @@ defineExpose({
   background: transparent;
   border: none;
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.54);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
   outline: none;
 }
 .terminal-btn:hover {
   background: var(--theme-sem-hover);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 .terminal-btn:focus-visible {
   outline: none;
@@ -2811,7 +2845,7 @@ defineExpose({
 }
 .terminal-btn-split:hover {
   background: var(--theme-sem-hover);
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-sem-text-primary);
 }
 .split-btn-icon {
   width: 14px;
@@ -2877,7 +2911,7 @@ defineExpose({
   border: none;
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.45);
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-sem-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2901,12 +2935,12 @@ defineExpose({
   overflow-y: scroll !important;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: var(--theme-sem-border-strong) transparent;
 }
 .terminal-body :deep(.xterm-viewport)::-webkit-scrollbar { width: 4px; }
 .terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-track { background: transparent; }
-.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
-.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb { background: var(--theme-sem-border-strong); border-radius: 4px; }
+.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb:hover { background: var(--theme-sem-border-strong); }
 .terminal-cwd-picker {
   position: relative;
 }
@@ -2915,7 +2949,7 @@ defineExpose({
   top: 100%;
   left: 0;
   background: var(--theme-sem-bg-menu);
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
   min-width: 140px;
   z-index: 100;
@@ -2926,7 +2960,7 @@ defineExpose({
   margin: 0 6px;
   padding: 8px 10px;
   font-size: 12px;
-  color: #d4d4d4;
+  color: var(--theme-sem-text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;

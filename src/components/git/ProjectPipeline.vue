@@ -408,7 +408,7 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: 10px 14px;
   background: var(--theme-comp-child-header-bg);
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
   font-weight: 500;
   height: 40px;
@@ -424,7 +424,7 @@ onUnmounted(() => {
 
 .panel-count {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-weight: normal;
 }
 
@@ -432,17 +432,17 @@ onUnmounted(() => {
 .open-web-btn {
   height: 28px;
   padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.84);
+  background: color-mix(in srgb, var(--theme-sem-hover) 76%, transparent);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
   cursor: pointer;
 }
 
 .refresh-btn:hover:not(:disabled),
 .open-web-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--theme-sem-hover);
 }
 
 .refresh-btn:disabled {
@@ -458,7 +458,7 @@ onUnmounted(() => {
 
 .pipeline-group-label {
   padding: 10px 14px 6px;
-  color: rgba(255, 255, 255, 0.46);
+  color: var(--theme-sem-text-muted);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -501,7 +501,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
 }
 
@@ -509,7 +509,7 @@ onUnmounted(() => {
 .pipeline-id,
 .pipeline-status {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.52);
+  color: var(--theme-sem-text-muted);
   flex-shrink: 0;
 }
 
@@ -522,7 +522,7 @@ onUnmounted(() => {
 .pipeline-detail-tip,
 .pipeline-tip {
   padding: 16px;
-  color: rgba(255, 255, 255, 0.54);
+  color: var(--theme-sem-text-muted);
   font-size: 13px;
 }
 
@@ -540,7 +540,7 @@ onUnmounted(() => {
 
 .summary-card,
 .stage-card {
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--theme-sem-hover) 42%, transparent);
   border-radius: 12px;
   padding: 12px;
 }
@@ -548,13 +548,13 @@ onUnmounted(() => {
 .summary-label {
   display: block;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   margin-bottom: 6px;
 }
 
 .summary-value {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .stage-list {
@@ -580,7 +580,7 @@ onUnmounted(() => {
 .stage-title {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .stage-meta {
@@ -593,7 +593,7 @@ onUnmounted(() => {
 .job-status,
 .job-duration {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.54);
+  color: var(--theme-sem-text-muted);
 }
 
 .stage-count.running,
@@ -613,14 +613,14 @@ onUnmounted(() => {
 
 .stage-count.success,
 .status-text-success {
-  color: #86efac;
+  color: var(--theme-sem-accent-success-strong);
 }
 
 .status-text-skipped,
 .status-text-manual,
 .status-text-scheduled,
 .status-text-unknown {
-  color: rgba(255, 255, 255, 0.58);
+  color: var(--theme-sem-text-muted);
 }
 
 .job-list {
@@ -633,7 +633,7 @@ onUnmounted(() => {
 .job-item {
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, var(--theme-sem-hover) 34%, transparent);
 }
 
 .job-main {
@@ -643,7 +643,7 @@ onUnmounted(() => {
 
 .job-name {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-sem-text-secondary);
 }
 
 .status-dot {
@@ -651,7 +651,7 @@ onUnmounted(() => {
   height: 8px;
   border-radius: 999px;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.28);
+  background: var(--theme-sem-border-strong);
 }
 
 .status-running,
@@ -663,7 +663,7 @@ onUnmounted(() => {
 }
 
 .status-success {
-  background: #22c55e;
+  background: var(--theme-sem-accent-success-strong);
 }
 
 .status-failed,
@@ -675,7 +675,7 @@ onUnmounted(() => {
 .status-manual,
 .status-scheduled,
 .status-unknown {
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--theme-sem-border-strong);
 }
 
 @media (max-width: 1024px) {

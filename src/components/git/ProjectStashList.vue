@@ -601,7 +601,7 @@ const escapeHtml = (text) => {
   background: var(--theme-comp-child-header-bg);
   border-top-left-radius: var(--theme-comp-radius-selected);
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
   height: 40px;
   min-height: 40px;
@@ -616,7 +616,7 @@ const escapeHtml = (text) => {
 
 .stash-count {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-weight: normal;
 }
 
@@ -657,7 +657,7 @@ const escapeHtml = (text) => {
 .stash-message {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   font-weight: 500;
   word-break: break-word;
   line-height: 1.3;
@@ -665,13 +665,13 @@ const escapeHtml = (text) => {
 
 .stash-date {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
 }
 
 .empty-stash {
   padding: 16px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-size: 12px;
 }
 
@@ -697,7 +697,7 @@ const escapeHtml = (text) => {
   background: var(--theme-comp-child-header-bg);
   border-top-right-radius: var(--theme-comp-radius-selected);
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
   height: 40px;
@@ -717,7 +717,7 @@ const escapeHtml = (text) => {
 }
 
 .diff-block {
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 12px;
   overflow: hidden;
   max-width: 100%;
@@ -725,7 +725,7 @@ const escapeHtml = (text) => {
 
 .diff-content {
   padding: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, var(--theme-sem-hover) 38%, transparent);
   max-width: 100%;
   overflow: hidden;
 }
@@ -739,7 +739,7 @@ const escapeHtml = (text) => {
   word-wrap: break-word;
   word-break: break-all;
   overflow-wrap: break-word;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   max-width: 100%;
   overflow-x: auto;
 }
@@ -749,7 +749,7 @@ const escapeHtml = (text) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-size: 14px;
 }
 
@@ -769,7 +769,7 @@ const escapeHtml = (text) => {
 
 .dialog-content {
   background: var(--theme-sem-bg-dialog);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 14px;
   min-width: 400px;
   max-width: 600px;
@@ -778,14 +778,14 @@ const escapeHtml = (text) => {
 
 .dialog-header-simple {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--theme-sem-border-default);
 }
 
 .dialog-header-simple h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .dialog-body {
@@ -795,7 +795,7 @@ const escapeHtml = (text) => {
 
 .dialog-body p {
   margin: 0 0 12px 0;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   line-height: 1.5;
 }
 
@@ -805,17 +805,17 @@ const escapeHtml = (text) => {
 }
 
 .warning-text {
-  color: #ffc107;
-  background: rgba(255, 193, 7, 0.1);
+  color: var(--theme-sem-accent-warning);
+  background: var(--theme-sem-warning-bg);
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 193, 7, 0.3);
+  border: 1px solid var(--theme-sem-warning-border);
   font-size: 13px;
 }
 
 .dialog-footer {
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--theme-sem-border-default);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
@@ -825,7 +825,7 @@ const escapeHtml = (text) => {
 
 .cancel-btn-large, .confirm-btn-large, .delete-btn-large {
   padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
@@ -834,37 +834,37 @@ const escapeHtml = (text) => {
 }
 
 .cancel-btn-large {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.82);
+  background: color-mix(in srgb, var(--theme-sem-hover) 76%, transparent);
+  color: var(--theme-sem-text-secondary);
 }
 
 .cancel-btn-large:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--theme-sem-hover);
 }
 
 .confirm-btn-large {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--theme-sem-hover) 96%, transparent);
+  color: var(--theme-sem-text-primary);
 }
 
 .confirm-btn-large:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--theme-sem-hover);
 }
 
 .delete-btn-large {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .delete-btn-large:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--theme-sem-hover) 96%, transparent);
 }
 
 /* 右键菜单样式 */
 .context-menu {
   position: fixed;
   background: var(--theme-sem-bg-menu);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 12px;
   padding: 6px 0;
   min-width: 150px;
@@ -878,7 +878,7 @@ const escapeHtml = (text) => {
   cursor: pointer;
   transition: background-color 0.15s ease;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   border-radius: 8px;
 }
 
@@ -896,7 +896,7 @@ const escapeHtml = (text) => {
 
 .context-menu-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
   margin: 6px 6px;
 }
 
@@ -907,7 +907,7 @@ const escapeHtml = (text) => {
   cursor: pointer;
   margin-bottom: 0 !important;
   font-weight: normal !important;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-sem-text-secondary);
 }
 
 .restore-checkbox {
@@ -916,7 +916,7 @@ const escapeHtml = (text) => {
   width: 16px;
   height: 16px;
   cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 3px;
   background: transparent;
   position: relative;
@@ -933,7 +933,7 @@ const escapeHtml = (text) => {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: white;
+  color: var(--theme-sem-text-primary);
   font-size: 11px;
   font-weight: bold;
 }
@@ -955,7 +955,7 @@ const escapeHtml = (text) => {
     width: 100%;
     min-width: unset;
     border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--theme-sem-border-default);
     max-height: 300px;
   }
   

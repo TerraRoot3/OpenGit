@@ -883,7 +883,7 @@ onUnmounted(() => {
   margin: 4px 0;
   box-sizing: border-box;
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -895,7 +895,7 @@ onUnmounted(() => {
 
 .focus-tab:hover {
   background: var(--theme-sem-hover);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .focus-tab.is-active {
@@ -922,7 +922,7 @@ onUnmounted(() => {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   opacity: 0.28;
   transition: background 0.15s, color 0.15s, opacity 0.15s;
@@ -937,8 +937,8 @@ onUnmounted(() => {
 }
 
 .focus-tab__close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
+  color: var(--theme-sem-text-primary);
   opacity: 1 !important;
 }
 
@@ -952,7 +952,7 @@ onUnmounted(() => {
   padding: 0;
   margin-left: 0;
   margin-bottom: 0;
-  color: rgba(255, 255, 255, 0.54);
+  color: var(--theme-sem-text-muted);
   background: transparent;
   border: none;
   border-radius: 10px;
@@ -962,7 +962,7 @@ onUnmounted(() => {
 
 .toolbar-add-btn:hover:not(:disabled) {
   background: var(--theme-sem-hover);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .toolbar-add-btn:disabled {

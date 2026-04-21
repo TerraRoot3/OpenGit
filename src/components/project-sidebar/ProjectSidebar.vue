@@ -616,6 +616,7 @@ const isFavorited = (path) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--theme-sem-text-primary);
 }
 
 .repo-meta,

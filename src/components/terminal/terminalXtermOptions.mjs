@@ -40,41 +40,62 @@ export const XTERM_OPTS = {
 }
 
 const DEFAULT_XTERM_BACKGROUND = '#161b22'
+const DEFAULT_XTERM_FOREGROUND = '#d4d4d4'
 
-export function resolveTerminalThemeBackground() {
+function readThemeCssVar(name) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return DEFAULT_XTERM_BACKGROUND
+    return ''
   }
 
-  const computed = window.getComputedStyle(document.documentElement)
-  const background = computed.getPropertyValue('--theme-sem-bg-project').trim()
+  return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
+export function resolveTerminalThemeBackground() {
+  const background = readThemeCssVar('--theme-sem-bg-project')
   return background || DEFAULT_XTERM_BACKGROUND
 }
 
 export function createXtermTheme() {
   const background = resolveTerminalThemeBackground()
+  const foreground = readThemeCssVar('--theme-sem-text-primary') || DEFAULT_XTERM_FOREGROUND
+  const secondary = readThemeCssVar('--theme-sem-text-secondary') || foreground
+  const muted = readThemeCssVar('--theme-sem-text-muted') || secondary
+  const accentPrimary = readThemeCssVar('--theme-sem-accent-primary') || '#2472c8'
+  const accentInfo = readThemeCssVar('--theme-sem-accent-info') || '#2472c8'
+  const accentWarning = readThemeCssVar('--theme-sem-accent-warning') || '#e5e510'
+  const accentSuccess = readThemeCssVar('--theme-sem-accent-success') || '#0dbc79'
+  const accentDanger = readThemeCssVar('--theme-sem-accent-danger') || '#cd3131'
+  const fileAdded = readThemeCssVar('--theme-sem-file-added') || accentSuccess
+  const fileDeleted = readThemeCssVar('--theme-sem-file-deleted') || accentDanger
+  const borderStrong = readThemeCssVar('--theme-sem-border-strong')
+  const colorScheme = typeof window !== 'undefined' && typeof document !== 'undefined'
+    ? window.getComputedStyle(document.documentElement).colorScheme
+    : 'dark'
+  const isLight = String(colorScheme).includes('light')
 
   return {
     background,
-    foreground: '#d4d4d4',
-    cursor: '#d4d4d4',
+    foreground,
+    cursor: accentPrimary,
     cursorAccent: background,
-    selectionBackground: 'rgba(255, 255, 255, 0.3)',
-    black: '#000000',
-    red: '#cd3131',
-    green: '#0dbc79',
-    yellow: '#e5e510',
-    blue: '#2472c8',
-    magenta: '#bc3fbc',
-    cyan: '#11a8cd',
-    white: '#e5e5e5',
-    brightBlack: '#666666',
-    brightRed: '#f14c4c',
-    brightGreen: '#23d18b',
-    brightYellow: '#f5f543',
-    brightBlue: '#3b8eea',
-    brightMagenta: '#d670d6',
-    brightCyan: '#29b8db',
-    brightWhite: '#ffffff'
+    selectionBackground: isLight ? 'rgba(92, 122, 170, 0.22)' : 'rgba(255, 255, 255, 0.3)',
+    black: isLight ? '#2d3746' : '#000000',
+    red: accentDanger,
+    green: accentSuccess,
+    yellow: accentWarning,
+    blue: accentInfo,
+    magenta: isLight ? '#8b6fd8' : '#bc3fbc',
+    cyan: accentPrimary,
+    white: secondary,
+    brightBlack: muted,
+    brightRed: fileDeleted,
+    brightGreen: fileAdded,
+    brightYellow: isLight ? '#9f7728' : '#f5f543',
+    brightBlue: isLight ? '#3d6fb7' : '#3b8eea',
+    brightMagenta: isLight ? '#a084df' : '#d670d6',
+    brightCyan: isLight ? '#2d8192' : '#29b8db',
+    brightWhite: foreground,
+    scrollbarSliderBackground: borderStrong || undefined,
+    scrollbarSliderHoverBackground: borderStrong || undefined
   }
 }

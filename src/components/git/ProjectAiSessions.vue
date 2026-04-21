@@ -530,7 +530,7 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: 10px 14px;
   background: var(--theme-comp-child-header-bg);
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
   font-weight: 500;
   height: 40px;
@@ -546,7 +546,7 @@ onUnmounted(() => {
 
 .panel-count {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-weight: normal;
 }
 
@@ -607,7 +607,7 @@ onUnmounted(() => {
 .provider-name,
 .session-title {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   font-weight: 500;
   line-height: 1.4;
 }
@@ -615,7 +615,7 @@ onUnmounted(() => {
 .provider-subtitle {
   margin-top: 4px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
 }
 
 .provider-count {
@@ -623,8 +623,8 @@ onUnmounted(() => {
   min-width: 22px;
   padding: 1px 8px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.68);
+  background: color-mix(in srgb, var(--theme-sem-hover) 82%, transparent);
+  color: var(--theme-sem-text-secondary);
   font-size: 11px;
   text-align: center;
 }
@@ -642,7 +642,7 @@ onUnmounted(() => {
 .session-tip {
   padding: 16px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-size: 12px;
 }
 
@@ -654,7 +654,7 @@ onUnmounted(() => {
 .session-path,
 .session-summary {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
 }
 
 .session-time {
@@ -676,7 +676,7 @@ onUnmounted(() => {
 }
 
 .session-summary.empty {
-  color: rgba(255, 255, 255, 0.38);
+  color: var(--theme-sem-text-muted);
 }
 
 .session-row.bottom,
@@ -709,10 +709,10 @@ onUnmounted(() => {
   flex-shrink: 0;
   height: 28px;
   padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.82);
+  background: color-mix(in srgb, var(--theme-sem-hover) 76%, transparent);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -721,19 +721,19 @@ onUnmounted(() => {
 .resume-btn:hover,
 .refresh-btn:hover:not(:disabled),
 .delete-btn-inline:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .delete-btn-inline {
-  color: rgba(255, 255, 255, 0.84);
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.055);
+  color: var(--theme-sem-text-secondary);
+  border-color: var(--theme-sem-border-default);
+  background: color-mix(in srgb, var(--theme-sem-hover) 76%, transparent);
 }
 
 .delete-btn-inline:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.95);
+  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
+  color: var(--theme-sem-text-primary);
 }
 
 .refresh-btn:disabled {
@@ -756,7 +756,7 @@ onUnmounted(() => {
 
 .dialog-content {
   background: var(--theme-sem-bg-dialog);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 14px;
   min-width: 420px;
   max-width: 720px;
@@ -766,14 +766,14 @@ onUnmounted(() => {
 
 .dialog-header-simple {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--theme-sem-border-default);
 }
 
 .dialog-header-simple h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
 }
 
 .dialog-body {
@@ -786,7 +786,7 @@ onUnmounted(() => {
 
 .dialog-body p {
   margin: 0;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   line-height: 1.5;
 }
 
@@ -799,12 +799,12 @@ onUnmounted(() => {
 .summary-meta-label {
   width: 56px;
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-size: 12px;
 }
 
 .summary-meta-value {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
   line-height: 1.5;
   word-break: break-word;
@@ -812,29 +812,29 @@ onUnmounted(() => {
 
 .summary-id {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--theme-sem-text-secondary);
 }
 
 .summary-block {
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 12px;
   overflow: hidden;
   margin-top: 4px;
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, var(--theme-sem-hover) 32%, transparent);
 }
 
 .summary-block-title {
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.025);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--theme-sem-hover) 38%, transparent);
+  border-bottom: 1px solid var(--theme-sem-border-default);
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-sem-text-secondary);
   font-weight: 500;
 }
 
 .summary-block-content {
   padding: 12px;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -850,7 +850,7 @@ onUnmounted(() => {
 
 .summary-block-placeholder {
   padding: 16px 12px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--theme-sem-text-muted);
   font-size: 13px;
 }
 
@@ -868,19 +868,19 @@ onUnmounted(() => {
 }
 
 .transcript-item {
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--theme-sem-hover) 42%, transparent);
 }
 
 .transcript-item.user {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--theme-sem-border-strong);
+  background: color-mix(in srgb, var(--theme-sem-hover) 72%, transparent);
 }
 
 .transcript-item.assistant {
-  border-color: rgba(255, 255, 255, 0.08);
+  border-color: var(--theme-sem-border-strong);
 }
 
 .transcript-item-header {
@@ -897,17 +897,17 @@ onUnmounted(() => {
 }
 
 .transcript-role {
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--theme-sem-text-secondary);
   font-weight: 600;
 }
 
 .transcript-time {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--theme-sem-text-muted);
   flex-shrink: 0;
 }
 
 .transcript-text {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -916,7 +916,7 @@ onUnmounted(() => {
 
 .dialog-footer {
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--theme-sem-border-default);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
@@ -928,7 +928,7 @@ onUnmounted(() => {
 .confirm-btn-large,
 .delete-btn-large {
   padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
@@ -937,30 +937,30 @@ onUnmounted(() => {
 }
 
 .cancel-btn-large {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.82);
+  background: color-mix(in srgb, var(--theme-sem-hover) 76%, transparent);
+  color: var(--theme-sem-text-secondary);
 }
 
 .cancel-btn-large:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--theme-sem-hover);
 }
 
 .confirm-btn-large {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--theme-sem-hover) 96%, transparent);
+  color: var(--theme-sem-text-primary);
 }
 
 .confirm-btn-large:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: color-mix(in srgb, var(--theme-sem-hover) 96%, transparent);
 }
 
 .delete-btn-large {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .delete-btn-large:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--theme-sem-hover) 96%, transparent);
 }
 
 .delete-btn-large:disabled,
@@ -975,13 +975,13 @@ onUnmounted(() => {
 }
 
 .delete-session-summary {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--theme-sem-text-secondary);
   font-size: 13px;
   line-height: 1.6;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--theme-sem-hover) 48%, transparent);
+  border: 1px solid var(--theme-sem-border-default);
 }
 
 .warning-text {
@@ -1008,7 +1008,7 @@ onUnmounted(() => {
 .provider-list::-webkit-scrollbar-thumb,
 .session-list::-webkit-scrollbar-thumb,
 .summary-block-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: color-mix(in srgb, var(--theme-sem-hover) 100%, transparent);
   border-radius: 3px;
 }
 
@@ -1022,7 +1022,7 @@ onUnmounted(() => {
     min-width: 0;
     max-height: 220px;
     border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--theme-sem-border-default);
   }
 
   .session-row,

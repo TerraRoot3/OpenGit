@@ -122,13 +122,55 @@ function resolveWorkspaceEditorBackground () {
   return background || DEFAULT_WORKSPACE_EDITOR_BACKGROUND
 }
 
+function resolveWorkspaceEditorForeground () {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return '#d4d4d4'
+  }
+  const computed = window.getComputedStyle(document.documentElement)
+  const foreground = computed.getPropertyValue('--theme-sem-text-primary').trim()
+  return normalizeMonacoColor(foreground, '#d4d4d4')
+}
+
+function resolveWorkspaceEditorLineNumber () {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return '#858585'
+  }
+  const computed = window.getComputedStyle(document.documentElement)
+  const muted = computed.getPropertyValue('--theme-sem-text-muted').trim()
+  return normalizeMonacoColor(muted, '#858585')
+}
+
+function normalizeMonacoColor (value, fallback) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return fallback
+  if (normalized.startsWith('#')) return normalized
+
+  const rgbaMatch = normalized.match(/^rgba?\(([^)]+)\)$/i)
+  if (!rgbaMatch) return fallback
+
+  const parts = rgbaMatch[1].split(',').map(part => part.trim())
+  if (parts.length < 3) return fallback
+
+  const [r, g, b] = parts.slice(0, 3).map(part => {
+    const numeric = Number.parseFloat(part)
+    if (!Number.isFinite(numeric)) return 0
+    return Math.max(0, Math.min(255, Math.round(numeric)))
+  })
+
+  const toHex = (channel) => channel.toString(16).padStart(2, '0')
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
+}
+
 function applyWorkspaceEditorTheme () {
   monaco.editor.defineTheme('workspace-dark', {
-    base: 'vs-dark',
+    base: window.getComputedStyle(document.documentElement).colorScheme.includes('light') ? 'vs' : 'vs-dark',
     inherit: true,
     rules: [],
     colors: {
-      'editor.background': resolveWorkspaceEditorBackground()
+      'editor.background': resolveWorkspaceEditorBackground(),
+      'editor.foreground': resolveWorkspaceEditorForeground(),
+      'editorLineNumber.foreground': resolveWorkspaceEditorLineNumber(),
+      'editorLineNumber.activeForeground': resolveWorkspaceEditorForeground()
     }
   })
   monaco.editor.setTheme('workspace-dark')
@@ -519,7 +561,7 @@ watch(
   gap: 8px;
   max-width: calc(100% - 124px);
   padding: 6px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
   background: color-mix(in srgb, var(--theme-sem-bg-project) 90%, black 10%);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
@@ -530,20 +572,20 @@ watch(
   padding: 0 10px;
   border: none;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.86);
+  background: color-mix(in srgb, var(--theme-sem-hover) 82%, transparent);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
   cursor: pointer;
 }
 
 .editor-change-nav__btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-sem-hover);
 }
 
 .editor-change-nav__meta {
   min-width: 34px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.52);
+  color: var(--theme-sem-text-muted);
   font-size: 12px;
 }
 

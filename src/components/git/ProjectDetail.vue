@@ -3306,6 +3306,7 @@ defineExpose({
   align-items: center;
   gap: 6px;
   padding-right: 0;
+  flex-wrap: wrap;
 }
 
 .create-btn, .pull-single-btn, .push-single-btn, .mr-single-btn,
@@ -3315,15 +3316,17 @@ defineExpose({
   justify-content: center;
   gap: 4px;
   padding: 8px 11px;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 11px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  line-height: 1;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
   white-space: nowrap;
   height: 32px;
   box-sizing: border-box;
+  box-shadow: inset 0 0 0 1px transparent;
 }
 
 .create-btn,
@@ -3335,84 +3338,110 @@ defineExpose({
   color: var(--theme-sem-text-primary);
 }
 
+.create-btn svg,
+.pull-single-btn svg,
+.push-single-btn svg,
+.mr-single-btn svg,
+.gitlab-open-btn svg,
+.finder-open-btn svg,
+.favorite-project-btn svg,
+.settings-btn svg {
+  flex-shrink: 0;
+}
+
 .create-btn {
-  background: var(--theme-sem-hover);
-  color: var(--theme-sem-text-primary);
+  background: var(--theme-comp-action-neutral-bg);
+  border-color: var(--theme-comp-action-neutral-border);
+  color: var(--theme-comp-action-neutral-text);
 }
 
 .create-btn:hover {
-  background: color-mix(in srgb, var(--theme-sem-hover) 70%, white 30%);
+  background: var(--theme-comp-action-neutral-hover-bg);
+  border-color: color-mix(in srgb, var(--theme-comp-action-neutral-border) 72%, transparent);
 }
 
 .pull-single-btn {
-  background: var(--theme-sem-warning-bg);
-  color: var(--theme-sem-accent-warning);
+  background: var(--theme-comp-action-pull-bg);
+  border-color: var(--theme-comp-action-pull-border);
+  color: var(--theme-comp-action-pull-text);
 }
 
 .pull-single-btn:hover {
-  background: color-mix(in srgb, var(--theme-sem-warning-bg) 80%, white 20%);
+  background: var(--theme-comp-action-pull-hover-bg);
+  border-color: color-mix(in srgb, var(--theme-comp-action-pull-border) 84%, transparent);
 }
 
 .push-single-btn {
-  background: var(--theme-sem-info-bg);
-  color: var(--theme-sem-accent-info);
+  background: var(--theme-comp-action-push-bg);
+  border-color: var(--theme-comp-action-push-border);
+  color: var(--theme-comp-action-push-text);
 }
 
 .push-single-btn:hover {
-  background: color-mix(in srgb, var(--theme-sem-info-bg) 80%, white 20%);
+  background: var(--theme-comp-action-push-hover-bg);
+  border-color: color-mix(in srgb, var(--theme-comp-action-push-border) 84%, transparent);
 }
 
 .mr-single-btn {
-  background: rgba(139, 92, 246, 0.18);
-  color: #c4b5fd;
+  background: var(--theme-comp-action-mr-bg);
+  border-color: var(--theme-comp-action-mr-border);
+  color: var(--theme-comp-action-mr-text);
 }
 
 .mr-single-btn:hover {
-  background: rgba(139, 92, 246, 0.26);
+  background: var(--theme-comp-action-mr-hover-bg);
+  border-color: color-mix(in srgb, var(--theme-comp-action-mr-border) 84%, transparent);
 }
 
 .gitlab-open-btn {
-  background: rgba(249, 115, 22, 0.18);
-  color: #fdba74;
+  background: var(--theme-comp-action-gitlab-bg);
+  border-color: var(--theme-comp-action-gitlab-border);
+  color: var(--theme-comp-action-gitlab-text);
 }
 
 .gitlab-open-btn:hover {
-  background: rgba(249, 115, 22, 0.26);
+  background: var(--theme-comp-action-gitlab-hover-bg);
+  border-color: color-mix(in srgb, var(--theme-comp-action-gitlab-border) 84%, transparent);
 }
 
 .finder-open-btn {
-  background: rgba(20, 184, 166, 0.18);
-  color: #99f6e4;
+  background: var(--theme-comp-action-visit-bg);
+  border-color: var(--theme-comp-action-visit-border);
+  color: var(--theme-comp-action-visit-text);
 }
 
 .finder-open-btn:hover {
-  background: rgba(20, 184, 166, 0.26);
+  background: var(--theme-comp-action-visit-hover-bg);
+  border-color: color-mix(in srgb, var(--theme-comp-action-visit-border) 84%, transparent);
 }
 
 .favorite-project-btn {
-  background: rgba(250, 204, 21, 0.08);
-  color: var(--theme-sem-accent-warning);
-  padding: 8px;
+  background: var(--theme-comp-action-favorite-bg);
+  border-color: var(--theme-comp-action-favorite-border);
+  color: var(--theme-comp-action-favorite-text);
 }
 
 .favorite-project-btn:hover {
-  background: rgba(250, 204, 21, 0.16);
-  color: #fef3c7;
+  background: var(--theme-comp-action-favorite-hover-bg);
+  border-color: color-mix(in srgb, var(--theme-comp-action-favorite-border) 84%, transparent);
 }
 
 .favorite-project-btn.active {
-  background: rgba(250, 204, 21, 0.22);
-  color: #facc15;
+  background: var(--theme-comp-action-favorite-active-bg);
+  border-color: color-mix(in srgb, var(--theme-comp-action-favorite-border) 92%, transparent);
+  color: var(--theme-comp-action-favorite-active-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-comp-action-favorite-border) 70%, transparent);
 }
 
 .settings-btn {
-  background: var(--theme-sem-hover);
-  color: var(--theme-sem-text-primary);
-  padding: 8px;
+  background: var(--theme-comp-action-neutral-bg);
+  border-color: var(--theme-comp-action-neutral-border);
+  color: var(--theme-comp-action-neutral-text);
 }
 .settings-btn:hover { 
-  background: color-mix(in srgb, var(--theme-sem-hover) 65%, white 35%);
-  color: var(--theme-sem-text-primary);
+  background: var(--theme-comp-action-neutral-hover-bg);
+  border-color: color-mix(in srgb, var(--theme-comp-action-neutral-border) 72%, transparent);
+  color: var(--theme-comp-action-neutral-text);
 }
 
 .pull-count-badge, .push-count-badge {
@@ -3483,7 +3512,7 @@ defineExpose({
   flex-direction: column;
   background: var(--theme-sem-bg-project);
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  scrollbar-color: var(--theme-sem-border-default) transparent;
 }
 
 .branches-panel-scroll::-webkit-scrollbar {
@@ -3496,7 +3525,7 @@ defineExpose({
 }
 
 .branches-panel-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-sem-border-default);
   border-radius: 1.5px;
 }
 
@@ -3753,7 +3782,7 @@ defineExpose({
   padding: 0;
   border-radius: 0;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--theme-sem-text-muted);
 }
 
 .refresh-btn {
@@ -3803,6 +3832,14 @@ defineExpose({
 }
 
 .branch-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.branch-item .branch-name,
+.tag-item .branch-name {
+  color: var(--theme-sem-text-primary);
+}
+
+.branch-item.remote-branch .branch-name {
+  color: var(--theme-sem-text-secondary);
+}
 
 .branch-status-indicator {
   display: flex;
@@ -3818,7 +3855,7 @@ defineExpose({
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   margin-left: 6px;
 }
 
@@ -3864,7 +3901,7 @@ defineExpose({
 }
 
 .pipeline-status-pill:hover {
-  background: color-mix(in srgb, var(--theme-sem-warning-bg) 80%, white 20%);
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 92%, var(--theme-sem-hover) 8%);
 }
 
 .pipeline-inline-status {
@@ -3891,7 +3928,7 @@ defineExpose({
 }
 
 .remote-branch { 
-  color: rgba(255, 255, 255, 0.6); 
+  color: var(--theme-sem-text-muted); 
 }
 
 .tag-item {
@@ -3900,7 +3937,7 @@ defineExpose({
   padding: 5px 16px 5px 24px;
   cursor: pointer;
   transition: background-color 0.2s;
-  color: var(--theme-sem-text-secondary);
+  color: var(--theme-sem-text-primary);
   user-select: none;
   margin: 1px 0;
   border-radius: 9px;
@@ -3924,8 +3961,8 @@ defineExpose({
   position: relative;
   background: var(--theme-sem-bg-project);
   border-radius: var(--theme-comp-radius-selected);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--theme-sem-border-default);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-sem-border-strong) 36%, transparent);
 }
 
 /* 右侧各视图占满剩余高度，避免子组件 height:100% 无参照 */
@@ -4013,7 +4050,7 @@ defineExpose({
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.6)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(120,134,156,0.88)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 36px;
@@ -4070,7 +4107,7 @@ defineExpose({
 }
 
 .cancel-btn-large:hover {
-  background: color-mix(in srgb, var(--theme-sem-hover) 70%, white 30%);
+  background: color-mix(in srgb, var(--theme-sem-hover) 82%, transparent);
 }
 
 .confirm-btn-large {
@@ -4079,7 +4116,7 @@ defineExpose({
   font-weight: 500;
   border: none;
   background: var(--theme-sem-accent-primary);
-  color: white;
+  color: var(--theme-sem-text-on-accent);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -4094,7 +4131,7 @@ defineExpose({
   font-weight: 500;
   border: none;
   background: var(--theme-sem-danger-bg);
-  color: white;
+  color: var(--theme-sem-text-on-accent);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
