@@ -1767,7 +1767,7 @@ ipcMain.handle('browser-show-native-menu', async (event) => {
       { label: '历史记录', click: () => { selectedAction = 'browsing-history' } },
       { label: '密码管理', click: () => { selectedAction = 'password-manager' } },
       { label: '下载管理', click: () => { selectedAction = 'download-panel' } },
-      { label: '终端', click: () => { selectedAction = 'standalone-terminal' } },
+      { label: '灵动终端', click: () => { selectedAction = 'standalone-terminal' } },
       { label: '分屏终端', click: () => { selectedAction = 'standalone-terminal-split' } },
       { type: 'separator' },
       { label: '备份管理', click: () => { selectedAction = 'backup-manager' } }
@@ -1883,7 +1883,7 @@ ipcMain.handle('browser-show-floating-menu', async (event, { x, y } = {}) => {
     <div class="item" data-action="browsing-history"><span class="icon">◷</span><span>历史记录</span></div>
     <div class="item" data-action="password-manager"><span class="icon">⌘</span><span>密码管理</span></div>
     <div class="item" data-action="download-panel"><span class="icon">⇩</span><span>下载管理</span></div>
-    <div class="item" data-action="standalone-terminal"><span class="icon">⌨</span><span>终端</span></div>
+    <div class="item" data-action="standalone-terminal"><span class="icon">⌨</span><span>灵动终端</span></div>
     <div class="item" data-action="standalone-terminal-split"><span class="icon">⌨</span><span>分屏终端</span></div>
     <div class="divider"></div>
     <div class="item" data-action="backup-manager"><span class="icon">⬢</span><span>备份管理</span></div>

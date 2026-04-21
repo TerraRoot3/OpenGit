@@ -130,7 +130,7 @@
             </div>
             <div class="menu-item" @click="openStandaloneTerminal">
               <Terminal :size="16" />
-              <span>终端</span>
+              <span>灵动终端</span>
             </div>
             <div class="menu-item" @click="openStandaloneSplitTerminal">
               <Terminal :size="16" />
@@ -553,7 +553,7 @@ const routeConfig = {
   'standalone-terminal-focus': {
     pattern: /^about:terminal-focus$/,
     component: 'FocusTerminalStack',
-    title: '终端（聚焦）',
+    title: '灵动终端',
     icon: 'Terminal',
     showWebview: false,
     defaultUrl: 'about:terminal-focus'
@@ -1495,7 +1495,7 @@ const openBackupManager = () => {
 
 const openStandaloneTerminal = () => {
   showMenu.value = false
-  const tab = createBrowserTab('about:terminal-focus', '终端')
+  const tab = createBrowserTab('about:terminal-focus', '灵动终端')
   tab.type = 'standalone-terminal-focus'
   switchBrowserTab(tab.id)
   currentUrl.value = 'about:terminal-focus'
@@ -1566,7 +1566,7 @@ const baseAboutPages = [
   { url: 'about:password', title: '密码管理', icon: 'Key' },
   { url: 'about:history', title: '历史记录', icon: 'History' },
   { url: 'about:backup', title: '备份管理', icon: 'HardDrive' },
-  { url: 'about:terminal-focus', title: '终端', icon: 'Terminal' },
+  { url: 'about:terminal-focus', title: '灵动终端', icon: 'Terminal' },
   { url: 'about:terminal-split', title: '终端（分屏）', icon: 'Terminal' },
   { url: 'about:terminal', title: '终端（经典）', icon: 'Terminal' }
   // 扩展管理暂时隐藏

@@ -251,6 +251,8 @@ const props = defineProps({
   singlePaneChrome: { type: Boolean, default: false },
   /** 聚焦多终端：当前格是否为键盘焦点（isActive 表示标签页是否在前台，二者分离） */
   focusPaneFocused: { type: Boolean, default: true },
+  /** 灵动终端壳层动画期间，冻结内部 ResizeObserver，避免大缓冲区终端每帧重排 */
+  suspendSinglePaneResize: { type: Boolean, default: false },
   /** 与 singlePaneChrome 配合：显示关闭（由父级移除该面板） */
   showCloseButton: { type: Boolean, default: false },
   /** 分屏独立页：禁用“新建终端/目录新建”，只能通过 split 新增会话 */
@@ -289,6 +291,7 @@ const TERMINAL_RESTORE_NOTICE = '\r\n\x1b[33m已恢复上次终端内容，新�
 const TERMINAL_RESTORE_EXITED_NOTICE = '\r\n\x1b[33m已恢复上次终端内容，原终端会话已结束。\x1b[0m\r\n'
 const SPLIT_RATIO_MIN = 0.15
 const SPLIT_RATIO_MAX = 0.85
+const PROGRAMMATIC_FOCUS_SIGINT_GUARD_MS = 160
 const handleDocumentClick = (event) => {
   if (cwdMenuRef.value && !cwdMenuRef.value.contains(event.target)) {
     showCwdMenu.value = false
@@ -634,6 +637,11 @@ const destroyPtySilently = async (ptyId) => {
   if (!ptyId) return
   markPtyClosedLocally(ptyId)
   await window.electronAPI.terminal.destroy({ id: ptyId }).catch(() => {})
+}
+
+const armProgrammaticFocusSigintGuard = (term) => {
+  if (!term) return
+  term._programmaticFocusSigintGuardUntil = performance.now() + PROGRAMMATIC_FOCUS_SIGINT_GUARD_MS
 }
 
 // ---- 终端实例管理 ----
@@ -1051,6 +1059,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     hasUserInput: restoredHasUserInput,
     restoreViewportToBottom: true,
     viewportDirtyWhileHidden: false,
+    _programmaticFocusSigintGuardUntil: 0,
     _viewportRevealTimerId: null,
     _dropHandlers: null,
     _focusCleanup: null
@@ -1068,6 +1077,15 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
   }
 
   xterm.onData((data) => {
+    if (
+      props.singlePaneChrome &&
+      data === '\x03' &&
+      performance.now() <= (term._programmaticFocusSigintGuardUntil || 0)
+    ) {
+      term._programmaticFocusSigintGuardUntil = 0
+      return
+    }
+    term._programmaticFocusSigintGuardUntil = 0
     if (term.ptyId && term.connected) {
       term.hasUserInput = true
       window.electronAPI.terminal.write({ id: term.ptyId, data })
@@ -1151,7 +1169,7 @@ const addTerminalInDir = async (cwd, label) => {
 
 const canMeasureTerminal = () => {
   if (!containerRef.value) return false
-  // 聚焦多终端：未聚焦的面板仍可见，需在 flex/grid 动画中持续 fit + 贴底
+  // 灵动终端：只有当前聚焦 pane 需要做真实 reflow，未聚焦 pane 只保留容器动画。
   if (!props.isActive && !props.singlePaneChrome) return false
   const rect = containerRef.value.getBoundingClientRect()
   return rect.width > 0 && rect.height > 0
@@ -1216,10 +1234,12 @@ const throttleSinglePanePtyResize = (term) => {
 
 const refreshVisibleTerminal = (term, focus = true) => {
   if (!term) return
-  let stickToBottom = !!term.restoreViewportToBottom
   if (props.singlePaneChrome && !props.focusPaneFocused) {
-    stickToBottom = true
+    term.restoreViewportToBottom = true
+    term.viewportDirtyWhileHidden = true
+    return
   }
+  let stickToBottom = !!term.restoreViewportToBottom
   const shouldFocusXterm = props.singlePaneChrome ? (focus && props.focusPaneFocused) : focus
   const forceViewportReconcile = !!term.viewportDirtyWhileHidden
   term.restoreViewportToBottom = false
@@ -1265,6 +1285,10 @@ const switchTab = (tabId) => {
 const focusSplitPane = (termId) => {
   if (!termId) return
   activeTermId.value = termId
+  if (props.singlePaneChrome) {
+    schedulePersistedSnapshot()
+    return
+  }
   const term = findTerminalById(termId)
   refreshVisibleTerminal(term, true)
   schedulePersistedSnapshot()
@@ -1653,6 +1677,84 @@ const restartTerminalById = async (termId = '', cwdOverride = null) => {
 
 const restartTerminal = async (cwdOverride = null) => {
   await restartTerminalById('', cwdOverride)
+}
+
+const focusCurrentTerminal = () => {
+  const term = currentTerminal.value || terminals.value[0]
+  if (!term) return
+  if (props.singlePaneChrome && props.focusPaneFocused) {
+    armProgrammaticFocusSigintGuard(term)
+  }
+  refreshVisibleTerminal(term, true)
+}
+
+const focusCurrentTerminalLightweight = () => {
+  const term = currentTerminal.value || terminals.value[0]
+  if (!term?.xterm) return
+  if (props.singlePaneChrome && props.focusPaneFocused) {
+    armProgrammaticFocusSigintGuard(term)
+  }
+  nextTick(() => {
+    try {
+      term.xterm.focus()
+    } catch {}
+  })
+}
+
+const syncSinglePaneViewport = (term, { notifyPty = false } = {}) => {
+  if (!term?.xterm) return
+  try {
+    term.fitAddon?.fit?.()
+  } catch {}
+  try {
+    if (Number.isFinite(term.xterm.rows) && term.xterm.rows > 0) {
+      term.xterm.refresh(0, term.xterm.rows - 1)
+    }
+  } catch {}
+  try {
+    term.xterm?._core?.viewport?.syncScrollArea?.(true, true)
+  } catch {}
+  if (notifyPty) {
+    applySinglePanePtyResizeIfChanged(term)
+  }
+}
+
+const revealCurrentTerminalAfterAnimation = () => {
+  const term = currentTerminal.value || terminals.value[0]
+  if (!term?.xterm) return
+  armProgrammaticFocusSigintGuard(term)
+  term.restoreViewportToBottom = true
+  term.viewportDirtyWhileHidden = true
+  nextTick(() => {
+    scheduleViewportRevealSync({
+      term,
+      canMeasure: canMeasureTerminal,
+      focus: true,
+      stickToBottom: true,
+      forceViewportReconcile: true,
+      requestFrame: (callback) => requestAnimationFrame(callback),
+      setTimer: (callback, delay) => window.setTimeout(callback, delay),
+      clearTimer: (timerId) => window.clearTimeout(timerId),
+      followupDelayMs: 48,
+      resizePty() {
+        applySinglePanePtyResizeIfChanged(term)
+      },
+      reconcileViewport(immediate) {
+        term.xterm?._core?.viewport?.syncScrollArea?.(immediate, true)
+      }
+    })
+  })
+}
+
+const reconcileCurrentTerminalAfterAnimation = () => {
+  if (!props.singlePaneChrome || !props.focusPaneFocused) return
+  const term = currentTerminal.value || terminals.value[0]
+  if (!term?.xterm) return
+  syncSinglePaneViewport(term, { notifyPty: true })
+  requestAnimationFrame(() => {
+    if (!props.isActive || !props.focusPaneFocused || !term?.xterm) return
+    syncSinglePaneViewport(term, { notifyPty: true })
+  })
 }
 
 const ensureDefaultTerminal = async (cwdOverride = '') => {
@@ -2196,10 +2298,12 @@ const ipcHandler = {
 
 let resizeTimer = null
 let resizeRafId = null
-
 watch(() => [props.isActive, props.focusPaneFocused], ([active, paneFocused]) => {
   if (active && paneFocused && terminals.value.length > 0) {
-    if (props.singlePaneChrome) clearDeferredSinglePanePtyResize()
+    if (props.singlePaneChrome) {
+      clearDeferredSinglePanePtyResize()
+      return
+    }
     applyLayout(true)
     return
   }
@@ -2281,6 +2385,7 @@ onMounted(() => {
 
   const ro = new ResizeObserver(() => {
     if (props.singlePaneChrome) {
+      if (props.suspendSinglePaneResize || !props.focusPaneFocused) return
       if (resizeRafId != null) return
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null
@@ -2340,7 +2445,16 @@ onUnmounted(() => {
   unregister(ipcHandler)
 })
 
-defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand })
+defineExpose({
+  clearTerminal,
+  restartTerminal,
+  ensureDefaultTerminal,
+  runCommand,
+  focusCurrentTerminal,
+  focusCurrentTerminalLightweight,
+  reconcileCurrentTerminalAfterAnimation,
+  revealCurrentTerminalAfterAnimation
+})
 </script>
 
 <style scoped>
@@ -2623,11 +2737,14 @@ defineExpose({ clearTerminal, restartTerminal, ensureDefaultTerminal, runCommand
   height: 100%;
   position: relative;
   box-sizing: border-box;
+  border-radius: inherit;
+  overflow: hidden;
 }
 .terminal-pane.inactive .terminal-pane-content::after {
   content: '';
   position: absolute;
   inset: 0;
+  border-radius: inherit;
   background: rgba(214, 176, 74, 0.05);
   pointer-events: none;
   z-index: 2;

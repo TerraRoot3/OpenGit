@@ -19,7 +19,7 @@
             role="tab"
             :aria-selected="focusedId === s.id"
             :ref="(el) => setTabElRef(s.id, el)"
-            @click="focusSession(s.id)"
+            @click="activateSession(s.id)"
           >
             <span class="focus-tab__label" :title="tabLabel(s.id)">{{ tabLabel(s.id) }}</span>
             <button
@@ -51,7 +51,7 @@
       name="focus-pane"
       tag="div"
       class="focus-terminal-layout"
-      :class="[layoutRootClass, { 'is-5to4-transition': isFiveToFourTransition, 'is-wrap-transition': isWrapTransition }]"
+      :class="layoutRootClass"
       :style="layoutRootStyle"
     >
       <!-- 单一 v-for：切勿在 n=5 时换另一套 DOM（上三下二），否则从 4→5 会卸载重建全部 TerminalPanel，快照重放 + 旧 PTY 断开 -->
@@ -62,13 +62,14 @@
         :class="{ 'is-focused': focusedId === s.id }"
         :ref="(el) => setPaneElRef(s.id, el)"
         :style="paneStyle(i)"
-        @mousedown="focusSession(s.id)"
+        @mousedown.capture="handlePaneMouseDown(s.id, $event)"
       >
         <TerminalPanel
           :ref="(el) => setPanelRef(s.id, el)"
           :default-cwd="defaultCwd"
           :snapshot-cache-key="paneSnapshotKey(s.id)"
           single-pane-chrome
+          :suspend-single-pane-resize="activatingSessionId !== ''"
           :show-close-button="sessions.length > 1"
           :allow-first-terminal-without-cwd="true"
           :is-active="isActive"
@@ -108,6 +109,11 @@ onMounted(() => {
   void hydrate()
 })
 
+const PANE_LAYOUT_SETTLE_TIMEOUT_MS = 900
+let activationSequence = 0
+let pendingActivationCleanup = null
+const activatingSessionId = ref('')
+
 /** 与各 TerminalPanel 顶栏 tabTitlePart 同步（主进程/Shell onTitleChange） */
 const paneTitles = reactive({})
 
@@ -120,6 +126,109 @@ function setPaneTitle(sessionId, title) {
 function tabLabel(sessionId) {
   const t = paneTitles[sessionId]
   return typeof t === 'string' && t.trim() ? t.trim() : '终端'
+}
+
+async function activateSession(sessionId) {
+  if (!sessionId) return
+  activationSequence += 1
+  const sequence = activationSequence
+  const isAlreadyFocused = focusedId.value === sessionId
+  focusSession(sessionId)
+  clearPendingActivationWait()
+  activatingSessionId.value = isAlreadyFocused ? '' : sessionId
+  await nextTick()
+  if (isAlreadyFocused) {
+    panelRefById.get(sessionId)?.focusCurrentTerminalLightweight?.()
+    return
+  }
+  await waitForPaneLayoutSettled()
+  if (sequence !== activationSequence) return
+  activatingSessionId.value = ''
+  panelRefById.get(sessionId)?.revealCurrentTerminalAfterAnimation?.()
+}
+
+function clearPendingActivationWait() {
+  if (typeof pendingActivationCleanup === 'function') {
+    pendingActivationCleanup()
+    pendingActivationCleanup = null
+  }
+}
+
+function buildPaneLayoutSignature() {
+  const entries = Array.from(paneElById.entries()).sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+  if (!entries.length) return ''
+  return entries.map(([sessionId, paneEl]) => {
+    if (!(paneEl instanceof HTMLElement) || !paneEl.isConnected) {
+      return `${sessionId}:missing`
+    }
+    const rect = paneEl.getBoundingClientRect()
+    return [
+      sessionId,
+      Math.round(rect.left),
+      Math.round(rect.top),
+      Math.round(rect.width),
+      Math.round(rect.height)
+    ].join(':')
+  }).join('|')
+}
+
+function waitForPaneLayoutSettled() {
+  return new Promise((resolve) => {
+    let finished = false
+    let rafId = 0
+    let stableFrames = 0
+    let lastSignature = ''
+    const startedAt = performance.now()
+
+    const finalize = () => {
+      if (finished) return
+      finished = true
+      cleanup()
+      resolve()
+    }
+
+    const tick = () => {
+      const signature = buildPaneLayoutSignature()
+      if (!signature) {
+        finalize()
+        return
+      }
+      if (signature === lastSignature) {
+        stableFrames += 1
+      } else {
+        lastSignature = signature
+        stableFrames = 0
+      }
+      if (stableFrames >= 1 || performance.now() - startedAt >= PANE_LAYOUT_SETTLE_TIMEOUT_MS) {
+        finalize()
+        return
+      }
+      rafId = requestAnimationFrame(tick)
+    }
+
+    const cleanup = () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+        rafId = 0
+      }
+      if (pendingActivationCleanup === cleanup) {
+        pendingActivationCleanup = null
+      }
+    }
+
+    pendingActivationCleanup = cleanup
+    rafId = requestAnimationFrame(tick)
+  })
+}
+
+function handlePaneMouseDown(sessionId, event) {
+  if (!sessionId) return
+  if (focusedId.value === sessionId && activatingSessionId.value !== sessionId) {
+    return
+  }
+  event.preventDefault()
+  event.stopPropagation()
+  void activateSession(sessionId)
 }
 
 watch(
@@ -163,13 +272,7 @@ const focusIndex = computed(() =>
 const count = computed(() => sessions.value.length)
 const paneElById = new Map()
 const panelRefById = new Map()
-const prevPaneRects = new Map()
-let pendingCountFrom = count.value
-const isFiveToFourTransition = ref(false)
-const isWrapTransition = ref(false)
-let fiveToFourTimer = null
-let wrapTransitionTimer = null
-const UNIFIED_ANIM_MS = 360
+const PANE_GAP_PX = 4
 
 function setPaneElRef(id, el) {
   if (el instanceof HTMLElement) paneElById.set(id, el)
@@ -180,114 +283,6 @@ function setPanelRef(id, panel) {
   if (panel) panelRefById.set(id, panel)
   else panelRefById.delete(id)
 }
-
-function capturePaneRects() {
-  prevPaneRects.clear()
-  for (const [id, el] of paneElById.entries()) {
-    if (!(el instanceof HTMLElement) || !el.isConnected) continue
-    prevPaneRects.set(id, el.getBoundingClientRect())
-  }
-}
-
-function playPaneFlip() {
-  if (!prevPaneRects.size) return
-  for (const [id, el] of paneElById.entries()) {
-    const prev = prevPaneRects.get(id)
-    if (!prev || !(el instanceof HTMLElement) || !el.isConnected) continue
-    const next = el.getBoundingClientRect()
-    const sxRaw = next.width > 0 ? prev.width / next.width : 1
-    const syRaw = next.height > 0 ? prev.height / next.height : 1
-    // 缓和缩放幅度：减少跨行重排时终端内容重采样导致的“闪”
-    const sx = 1 + (sxRaw - 1) * 0.55
-    const sy = 1 + (syRaw - 1) * 0.55
-    const needAnim = Math.abs(sx - 1) > 0.01 || Math.abs(sy - 1) > 0.01
-    if (!needAnim) continue
-
-    el.animate(
-      [
-        { transformOrigin: 'center center', transform: `scale(${sx}, ${sy})`, opacity: 1 },
-        { transformOrigin: 'center center', transform: 'scale(1, 1)', opacity: 1 }
-      ],
-      {
-        duration: UNIFIED_ANIM_MS,
-        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-        fill: 'both'
-      }
-    )
-  }
-  prevPaneRects.clear()
-}
-
-watch(
-  count,
-  (next, prev) => {
-    pendingCountFrom = prev
-    const prevRows = getLayoutRowCount(prev)
-    const nextRows = getLayoutRowCount(next)
-    isWrapTransition.value = prevRows !== nextRows
-    if (wrapTransitionTimer) clearTimeout(wrapTransitionTimer)
-    if (isWrapTransition.value) {
-      wrapTransitionTimer = setTimeout(() => {
-        isWrapTransition.value = false
-        wrapTransitionTimer = null
-      }, UNIFIED_ANIM_MS)
-    }
-    if (prev === 5 && next === 4) {
-      isFiveToFourTransition.value = true
-      if (fiveToFourTimer) clearTimeout(fiveToFourTimer)
-      fiveToFourTimer = setTimeout(() => {
-        isFiveToFourTransition.value = false
-        fiveToFourTimer = null
-      }, UNIFIED_ANIM_MS)
-    }
-    capturePaneRects()
-  },
-  { flush: 'pre' }
-)
-watch(
-  count,
-  (next) => {
-    nextTick(() => {
-      // 跨行和 5 -> 4 这类大重排阶段跳过 FLIP，避免终端内容缩放重采样导致掉帧。
-      if (isWrapTransition.value || (pendingCountFrom === 5 && next === 4)) {
-        prevPaneRects.clear()
-        return
-      }
-      playPaneFlip()
-    })
-  },
-  { flush: 'post' }
-)
-
-function playFocusPulse(sessionId) {
-  if (isFiveToFourTransition.value) return
-  const el = paneElById.get(sessionId)
-  if (!(el instanceof HTMLElement) || !el.isConnected) return
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return
-  el.animate(
-    [
-      { transform: 'translateZ(0) scale(1)' },
-      { transform: 'translateZ(0) scale(1)' },
-      { transform: 'translateZ(0) scale(1)' }
-    ],
-    {
-      duration: UNIFIED_ANIM_MS,
-      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-      fill: 'none'
-    }
-  )
-}
-
-watch(
-  focusedId,
-  (nextId, prevId) => {
-    if (!nextId || nextId === prevId) return
-    nextTick(() => {
-      playFocusPulse(nextId)
-    })
-  },
-  { flush: 'post' }
-)
 
 /** n≥4：选列/行数，避免单行铺满；在候选方案中优先更少空白格、更接近正方形、略偏宽屏 */
 function computeGridDims(n) {
@@ -312,13 +307,6 @@ function computeGridDims(n) {
   })
   const best = candidates[0]
   return { cols: best.cols, rows: best.rows }
-}
-
-function getLayoutRowCount(n) {
-  if (n <= 0) return 0
-  if (n <= 3) return 1
-  if (n === 5 || n === 6 || n === 7) return 2
-  return computeGridDims(n).rows
 }
 
 /** 聚焦格相对更大：3:1（原 2:1） */
@@ -350,24 +338,32 @@ function gridStyleForFocus(focusIdx, cols, rows) {
   const focusRow = Math.floor(safe / cols)
   const focusCol = safe % cols
   const gridTemplateColumns = Array.from({ length: cols }, (_, c) => (c === focusCol ? FOCUS_FR : UNFOCUS_FR)).join(' ')
-  const gridTemplateRows = padTemplateTracks(
-    Array.from({ length: rows }, (_, r) => (r === focusRow ? FOCUS_FR : UNFOCUS_FR)).join(' '),
-    MAX_GRID_ROWS
-  )
+  const gridTemplateRows = Array.from({ length: rows }, (_, r) => (r === focusRow ? FOCUS_FR : UNFOCUS_FR)).join(' ')
   return { gridTemplateColumns, gridTemplateRows }
 }
 
 const layoutRootClass = computed(() => {
-  const n = count.value
-  if (n === 1) return 'layout--1'
-  if (n === 2 || n === 3) return 'layout--row'
-  return 'layout--grid'
+  return 'layout--absolute'
 })
 
 const layoutRootStyle = computed(() => {
   const n = count.value
   const fi = focusIndex.value
-  if (n === 2 || n === 3) return {}
+  if (n <= 0) return {}
+  if (n === 1) {
+    return {
+      gridTemplateColumns: '1fr',
+      gridTemplateRows: '1fr',
+      gap: `${PANE_GAP_PX}px`
+    }
+  }
+  if (n === 2 || n === 3) {
+    return {
+      gridTemplateColumns: Array.from({ length: n }, (_, index) => (index === fi ? FOCUS_FR : UNFOCUS_FR)).join(' '),
+      gridTemplateRows: '1fr',
+      gap: `${PANE_GAP_PX}px`
+    }
+  }
   /** 上 3 下 2 / 上 4 下 3：12 列栅格，下排铺满整行 */
   if (n === 5) {
     const topFocused = fi <= 2
@@ -375,10 +371,9 @@ const layoutRootStyle = computed(() => {
       ? `${SPLIT_FOCUS_ROW_FR} ${SPLIT_UNFOCUS_ROW_FR}`
       : `${SPLIT_UNFOCUS_ROW_FR} ${SPLIT_FOCUS_ROW_FR}`
     return {
-      display: 'grid',
       gridTemplateColumns: 'repeat(12, 1fr)',
-      gridTemplateRows: padTemplateTracks(rowsStr, MAX_GRID_ROWS),
-      gap: '4px'
+      gridTemplateRows: rowsStr,
+      gap: `${PANE_GAP_PX}px`
     }
   }
   if (n === 7) {
@@ -387,10 +382,9 @@ const layoutRootStyle = computed(() => {
       ? `${SPLIT_FOCUS_ROW_FR} ${SPLIT_UNFOCUS_ROW_FR}`
       : `${SPLIT_UNFOCUS_ROW_FR} ${SPLIT_FOCUS_ROW_FR}`
     return {
-      display: 'grid',
       gridTemplateColumns: 'repeat(12, 1fr)',
-      gridTemplateRows: padTemplateTracks(rowsStr, MAX_GRID_ROWS),
-      gap: '4px'
+      gridTemplateRows: rowsStr,
+      gap: `${PANE_GAP_PX}px`
     }
   }
   if (n === 6) {
@@ -399,156 +393,231 @@ const layoutRootStyle = computed(() => {
       ? `${SPLIT_FOCUS_ROW_FR} ${SPLIT_UNFOCUS_ROW_FR}`
       : `${SPLIT_UNFOCUS_ROW_FR} ${SPLIT_FOCUS_ROW_FR}`
     return {
-      display: 'grid',
       gridTemplateColumns: 'repeat(12, 1fr)',
-      gridTemplateRows: padTemplateTracks(rowsStr, MAX_GRID_ROWS),
-      gap: '4px'
+      gridTemplateRows: rowsStr,
+      gap: `${PANE_GAP_PX}px`
     }
   }
   if (n < 4) return {}
   const { cols, rows } = computeGridDims(n)
   const { gridTemplateColumns, gridTemplateRows } = gridStyleForFocus(fi, cols, rows)
   return {
-    display: 'grid',
     gridTemplateColumns,
     gridTemplateRows,
-    gap: '4px'
+    gap: `${PANE_GAP_PX}px`
   }
 })
 
-function paneStyle(i) {
+function panePlacement(i) {
   const n = count.value
   if (n === 1) {
-    return { flex: '1 1 auto', minWidth: 0, minHeight: 0 }
+    return { gridColumn: '1 / span 1', gridRow: 1 }
   }
   if (n === 2 || n === 3) {
-    return {
-      flex: i === focusIndex.value ? '3 1 0%' : '1 1 0%',
-      minWidth: 0,
-      minHeight: 0
-    }
+    return { gridColumn: `${i + 1} / span 1`, gridRow: 1 }
   }
   if (n === 5) {
-    const base = { minWidth: 0, minHeight: 0 }
     const fi = focusIndex.value
     /** 与 2/3 个终端一致：聚焦格约 3:1 于同行其它格 */
     if (fi <= 2) {
       if (i <= 2) {
         if (fi === 0) {
-          if (i === 0) return { ...base, gridColumn: '1 / span 6', gridRow: 1 }
-          if (i === 1) return { ...base, gridColumn: '7 / span 3', gridRow: 1 }
-          return { ...base, gridColumn: '10 / span 3', gridRow: 1 }
+          if (i === 0) return { gridColumn: '1 / span 6', gridRow: 1 }
+          if (i === 1) return { gridColumn: '7 / span 3', gridRow: 1 }
+          return { gridColumn: '10 / span 3', gridRow: 1 }
         }
         if (fi === 1) {
-          if (i === 0) return { ...base, gridColumn: '1 / span 3', gridRow: 1 }
-          if (i === 1) return { ...base, gridColumn: '4 / span 6', gridRow: 1 }
-          return { ...base, gridColumn: '10 / span 3', gridRow: 1 }
+          if (i === 0) return { gridColumn: '1 / span 3', gridRow: 1 }
+          if (i === 1) return { gridColumn: '4 / span 6', gridRow: 1 }
+          return { gridColumn: '10 / span 3', gridRow: 1 }
         }
-        if (i === 0) return { ...base, gridColumn: '1 / span 3', gridRow: 1 }
-        if (i === 1) return { ...base, gridColumn: '4 / span 3', gridRow: 1 }
-        return { ...base, gridColumn: '7 / span 6', gridRow: 1 }
+        if (i === 0) return { gridColumn: '1 / span 3', gridRow: 1 }
+        if (i === 1) return { gridColumn: '4 / span 3', gridRow: 1 }
+        return { gridColumn: '7 / span 6', gridRow: 1 }
       }
-      if (i === 3) return { ...base, gridColumn: '1 / span 6', gridRow: 2 }
-      return { ...base, gridColumn: '7 / span 6', gridRow: 2 }
+      if (i === 3) return { gridColumn: '1 / span 6', gridRow: 2 }
+      return { gridColumn: '7 / span 6', gridRow: 2 }
     }
     if (i <= 2) {
-      return { ...base, gridColumn: `${i * 4 + 1} / span 4`, gridRow: 1 }
+      return { gridColumn: `${i * 4 + 1} / span 4`, gridRow: 1 }
     }
     if (fi === 3) {
-      if (i === 3) return { ...base, gridColumn: '1 / span 9', gridRow: 2 }
-      return { ...base, gridColumn: '10 / span 3', gridRow: 2 }
+      if (i === 3) return { gridColumn: '1 / span 9', gridRow: 2 }
+      return { gridColumn: '10 / span 3', gridRow: 2 }
     }
-    if (i === 3) return { ...base, gridColumn: '1 / span 3', gridRow: 2 }
-    return { ...base, gridColumn: '4 / span 9', gridRow: 2 }
+    if (i === 3) return { gridColumn: '1 / span 3', gridRow: 2 }
+    return { gridColumn: '4 / span 9', gridRow: 2 }
   }
   if (n === 7) {
-    const base = { minWidth: 0, minHeight: 0 }
     const fi = focusIndex.value
     if (fi <= 3) {
       if (i <= 3) {
         if (fi === 0) {
-          if (i === 0) return { ...base, gridColumn: '1 / span 6', gridRow: 1 }
-          if (i === 1) return { ...base, gridColumn: '7 / span 2', gridRow: 1 }
-          if (i === 2) return { ...base, gridColumn: '9 / span 2', gridRow: 1 }
-          return { ...base, gridColumn: '11 / span 2', gridRow: 1 }
+          if (i === 0) return { gridColumn: '1 / span 6', gridRow: 1 }
+          if (i === 1) return { gridColumn: '7 / span 2', gridRow: 1 }
+          if (i === 2) return { gridColumn: '9 / span 2', gridRow: 1 }
+          return { gridColumn: '11 / span 2', gridRow: 1 }
         }
         if (fi === 1) {
-          if (i === 0) return { ...base, gridColumn: '1 / span 2', gridRow: 1 }
-          if (i === 1) return { ...base, gridColumn: '3 / span 6', gridRow: 1 }
-          if (i === 2) return { ...base, gridColumn: '9 / span 2', gridRow: 1 }
-          return { ...base, gridColumn: '11 / span 2', gridRow: 1 }
+          if (i === 0) return { gridColumn: '1 / span 2', gridRow: 1 }
+          if (i === 1) return { gridColumn: '3 / span 6', gridRow: 1 }
+          if (i === 2) return { gridColumn: '9 / span 2', gridRow: 1 }
+          return { gridColumn: '11 / span 2', gridRow: 1 }
         }
         if (fi === 2) {
-          if (i === 0) return { ...base, gridColumn: '1 / span 2', gridRow: 1 }
-          if (i === 1) return { ...base, gridColumn: '3 / span 2', gridRow: 1 }
-          if (i === 2) return { ...base, gridColumn: '5 / span 6', gridRow: 1 }
-          return { ...base, gridColumn: '11 / span 2', gridRow: 1 }
+          if (i === 0) return { gridColumn: '1 / span 2', gridRow: 1 }
+          if (i === 1) return { gridColumn: '3 / span 2', gridRow: 1 }
+          if (i === 2) return { gridColumn: '5 / span 6', gridRow: 1 }
+          return { gridColumn: '11 / span 2', gridRow: 1 }
         }
-        if (i === 0) return { ...base, gridColumn: '1 / span 2', gridRow: 1 }
-        if (i === 1) return { ...base, gridColumn: '3 / span 2', gridRow: 1 }
-        if (i === 2) return { ...base, gridColumn: '5 / span 2', gridRow: 1 }
-        return { ...base, gridColumn: '7 / span 6', gridRow: 1 }
+        if (i === 0) return { gridColumn: '1 / span 2', gridRow: 1 }
+        if (i === 1) return { gridColumn: '3 / span 2', gridRow: 1 }
+        if (i === 2) return { gridColumn: '5 / span 2', gridRow: 1 }
+        return { gridColumn: '7 / span 6', gridRow: 1 }
       }
       const bi = i - 4
-      return { ...base, gridColumn: `${bi * 4 + 1} / span 4`, gridRow: 2 }
+      return { gridColumn: `${bi * 4 + 1} / span 4`, gridRow: 2 }
     }
     if (i <= 3) {
-      return { ...base, gridColumn: `${i * 3 + 1} / span 3`, gridRow: 1 }
+      return { gridColumn: `${i * 3 + 1} / span 3`, gridRow: 1 }
     }
     if (fi === 4) {
-      if (i === 4) return { ...base, gridColumn: '1 / span 6', gridRow: 2 }
-      if (i === 5) return { ...base, gridColumn: '7 / span 3', gridRow: 2 }
-      return { ...base, gridColumn: '10 / span 3', gridRow: 2 }
+      if (i === 4) return { gridColumn: '1 / span 6', gridRow: 2 }
+      if (i === 5) return { gridColumn: '7 / span 3', gridRow: 2 }
+      return { gridColumn: '10 / span 3', gridRow: 2 }
     }
     if (fi === 5) {
-      if (i === 4) return { ...base, gridColumn: '1 / span 3', gridRow: 2 }
-      if (i === 5) return { ...base, gridColumn: '4 / span 6', gridRow: 2 }
-      return { ...base, gridColumn: '10 / span 3', gridRow: 2 }
+      if (i === 4) return { gridColumn: '1 / span 3', gridRow: 2 }
+      if (i === 5) return { gridColumn: '4 / span 6', gridRow: 2 }
+      return { gridColumn: '10 / span 3', gridRow: 2 }
     }
-    if (i === 4) return { ...base, gridColumn: '1 / span 3', gridRow: 2 }
-    if (i === 5) return { ...base, gridColumn: '4 / span 3', gridRow: 2 }
-    return { ...base, gridColumn: '7 / span 6', gridRow: 2 }
+    if (i === 4) return { gridColumn: '1 / span 3', gridRow: 2 }
+    if (i === 5) return { gridColumn: '4 / span 3', gridRow: 2 }
+    return { gridColumn: '7 / span 6', gridRow: 2 }
   }
   if (n === 6) {
-    const base = { minWidth: 0, minHeight: 0 }
     const fi = focusIndex.value
     if (fi <= 2) {
       if (i <= 2) {
         if (fi === 0) {
-          if (i === 0) return { ...base, gridColumn: '1 / span 6', gridRow: 1 }
-          if (i === 1) return { ...base, gridColumn: '7 / span 3', gridRow: 1 }
-          return { ...base, gridColumn: '10 / span 3', gridRow: 1 }
+          if (i === 0) return { gridColumn: '1 / span 6', gridRow: 1 }
+          if (i === 1) return { gridColumn: '7 / span 3', gridRow: 1 }
+          return { gridColumn: '10 / span 3', gridRow: 1 }
         }
         if (fi === 1) {
-          if (i === 0) return { ...base, gridColumn: '1 / span 3', gridRow: 1 }
-          if (i === 1) return { ...base, gridColumn: '4 / span 6', gridRow: 1 }
-          return { ...base, gridColumn: '10 / span 3', gridRow: 1 }
+          if (i === 0) return { gridColumn: '1 / span 3', gridRow: 1 }
+          if (i === 1) return { gridColumn: '4 / span 6', gridRow: 1 }
+          return { gridColumn: '10 / span 3', gridRow: 1 }
         }
-        if (i === 0) return { ...base, gridColumn: '1 / span 3', gridRow: 1 }
-        if (i === 1) return { ...base, gridColumn: '4 / span 3', gridRow: 1 }
-        return { ...base, gridColumn: '7 / span 6', gridRow: 1 }
+        if (i === 0) return { gridColumn: '1 / span 3', gridRow: 1 }
+        if (i === 1) return { gridColumn: '4 / span 3', gridRow: 1 }
+        return { gridColumn: '7 / span 6', gridRow: 1 }
       }
       const bi = i - 3
-      return { ...base, gridColumn: `${bi * 4 + 1} / span 4`, gridRow: 2 }
+      return { gridColumn: `${bi * 4 + 1} / span 4`, gridRow: 2 }
     }
     if (i <= 2) {
-      return { ...base, gridColumn: `${i * 4 + 1} / span 4`, gridRow: 1 }
+      return { gridColumn: `${i * 4 + 1} / span 4`, gridRow: 1 }
     }
     if (fi === 3) {
-      if (i === 3) return { ...base, gridColumn: '1 / span 6', gridRow: 2 }
-      if (i === 4) return { ...base, gridColumn: '7 / span 3', gridRow: 2 }
-      return { ...base, gridColumn: '10 / span 3', gridRow: 2 }
+      if (i === 3) return { gridColumn: '1 / span 6', gridRow: 2 }
+      if (i === 4) return { gridColumn: '7 / span 3', gridRow: 2 }
+      return { gridColumn: '10 / span 3', gridRow: 2 }
     }
     if (fi === 4) {
-      if (i === 3) return { ...base, gridColumn: '1 / span 3', gridRow: 2 }
-      if (i === 4) return { ...base, gridColumn: '4 / span 6', gridRow: 2 }
-      return { ...base, gridColumn: '10 / span 3', gridRow: 2 }
+      if (i === 3) return { gridColumn: '1 / span 3', gridRow: 2 }
+      if (i === 4) return { gridColumn: '4 / span 6', gridRow: 2 }
+      return { gridColumn: '10 / span 3', gridRow: 2 }
     }
-    if (i === 3) return { ...base, gridColumn: '1 / span 3', gridRow: 2 }
-    if (i === 4) return { ...base, gridColumn: '4 / span 3', gridRow: 2 }
-    return { ...base, gridColumn: '7 / span 6', gridRow: 2 }
+    if (i === 3) return { gridColumn: '1 / span 3', gridRow: 2 }
+    if (i === 4) return { gridColumn: '4 / span 3', gridRow: 2 }
+    return { gridColumn: '7 / span 6', gridRow: 2 }
   }
-  return { minWidth: 0, minHeight: 0 }
+  const { cols } = computeGridDims(n)
+  return {
+    gridColumn: `${(i % cols) + 1} / span 1`,
+    gridRow: Math.floor(i / cols) + 1
+  }
+}
+
+function parseFrTracks(trackDef = '') {
+  const source = String(trackDef || '').trim()
+  if (!source) return [1]
+
+  const repeatMatch = source.match(/^repeat\(\s*(\d+)\s*,\s*([^)]+)\)$/i)
+  if (repeatMatch) {
+    const count = Number.parseInt(repeatMatch[1], 10)
+    const trackValue = Number.parseFloat(String(repeatMatch[2]).replace('fr', '').trim())
+    if (Number.isFinite(count) && count > 0 && Number.isFinite(trackValue) && trackValue > 0) {
+      return Array.from({ length: count }, () => trackValue)
+    }
+  }
+
+  return source
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => {
+      const numeric = Number.parseFloat(part.replace('fr', '').trim())
+      return Number.isFinite(numeric) ? numeric : 0
+    })
+    .filter(value => value > 0)
+}
+
+function normalizePlacementAxis(value) {
+  if (typeof value === 'number') {
+    return { start: value, span: 1 }
+  }
+  const source = String(value || '').trim()
+  const match = source.match(/^(\d+)\s*\/\s*span\s*(\d+)$/)
+  if (match) {
+    return {
+      start: Number.parseInt(match[1], 10),
+      span: Number.parseInt(match[2], 10)
+    }
+  }
+  const single = Number.parseInt(source, 10)
+  if (Number.isFinite(single)) {
+    return { start: single, span: 1 }
+  }
+  return { start: 1, span: 1 }
+}
+
+function sumTrackRange(tracks, startIndex, span) {
+  return tracks.slice(startIndex, startIndex + span).reduce((total, value) => total + value, 0)
+}
+
+function buildAxisRect(tracks, placement, gapPx) {
+  const totalFr = tracks.reduce((total, value) => total + value, 0) || 1
+  const beforeFr = sumTrackRange(tracks, 0, Math.max(0, placement.start - 1))
+  const spanFr = sumTrackRange(tracks, Math.max(0, placement.start - 1), placement.span) || 1
+  const totalGapPx = Math.max(0, tracks.length - 1) * gapPx
+  const beforeGapPx = Math.max(0, placement.start - 1) * gapPx
+  const innerGapPx = Math.max(0, placement.span - 1) * gapPx
+  return {
+    offset: `calc((100% - ${totalGapPx}px) * ${beforeFr} / ${totalFr} + ${beforeGapPx}px)`,
+    size: `calc((100% - ${totalGapPx}px) * ${spanFr} / ${totalFr} + ${innerGapPx}px)`
+  }
+}
+
+function paneStyle(i) {
+  const placement = panePlacement(i)
+  const rootStyle = layoutRootStyle.value || {}
+  const gapPx = Number.parseFloat(String(rootStyle.gap || PANE_GAP_PX)) || PANE_GAP_PX
+  const cols = parseFrTracks(rootStyle.gridTemplateColumns || '1fr')
+  const rows = parseFrTracks(rootStyle.gridTemplateRows || '1fr')
+  const colPlacement = normalizePlacementAxis(placement.gridColumn)
+  const rowPlacement = normalizePlacementAxis(placement.gridRow)
+  const horizontal = buildAxisRect(cols, colPlacement, gapPx)
+  const vertical = buildAxisRect(rows, rowPlacement, gapPx)
+  return {
+    position: 'absolute',
+    left: horizontal.offset,
+    top: vertical.offset,
+    width: horizontal.size,
+    height: vertical.size,
+    minWidth: 0,
+    minHeight: 0
+  }
 }
 
 async function runCommand(command, options = {}) {
@@ -562,8 +631,8 @@ async function runCommand(command, options = {}) {
 defineExpose({ runCommand })
 
 onUnmounted(() => {
-  if (fiveToFourTimer) clearTimeout(fiveToFourTimer)
-  if (wrapTransitionTimer) clearTimeout(wrapTransitionTimer)
+  clearPendingActivationWait()
+  activatingSessionId.value = ''
   resetLayout()
 })
 </script>
@@ -737,25 +806,7 @@ onUnmounted(() => {
   min-height: 0;
   min-width: 0;
   position: relative;
-}
-
-.layout--1 {
-  display: flex;
-  flex-direction: column;
-}
-
-.layout--row {
-  display: flex;
-  flex-direction: row;
-  gap: 4px;
-}
-
-.layout--row .focus-terminal-pane {
-  transition: none;
-}
-
-.layout--grid {
-  transition: none;
+  overflow: hidden;
 }
 
 /* TransitionGroup：标签（与「+」同侧，新标签从右侧轻量滑入；关闭向左淡出） */
@@ -783,7 +834,7 @@ onUnmounted(() => {
   transition: none;
 }
 
-/* 分格：进场轻微上移 + 淡入；退场仅淡出（避免 scale + 格线同时变导致糊、抖） */
+/* 分格：进场轻微位移 + 淡入；退场仅淡出。重排由 left/top/width/height 统一补间。 */
 .focus-pane-enter-active {
   transition:
     opacity var(--focus-pane-enter-dur) var(--focus-list-ease),
@@ -808,52 +859,25 @@ onUnmounted(() => {
   transition: none;
 }
 
-/* 5->4 专项：禁用 scale，仅快速淡出，减少大重排阶段卡顿 */
-.is-5to4-transition .focus-pane-leave-active {
-  transition: opacity 0.36s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.is-5to4-transition .focus-pane-leave-to {
-  opacity: 0;
-  transform: none;
-}
-
-.is-wrap-transition .focus-pane-enter-active,
-.is-wrap-transition .focus-pane-leave-active {
-  transition: opacity var(--focus-pane-enter-dur) var(--focus-list-ease);
-}
-
-.is-wrap-transition .focus-pane-enter-from,
-.is-wrap-transition .focus-pane-leave-to {
-  transform: none;
-}
-
 .focus-terminal-pane {
-  position: relative;
+  position: absolute;
   min-width: 0;
   min-height: 0;
-  border-radius: 10px;
+  border-radius: 14px;
   overflow: hidden;
   box-sizing: border-box;
   border: 1px solid rgba(214, 176, 74, 0.16);
   z-index: 0;
-  transform: translateZ(0) scale(1);
-  backface-visibility: hidden;
   contain: layout paint;
   isolation: isolate;
-  will-change: transform;
-  transform-origin: center center;
+  will-change: left, top, width, height, border-color, box-shadow;
   transition:
-    transform 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    left 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    top 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.38s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.36s cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 0.36s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.is-wrap-transition .focus-terminal-pane {
-  transition:
-    border-color 0.24s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.24s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: auto;
 }
 
 /* 非聚焦：与分屏非激活一致的暖色蒙层（用 opacity 过渡，聚焦切换更柔和） */
@@ -876,7 +900,6 @@ onUnmounted(() => {
 /* 聚焦：无描边，仅层级 + 较轻外发光（大模糊易掉帧） */
 .focus-terminal-pane.is-focused {
   z-index: 2;
-  transform: translateZ(0) scale(1);
   animation: none;
   border-color: #4a90ff;
   box-shadow:
@@ -893,10 +916,6 @@ onUnmounted(() => {
 .focus-terminal-pane.is-focused :deep(.terminal-header) {
   border-bottom-color: rgba(74, 144, 255, 0.88);
   background: rgba(74, 144, 255, 0.12);
-}
-
-.layout--1 .focus-terminal-pane {
-  flex: 1 1 auto;
 }
 
 </style>
