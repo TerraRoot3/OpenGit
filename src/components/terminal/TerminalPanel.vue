@@ -2507,6 +2507,8 @@ defineExpose({
   line-height: 1.3;
   color: rgba(255, 255, 255, 0.82);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .terminal-path--single-pane .terminal-path__title {
   flex-shrink: 0;
@@ -2563,6 +2565,8 @@ defineExpose({
   height: 100%;
   box-sizing: border-box;
   border-radius: 0;
+  user-select: none;
+  -webkit-user-select: none;
   color: rgba(255, 255, 255, 0.68);
   font-size: 12px;
   cursor: pointer;

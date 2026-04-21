@@ -88,6 +88,17 @@ export function useFocusTerminalStore(scopeSource = '__default__') {
     }
   }
 
+  const swapSessionOrder = (leftId, rightId) => {
+    if (!leftId || !rightId || leftId === rightId) return false
+    const list = [...scopeState.value.sessions.value]
+    const leftIndex = list.findIndex((item) => item.id === leftId)
+    const rightIndex = list.findIndex((item) => item.id === rightId)
+    if (leftIndex === -1 || rightIndex === -1) return false
+    ;[list[leftIndex], list[rightIndex]] = [list[rightIndex], list[leftIndex]]
+    scopeState.value.sessions.value = list
+    return true
+  }
+
   return {
     sessions: computed(() => scopeState.value.sessions.value),
     focusedId: computed(() => scopeState.value.focusedId.value),
@@ -97,6 +108,7 @@ export function useFocusTerminalStore(scopeSource = '__default__') {
     resetLayout,
     addSession,
     removeSession,
-    focusSession
+    focusSession,
+    swapSessionOrder
   }
 }

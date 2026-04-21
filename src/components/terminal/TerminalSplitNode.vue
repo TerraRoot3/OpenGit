@@ -16,7 +16,7 @@
       v-if="showPaneTopbar"
       class="terminal-pane-topbar"
       :class="{ draggable: closable }"
-      @mousedown="emit('pane-focus', node.termId)"
+      @click="handleTopbarClick"
       @mousedown.left.stop="handleDragMouseDown"
     >
       <div class="terminal-pane-meta">
@@ -177,6 +177,7 @@ const emit = defineEmits([
 const paneElRef = ref(null)
 const paneRootRef = ref(null)
 const splitNodeRef = ref(null)
+const suppressTopbarClick = ref(false)
 
 const isLeaf = computed(() => props.node?.type === 'leaf')
 const splitAxisClass = computed(() => props.node?.direction === 'column' ? 'is-column' : 'is-row')
@@ -235,7 +236,25 @@ const handleResizeMouseDown = (event) => {
 
 const handleDragMouseDown = (event) => {
   if (!props.closable) return
-  emit('pane-focus', props.node?.termId)
+  let moved = false
+  const startX = event.clientX
+  const startY = event.clientY
+  const handleMouseMove = (moveEvent) => {
+    if (moved) return
+    if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) >= 6) {
+      moved = true
+      suppressTopbarClick.value = true
+    }
+  }
+  const handleMouseUp = () => {
+    window.removeEventListener('mousemove', handleMouseMove)
+    window.removeEventListener('mouseup', handleMouseUp)
+    window.setTimeout(() => {
+      suppressTopbarClick.value = false
+    }, 0)
+  }
+  window.addEventListener('mousemove', handleMouseMove)
+  window.addEventListener('mouseup', handleMouseUp)
   const rect = paneRootRef.value?.getBoundingClientRect?.()
   emit('pane-drag-start', {
     termId: props.node?.termId || '',
@@ -251,6 +270,11 @@ const handleDragMouseDown = (event) => {
     clientX: event.clientX,
     clientY: event.clientY
   })
+}
+
+const handleTopbarClick = () => {
+  if (suppressTopbarClick.value) return
+  emit('pane-focus', props.node?.termId)
 }
 
 const forwardPaneElementChange = (payload) => emit('pane-element-change', payload)
@@ -343,6 +367,8 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   gap: 6px;
   font-size: 11px;
   line-height: 1.3;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .terminal-pane-title {

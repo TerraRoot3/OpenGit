@@ -60,7 +60,12 @@
         v-for="(s, i) in sessions"
         :key="s.id"
         class="focus-terminal-pane"
-        :class="{ 'is-focused': focusedId === s.id }"
+        :class="{
+          'is-focused': focusedId === s.id,
+          'is-drop-target': dropTargetSessionId === s.id && draggingSessionId && draggingSessionId !== s.id,
+          'is-dragging': draggingSessionId === s.id
+        }"
+        :data-focus-pane-id="s.id"
         :ref="(el) => setPaneElRef(s.id, el)"
         :style="paneStyle(i)"
         @mousedown.capture="handlePaneMouseDown(s.id, $event)"
@@ -103,7 +108,8 @@ const {
   resetLayout,
   addSession,
   removeSession,
-  focusSession
+  focusSession,
+  swapSessionOrder
 } = useFocusTerminalStore(toRef(props, 'defaultCwd'))
 
 onMounted(() => {
@@ -114,6 +120,10 @@ const PANE_LAYOUT_SETTLE_TIMEOUT_MS = 900
 let activationSequence = 0
 let pendingActivationCleanup = null
 const activatingSessionId = ref('')
+const draggingSessionId = ref('')
+const dropTargetSessionId = ref('')
+const pendingPaneDrag = ref(null)
+let paneDragPreviewEl = null
 
 /** 与各 TerminalPanel 顶栏 tabTitlePart 同步（主进程/Shell onTitleChange） */
 const paneTitles = reactive({})
@@ -153,6 +163,47 @@ function clearPendingActivationWait() {
     pendingActivationCleanup()
     pendingActivationCleanup = null
   }
+}
+
+function createPaneDragPreview(sessionId) {
+  const sourcePane = paneElById.get(sessionId)
+  if (!(sourcePane instanceof HTMLElement)) return null
+  const clone = sourcePane.cloneNode(true)
+  clone.style.position = 'fixed'
+  clone.style.pointerEvents = 'none'
+  clone.style.margin = '0'
+  clone.style.zIndex = '999999'
+  clone.style.opacity = '0.94'
+  clone.style.transform = 'scale(0.9)'
+  clone.style.transformOrigin = 'top left'
+  clone.style.boxShadow = '0 18px 44px rgba(0, 0, 0, 0.42)'
+  clone.style.backdropFilter = 'blur(2px)'
+  clone.style.transition = 'none'
+  document.body.appendChild(clone)
+  return clone
+}
+
+function destroyPaneDragPreview() {
+  if (!paneDragPreviewEl) return
+  paneDragPreviewEl.remove()
+  paneDragPreviewEl = null
+}
+
+function updatePaneDragPreviewPosition(clientX, clientY) {
+  const drag = pendingPaneDrag.value
+  if (!drag || !paneDragPreviewEl) return
+  paneDragPreviewEl.style.width = `${drag.rect.width}px`
+  paneDragPreviewEl.style.height = `${drag.rect.height}px`
+  paneDragPreviewEl.style.left = `${clientX - drag.offsetX}px`
+  paneDragPreviewEl.style.top = `${clientY - drag.offsetY}px`
+}
+
+function resolvePaneDropTargetSessionId(clientX, clientY) {
+  const targetNode = document.elementFromPoint(clientX, clientY)
+  const paneRoot = targetNode?.closest?.('[data-focus-pane-id]')
+  const sessionId = paneRoot?.getAttribute?.('data-focus-pane-id') || ''
+  if (!sessionId || sessionId === draggingSessionId.value) return ''
+  return sessionId
 }
 
 function buildPaneLayoutSignature() {
@@ -224,12 +275,91 @@ function waitForPaneLayoutSettled() {
 
 function handlePaneMouseDown(sessionId, event) {
   if (!sessionId) return
-  if (focusedId.value === sessionId && activatingSessionId.value !== sessionId) {
+  const target = event.target
+  const insideHeader = target instanceof Element && !!target.closest('.terminal-header')
+  if (!insideHeader) {
+    if (focusedId.value === sessionId && activatingSessionId.value !== sessionId) {
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    void activateSession(sessionId)
     return
   }
-  event.preventDefault()
-  event.stopPropagation()
-  void activateSession(sessionId)
+  if (target instanceof Element && target.closest('button, input, textarea, select, a')) {
+    return
+  }
+  if (event.button !== 0) return
+  handlePaneDragEnd()
+  const paneEl = paneElById.get(sessionId)
+  const rect = paneEl?.getBoundingClientRect?.()
+  if (!rect) return
+  pendingPaneDrag.value = {
+    sessionId,
+    rect: {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    },
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    offsetX: event.clientX - rect.left,
+    offsetY: event.clientY - rect.top
+  }
+  window.addEventListener('mousemove', handlePaneDragMove)
+  window.addEventListener('mouseup', handlePaneDragMouseUp)
+}
+
+function removePaneDragListeners() {
+  window.removeEventListener('mousemove', handlePaneDragMove)
+  window.removeEventListener('mouseup', handlePaneDragMouseUp)
+}
+
+function handlePaneDragEnd() {
+  removePaneDragListeners()
+  pendingPaneDrag.value = null
+  draggingSessionId.value = ''
+  dropTargetSessionId.value = ''
+  destroyPaneDragPreview()
+}
+
+function handlePaneDragDrop(sourceSessionId, targetSessionId) {
+  if (!sourceSessionId || !targetSessionId || sourceSessionId === targetSessionId) return
+  if (swapSessionOrder(sourceSessionId, targetSessionId)) {
+    focusSession(sourceSessionId)
+  }
+}
+
+function handlePaneDragMove(event) {
+  const drag = pendingPaneDrag.value
+  if (!drag) return
+  const deltaX = event.clientX - drag.startClientX
+  const deltaY = event.clientY - drag.startClientY
+  const distance = Math.hypot(deltaX, deltaY)
+
+  if (!draggingSessionId.value) {
+    if (distance < 6) return
+    draggingSessionId.value = drag.sessionId
+    paneDragPreviewEl = createPaneDragPreview(drag.sessionId)
+  }
+
+  updatePaneDragPreviewPosition(event.clientX, event.clientY)
+  dropTargetSessionId.value = resolvePaneDropTargetSessionId(event.clientX, event.clientY)
+}
+
+function handlePaneDragMouseUp(event) {
+  const sourceSessionId = draggingSessionId.value
+  const targetSessionId = resolvePaneDropTargetSessionId(event.clientX, event.clientY)
+  if (sourceSessionId && targetSessionId) {
+    handlePaneDragDrop(sourceSessionId, targetSessionId)
+  }
+  const pendingSessionId = pendingPaneDrag.value?.sessionId || ''
+  const wasDragging = !!sourceSessionId
+  handlePaneDragEnd()
+  if (!wasDragging && pendingSessionId) {
+    void activateSession(pendingSessionId)
+  }
 }
 
 watch(
@@ -648,6 +778,7 @@ defineExpose({ runCommand, clearLayoutCache })
 onUnmounted(() => {
   clearPendingActivationWait()
   activatingSessionId.value = ''
+  handlePaneDragEnd()
 })
 </script>
 
@@ -918,6 +1049,20 @@ onUnmounted(() => {
   animation: none;
   border-color: transparent;
   box-shadow: none;
+}
+
+.focus-terminal-pane.is-drop-target {
+  background: color-mix(in srgb, var(--app-info-bg) 75%, transparent);
+}
+
+.focus-terminal-pane.is-drop-target :deep(.terminal-header) {
+  border-bottom-color: var(--app-info-border);
+  background: color-mix(in srgb, var(--app-info-bg) 78%, transparent);
+}
+
+.focus-terminal-pane.is-dragging {
+  opacity: 0.45;
+  transform: scale(0.98);
 }
 
 /* 标题栏：聚焦蓝、未聚焦偏黄，和外层边框/蒙层形成统一层级 */
