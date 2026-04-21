@@ -128,6 +128,7 @@
             >
               <FolderTree :size="16" />
               <span class="branches-nav-label">工作区</span>
+              <span v-if="showWorkspaceNavDot" class="nav-status-dot" title="工作区有变更" />
               <span v-if="hasPendingFiles" class="pending-icon" title="有待定文件">
                 <svg width="12" height="12" viewBox="0 0 1024 1024" fill="currentColor">
                   <path d="M526.41 117.029v58.514a7.314 7.314 0 0 1-7.315 7.314H219.429a36.571 36.571 0 0 0-35.987 29.989l-0.585 6.583V804.57a36.571 36.571 0 0 0 29.989 35.987l6.583 0.585H804.57a36.571 36.571 0 0 0 35.987-29.989l0.585-6.583v-317.44a7.314 7.314 0 0 1 7.314-7.314h58.514a7.314 7.314 0 0 1 7.315 7.314v317.44a109.714 109.714 0 0 1-99.182 109.203l-10.533 0.512H219.43a109.714 109.714 0 0 1-109.203-99.182l-0.512-10.533V219.43a109.714 109.714 0 0 1 99.182-109.203l10.533-0.512h299.666a7.314 7.314 0 0 1 7.314 7.315z m307.345 31.817l41.4 41.399a7.314 7.314 0 0 1 0 10.313L419.985 655.726a7.314 7.314 0 0 1-10.313 0l-41.399-41.4a7.314 7.314 0 0 1 0-10.312l455.168-455.168a7.314 7.314 0 0 1 10.313 0z"></path>
@@ -145,6 +146,7 @@
             >
               <Activity :size="16" />
               <span class="branches-nav-label">流水线</span>
+              <span v-if="showPipelineNavDot" class="nav-status-dot" title="流水线有更新" />
               <span
                 v-if="activePipelineSummary"
                 class="pipeline-inline-status"
@@ -375,6 +377,7 @@
       v-model:visible="showProjectSettings"
       :project-path="path"
       :terminal-mode="terminalMode"
+      :terminal-mode-apply-globally="terminalModeApplyGlobally"
       @confirm="onProjectSettingsConfirm"
     />
 
@@ -779,9 +782,25 @@ const getSavedCurrentView = async (path) => {
 
 const getProjectTerminalModeKey = (path) =>
   `projectTerminalMode_${path?.replace(/[^a-zA-Z0-9]/g, '_') || 'default'}`
+const GLOBAL_TERMINAL_MODE_KEY = 'appTerminalMode'
+const GLOBAL_TERMINAL_MODE_SCOPE_KEY = 'appTerminalModeApplyGlobally'
+
+const getSavedTerminalModeScope = async () => {
+  try {
+    const saved = await getConfigString(GLOBAL_TERMINAL_MODE_SCOPE_KEY)
+    if (saved === 'false') return false
+  } catch (e) {}
+  return true
+}
 
 const getSavedTerminalMode = async (path) => {
   try {
+    const applyGlobally = await getSavedTerminalModeScope()
+    if (applyGlobally) {
+      const globalMode = await getConfigString(GLOBAL_TERMINAL_MODE_KEY)
+      if (globalMode === 'liquid') return 'liquid'
+      return 'split'
+    }
     const saved = await getConfigString(getProjectTerminalModeKey(path))
     if (saved === 'liquid') return 'liquid'
   } catch (e) {}
@@ -820,6 +839,7 @@ const restoreExpandState = async (path) => {
 
 const currentView = ref('ai-sessions')
 const terminalMode = ref('split')
+const terminalModeApplyGlobally = ref(true)
 const branchesPanelWidthPx = ref(BRANCHES_PANEL_DEFAULT)
 /** 用户上次拉宽后的宽度，用于从图标条恢复 */
 const branchesPanelLastExpandedWidth = ref(BRANCHES_PANEL_DEFAULT)
@@ -1150,6 +1170,14 @@ const pipelineStatusTitle = computed(() => {
   if (!pipeline) return ''
   return `当前运行中的 GitLab Pipeline：${pipelineStatusText.value}`
 })
+
+const showWorkspaceNavDot = computed(() =>
+  isBranchesPanelIconRail.value && hasPendingFiles.value
+)
+
+const showPipelineNavDot = computed(() =>
+  isBranchesPanelIconRail.value && !!activePipelineSummary.value
+)
 
 // ==================== 辅助方法 ====================
 const getAllBranchStatus = (branch) => {
@@ -2760,16 +2788,24 @@ const unmountTerminalForModeChange = async () => {
 const onProjectSettingsConfirm = async (payload = {}) => {
   debugLog('✅ 项目设置已保存')
   const nextTerminalMode = payload?.terminalMode === 'liquid' ? 'liquid' : 'split'
+  const nextTerminalModeApplyGlobally = payload?.terminalModeApplyGlobally !== false
   const terminalModeChanged = terminalMode.value !== nextTerminalMode
   if (terminalModeChanged && terminalMounted.value) {
     await unmountTerminalForModeChange()
   }
   terminalMode.value = nextTerminalMode
+  terminalModeApplyGlobally.value = nextTerminalModeApplyGlobally
   if (terminalModeChanged && currentView.value === 'terminal') {
     terminalMounted.value = true
     await nextTick()
   }
-  if (props.path) {
+  void setConfigString(
+    GLOBAL_TERMINAL_MODE_SCOPE_KEY,
+    nextTerminalModeApplyGlobally ? 'true' : 'false'
+  ).catch(() => {})
+  if (nextTerminalModeApplyGlobally) {
+    void setConfigString(GLOBAL_TERMINAL_MODE_KEY, nextTerminalMode).catch(() => {})
+  } else if (props.path) {
     void setConfigString(getProjectTerminalModeKey(props.path), nextTerminalMode).catch(() => {})
   }
   // 刷新远程分支列表
@@ -2796,6 +2832,7 @@ watch(() => props.path, async (newPath, oldPath) => {
   stopProjectGitMonitor()
   resetProjectGitMonitorState()
   if (newPath) {
+    terminalModeApplyGlobally.value = await getSavedTerminalModeScope()
     terminalMode.value = await getSavedTerminalMode(newPath)
     isGitRepository.value = null
     activePipelineSummary.value = null
@@ -3503,6 +3540,12 @@ defineExpose({
   display: none !important;
 }
 
+.branches-panel--icon-rail .nav-status-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
 .branches-panel--icon-rail .branch-section-header {
   justify-content: center;
   gap: 4px;
@@ -3698,6 +3741,16 @@ defineExpose({
   justify-content: center;
   color: var(--app-text-muted);
   margin-left: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.nav-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #f4d37d;
+  box-shadow: 0 0 0 2px rgba(20, 23, 28, 0.9);
   flex-shrink: 0;
   margin-left: auto;
 }

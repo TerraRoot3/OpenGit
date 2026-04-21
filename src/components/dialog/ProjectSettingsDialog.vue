@@ -116,6 +116,13 @@
                 <span>灵动终端</span>
               </label>
             </div>
+            <label class="terminal-mode-global-option">
+              <input
+                type="checkbox"
+                v-model="applyTerminalModeGlobally"
+              />
+              <span>应用全局生效</span>
+            </label>
           </div>
         </div>
       </div>
@@ -148,6 +155,10 @@ const props = defineProps({
   terminalMode: {
     type: String,
     default: 'split'
+  },
+  terminalModeApplyGlobally: {
+    type: Boolean,
+    default: true
   }
 })
 
@@ -163,6 +174,7 @@ const editingIndex = ref(-1)
 const editingName = ref('')
 const editingUrl = ref('')
 const terminalMode = ref('split')
+const applyTerminalModeGlobally = ref(true)
 
 // 加载设置
 const loadSettings = async () => {
@@ -213,6 +225,7 @@ const loadSettings = async () => {
 watch(() => props.visible, (newVal) => {
   if (newVal) {
     terminalMode.value = props.terminalMode === 'liquid' ? 'liquid' : 'split'
+    applyTerminalModeGlobally.value = props.terminalModeApplyGlobally !== false
     loadSettings()
   }
 })
@@ -331,7 +344,8 @@ const confirm = async () => {
     }
 
     emit('confirm', {
-      terminalMode: terminalMode.value === 'liquid' ? 'liquid' : 'split'
+      terminalMode: terminalMode.value === 'liquid' ? 'liquid' : 'split',
+      terminalModeApplyGlobally: applyTerminalModeGlobally.value !== false
     })
     emit('update:visible', false)
   } catch (error) {
@@ -463,6 +477,20 @@ const confirm = async () => {
 }
 
 .scope-option input[type="radio"] {
+  accent-color: #0066ff;
+}
+
+.terminal-mode-global-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.82);
+  cursor: pointer;
+}
+
+.terminal-mode-global-option input[type="checkbox"] {
   accent-color: #0066ff;
 }
 

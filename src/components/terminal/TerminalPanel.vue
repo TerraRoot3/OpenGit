@@ -283,6 +283,13 @@ let ensureDefaultPromise = null
 let persistSnapshotTimer = null
 let hasRestoredInitialSnapshot = false
 const locallyClosedPtyIds = new Set()
+const panelInstanceKey = (() => {
+  const base = normalizeIncomingPath(props.snapshotCacheKey || props.defaultCwd || '__standalone__')
+    .replace(/[^a-zA-Z0-9]/g, '_')
+    .slice(-48) || '__standalone__'
+  const randomPart = Math.random().toString(36).slice(2, 10)
+  return `panel_${base}_${Date.now().toString(36)}_${randomPart}`
+})()
 
 const TERMINAL_SNAPSHOT_PREFIX = 'terminalSnapshot_v1_'
 const TERMINAL_SNAPSHOT_MAX_LINES = 1200
@@ -859,6 +866,15 @@ const nextTabIndex = () => {
   for (let i = 1; ; i++) { if (!used.has(i)) return i }
 }
 
+const createScopedRuntimeId = (kind, stableId = '') => {
+  const safeKind = kind === 'pty' ? 'pty' : 'term'
+  const stablePart = String(stableId || '')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(-64)
+  const randomPart = Math.random().toString(36).slice(2, 8)
+  return `${safeKind}_${panelInstanceKey}_${stablePart}_${randomPart}`
+}
+
 const getProjectRootCwd = () => {
   if (projectRootRef.value) return projectRootRef.value
   return normalizeIncomingPath(props.defaultCwd)
@@ -1062,7 +1078,8 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     _programmaticFocusSigintGuardUntil: 0,
     _viewportRevealTimerId: null,
     _dropHandlers: null,
-    _focusCleanup: null
+    _focusCleanup: null,
+    runtimePtyKey: createScopedRuntimeId('pty', termId)
   }
 
   bindTerminalDropEvents(term)
@@ -1118,7 +1135,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     for (const candidate of createCandidates) {
       try {
         createResult = await window.electronAPI.terminal.create({
-          id: termId,
+          id: term.runtimePtyKey,
           cwd: candidate
         })
       } catch {
@@ -1129,6 +1146,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
 
     if (createResult?.success) {
       term.ptyId = createResult.id
+      term.runtimePtyKey = createResult.id
       term._lastPtySig = undefined
       if (createResult.resolvedCwd && typeof createResult.resolvedCwd === 'string') {
         term.cwd = createResult.resolvedCwd
@@ -1656,11 +1674,12 @@ const restartTerminalById = async (termId = '', cwdOverride = null) => {
       restartCwd = projectRootFromProps || getProjectRootCwd() || ''
     }
     const res = await window.electronAPI.terminal.create({
-      id: `term-${Date.now()}`,
+      id: createScopedRuntimeId('pty', term.termId),
       cwd: props.allowFirstTerminalWithoutCwd ? (restartCwd || undefined) : restartCwd
     })
     if (res.success) {
       term.ptyId = res.id
+      term.runtimePtyKey = res.id
       term._lastPtySig = undefined
       if (res.resolvedCwd && typeof res.resolvedCwd === 'string') {
         term.cwd = res.resolvedCwd
