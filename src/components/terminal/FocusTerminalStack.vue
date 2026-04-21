@@ -76,6 +76,7 @@
           :snapshot-cache-key="paneSnapshotKey(s.id)"
           single-pane-chrome
           :suspend-single-pane-resize="activatingSessionId !== ''"
+          :suspend-single-pane-output="activatingSessionId !== '' && visualFocusedId !== s.id"
           :show-close-button="sessions.length > 1"
           :allow-first-terminal-without-cwd="true"
           :is-active="isActive"
@@ -789,7 +790,13 @@ const clearLayoutCache = () => {
   resetLayout({ clearCache: true })
 }
 
-defineExpose({ runCommand, clearLayoutCache })
+function updateScrollback(scrollback) {
+  for (const [, panel] of panelRefById) {
+    panel?.updateScrollback?.(scrollback)
+  }
+}
+
+defineExpose({ runCommand, clearLayoutCache, updateScrollback })
 
 onUnmounted(() => {
   clearPendingActivationWait()

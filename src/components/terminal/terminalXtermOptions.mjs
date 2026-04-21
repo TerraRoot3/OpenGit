@@ -13,6 +13,19 @@ export const TERMINAL_FONT_FAMILY = [
   'monospace'
 ].join(', ')
 
+export const DEFAULT_TERMINAL_SCROLLBACK = 1500
+export const MIN_TERMINAL_SCROLLBACK = 200
+export const MAX_TERMINAL_SCROLLBACK = 10000
+export const TERMINAL_SCROLLBACK_CONFIG_KEY = 'appTerminalScrollback'
+
+export function sanitizeTerminalScrollback(value) {
+  if (value == null || value === '') return DEFAULT_TERMINAL_SCROLLBACK
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return DEFAULT_TERMINAL_SCROLLBACK
+  const normalized = Math.round(numeric)
+  return Math.min(MAX_TERMINAL_SCROLLBACK, Math.max(MIN_TERMINAL_SCROLLBACK, normalized))
+}
+
 export const XTERM_OPTS = {
   cursorBlink: true,
   cursorStyle: 'block',
@@ -43,5 +56,7 @@ export const XTERM_OPTS = {
     brightWhite: '#ffffff'
   },
   allowProposedApi: true,
-  scrollback: 10000
+  // Codex / Claude 这类长对话会迅速放大 xterm buffer 的内存占用。
+  // 默认控制在 1500 行，用户可在项目设置中调整。
+  scrollback: DEFAULT_TERMINAL_SCROLLBACK
 }

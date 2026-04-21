@@ -231,7 +231,12 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useTerminalRouter } from '../../composables/useTerminalRouter'
 import { buildDropPayload } from './terminalInteractions.mjs'
 import { shouldCreateInitialTerminal } from './terminalInitialBootstrap.mjs'
-import { XTERM_OPTS } from './terminalXtermOptions.mjs'
+import {
+  DEFAULT_TERMINAL_SCROLLBACK,
+  TERMINAL_SCROLLBACK_CONFIG_KEY,
+  XTERM_OPTS,
+  sanitizeTerminalScrollback
+} from './terminalXtermOptions.mjs'
 import { isBufferViewportAtBottom } from './terminalViewportState.mjs'
 import { scheduleViewportRevealSync, cancelViewportRevealSync } from './terminalViewportSync.mjs'
 import TerminalSplitNode from './TerminalSplitNode.vue'
@@ -253,6 +258,8 @@ const props = defineProps({
   focusPaneFocused: { type: Boolean, default: true },
   /** 灵动终端壳层动画期间，冻结内部 ResizeObserver，避免大缓冲区终端每帧重排 */
   suspendSinglePaneResize: { type: Boolean, default: false },
+  /** 灵动终端切换动画期间，未聚焦 pane 暂存输出，动画结束后补写 */
+  suspendSinglePaneOutput: { type: Boolean, default: false },
   /** 与 singlePaneChrome 配合：显示关闭（由父级移除该面板） */
   showCloseButton: { type: Boolean, default: false },
   /** 分屏独立页：禁用“新建终端/目录新建”，只能通过 split 新增会话 */
@@ -299,6 +306,37 @@ const TERMINAL_RESTORE_EXITED_NOTICE = '\r\n\x1b[33m已恢复上次终端内容�
 const SPLIT_RATIO_MIN = 0.15
 const SPLIT_RATIO_MAX = 0.85
 const PROGRAMMATIC_FOCUS_SIGINT_GUARD_MS = 160
+let cachedTerminalScrollback = DEFAULT_TERMINAL_SCROLLBACK
+let terminalScrollbackLoaded = false
+
+async function loadTerminalScrollbackSetting(force = false) {
+  if (terminalScrollbackLoaded && !force) {
+    return cachedTerminalScrollback
+  }
+  try {
+    const saved = await window.electronAPI?.getConfig?.(TERMINAL_SCROLLBACK_CONFIG_KEY)
+    cachedTerminalScrollback = sanitizeTerminalScrollback(saved)
+  } catch (error) {
+    cachedTerminalScrollback = DEFAULT_TERMINAL_SCROLLBACK
+  }
+  terminalScrollbackLoaded = true
+  return cachedTerminalScrollback
+}
+
+function applyTerminalScrollbackToXterm(xterm, scrollback) {
+  if (!xterm) return
+  const nextValue = sanitizeTerminalScrollback(scrollback)
+  try {
+    xterm.options.scrollback = nextValue
+  } catch (error) {
+    try {
+      xterm.options = { ...XTERM_OPTS, scrollback: nextValue }
+    } catch (innerError) {
+      // ignore
+    }
+  }
+}
+
 const handleDocumentClick = (event) => {
   if (cwdMenuRef.value && !cwdMenuRef.value.contains(event.target)) {
     showCwdMenu.value = false
@@ -650,11 +688,15 @@ const armProgrammaticFocusSigintGuard = (term) => {
 
 // ---- 终端实例管理 ----
 
-const createXterm = () => {
+const createXterm = async () => {
   const el = document.createElement('div')
   el.style.cssText = 'width:100%;height:100%;display:none;overflow:hidden;'
 
-  const xterm = new Terminal(XTERM_OPTS)
+  const scrollback = await loadTerminalScrollbackSetting()
+  const xterm = new Terminal({
+    ...XTERM_OPTS,
+    scrollback
+  })
   const fitAddon = new FitAddon()
   const searchAddon = new SearchAddon()
   xterm.loadAddon(fitAddon)
@@ -1048,7 +1090,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     rawCwd = getProjectRootCwd()
   }
   const cwd = typeof rawCwd === 'string' ? String(rawCwd).trim() : ''
-  const { xterm, fitAddon, searchAddon, el } = createXterm()
+  const { xterm, fitAddon, searchAddon, el } = await createXterm()
 
   if (!props.allowFirstTerminalWithoutCwd && !cwd) {
     xterm.write('\r\n\x1b[31m无法创建终端：项目目录未就绪，请稍后重试\x1b[0m\r\n')
@@ -1074,6 +1116,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     viewportDirtyWhileHidden: false,
     _programmaticFocusSigintGuardUntil: 0,
     _viewportRevealTimerId: null,
+    _bufferedOutput: '',
     _dropHandlers: null,
     _focusCleanup: null,
     runtimePtyKey: createScopedRuntimeId('pty', termId)
@@ -2057,6 +2100,25 @@ const schedulePersistedSnapshot = (path = props.defaultCwd, state = null) => {
   }, 500)
 }
 
+const flushBufferedTerminalOutput = (term) => {
+  if (!term?.xterm || !term._bufferedOutput) return
+  const buffered = term._bufferedOutput
+  term._bufferedOutput = ''
+  term.viewportDirtyWhileHidden = true
+  term.xterm.write(buffered)
+}
+
+const writeTerminalOutput = (term, chunk) => {
+  if (!term?.xterm || !chunk) return
+  if (props.singlePaneChrome && props.suspendSinglePaneOutput) {
+    term._bufferedOutput = `${term._bufferedOutput || ''}${chunk}`
+    term.viewportDirtyWhileHidden = true
+    return
+  }
+  flushBufferedTerminalOutput(term)
+  term.xterm.write(chunk)
+}
+
 const detachTerminalsFromDom = (terms) => {
   if (!Array.isArray(terms)) return
   for (const t of terms) {
@@ -2210,7 +2272,7 @@ const ipcHandler = {
         if (!props.isActive || t.el.style.display === 'none') {
           t.viewportDirtyWhileHidden = true
         }
-        t.xterm.write(data.data)
+        writeTerminalOutput(t, data.data)
         schedulePersistedSnapshot()
         return
       }
@@ -2332,6 +2394,16 @@ watch(() => [props.isActive, props.focusPaneFocused], ([active, paneFocused]) =>
     closeSearchBar(false)
   }
 })
+
+watch(
+  () => props.suspendSinglePaneOutput,
+  (suspended) => {
+    if (suspended) return
+    for (const term of terminals.value) {
+      flushBufferedTerminalOutput(term)
+    }
+  }
+)
 
 watch(() => currentTerminal.value?.termId, (termId, prevTermId) => {
   if (termId === prevTermId || !showSearchBar.value) return
@@ -2469,7 +2541,20 @@ defineExpose({
   focusCurrentTerminal,
   focusCurrentTerminalLightweight,
   reconcileCurrentTerminalAfterAnimation,
-  revealCurrentTerminalAfterAnimation
+  revealCurrentTerminalAfterAnimation,
+  updateScrollback: async (scrollback) => {
+    const nextValue = sanitizeTerminalScrollback(scrollback)
+    cachedTerminalScrollback = nextValue
+    terminalScrollbackLoaded = true
+    for (const term of terminals.value) {
+      applyTerminalScrollbackToXterm(term.xterm, nextValue)
+    }
+    for (const [, cached] of terminalCache) {
+      for (const term of cached.terminals || []) {
+        applyTerminalScrollbackToXterm(term.xterm, nextValue)
+      }
+    }
+  }
 })
 </script>
 

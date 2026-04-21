@@ -123,6 +123,24 @@
               />
               <span>应用全局生效</span>
             </label>
+            <div class="terminal-scrollback-setting">
+              <div class="terminal-scrollback-setting__label-row">
+                <span class="terminal-scrollback-setting__label">终端历史行数</span>
+                <span class="terminal-scrollback-setting__value">{{ terminalScrollback }}</span>
+              </div>
+              <input
+                v-model.number="terminalScrollback"
+                class="terminal-scrollback-setting__input"
+                type="number"
+                inputmode="numeric"
+                min="200"
+                max="10000"
+                step="100"
+              />
+              <div class="terminal-scrollback-setting__hint">
+                默认 1500。数值越高，内存占用越大，终端切换和大量输出时更容易卡顿。
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -140,6 +158,10 @@
 import { ref, watch } from 'vue'
 import { Plus, Pencil, Trash2, Check, X } from 'lucide-vue-next'
 import { useConfirm } from '../../composables/useConfirm'
+import {
+  DEFAULT_TERMINAL_SCROLLBACK,
+  sanitizeTerminalScrollback
+} from '../terminal/terminalXtermOptions.mjs'
 
 const { confirm: showConfirm } = useConfirm()
 
@@ -159,6 +181,10 @@ const props = defineProps({
   terminalModeApplyGlobally: {
     type: Boolean,
     default: true
+  },
+  terminalScrollback: {
+    type: Number,
+    default: DEFAULT_TERMINAL_SCROLLBACK
   }
 })
 
@@ -175,6 +201,7 @@ const editingName = ref('')
 const editingUrl = ref('')
 const terminalMode = ref('split')
 const applyTerminalModeGlobally = ref(true)
+const terminalScrollback = ref(DEFAULT_TERMINAL_SCROLLBACK)
 
 // 加载设置
 const loadSettings = async () => {
@@ -226,6 +253,7 @@ watch(() => props.visible, (newVal) => {
   if (newVal) {
     terminalMode.value = props.terminalMode === 'liquid' ? 'liquid' : 'split'
     applyTerminalModeGlobally.value = props.terminalModeApplyGlobally !== false
+    terminalScrollback.value = sanitizeTerminalScrollback(props.terminalScrollback)
     loadSettings()
   }
 })
@@ -345,7 +373,8 @@ const confirm = async () => {
 
     emit('confirm', {
       terminalMode: terminalMode.value === 'liquid' ? 'liquid' : 'split',
-      terminalModeApplyGlobally: applyTerminalModeGlobally.value !== false
+      terminalModeApplyGlobally: applyTerminalModeGlobally.value !== false,
+      terminalScrollback: sanitizeTerminalScrollback(terminalScrollback.value)
     })
     emit('update:visible', false)
   } catch (error) {
@@ -378,6 +407,48 @@ const confirm = async () => {
   flex-direction: column;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   overflow: hidden;
+}
+
+.terminal-scrollback-setting {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.terminal-scrollback-setting__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.terminal-scrollback-setting__label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.terminal-scrollback-setting__value {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.terminal-scrollback-setting__input {
+  width: 160px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: none;
+  outline: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+}
+
+.terminal-scrollback-setting__hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.52);
 }
 
 .dialog-header {

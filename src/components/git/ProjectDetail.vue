@@ -378,6 +378,7 @@
       :project-path="path"
       :terminal-mode="terminalMode"
       :terminal-mode-apply-globally="terminalModeApplyGlobally"
+      :terminal-scrollback="terminalScrollback"
       @confirm="onProjectSettingsConfirm"
     />
 
@@ -557,6 +558,11 @@ import OperationDialog from '../dialog/OperationDialog.vue'
 import ProjectSettingsDialog from '../dialog/ProjectSettingsDialog.vue'
 import TerminalPanel from '../terminal/TerminalPanel.vue'
 import FocusTerminalStack from '../terminal/FocusTerminalStack.vue'
+import {
+  DEFAULT_TERMINAL_SCROLLBACK,
+  TERMINAL_SCROLLBACK_CONFIG_KEY,
+  sanitizeTerminalScrollback
+} from '../terminal/terminalXtermOptions.mjs'
 import CustomSelect from '../common/CustomSelect.vue'
 import { useGitCommand } from '../../composables/useGitCommand'
 import {
@@ -807,6 +813,14 @@ const getSavedTerminalMode = async (path) => {
   return 'split'
 }
 
+const getSavedTerminalScrollback = async () => {
+  try {
+    const saved = await getConfigNumber(TERMINAL_SCROLLBACK_CONFIG_KEY)
+    return sanitizeTerminalScrollback(saved)
+  } catch (e) {}
+  return DEFAULT_TERMINAL_SCROLLBACK
+}
+
 const saveExpandState = () => {
   if (!props.path) return
   void (async () => {
@@ -840,6 +854,7 @@ const restoreExpandState = async (path) => {
 const currentView = ref('ai-sessions')
 const terminalMode = ref('split')
 const terminalModeApplyGlobally = ref(true)
+const terminalScrollback = ref(DEFAULT_TERMINAL_SCROLLBACK)
 const branchesPanelWidthPx = ref(BRANCHES_PANEL_DEFAULT)
 /** 用户上次拉宽后的宽度，用于从图标条恢复 */
 const branchesPanelLastExpandedWidth = ref(BRANCHES_PANEL_DEFAULT)
@@ -2792,12 +2807,14 @@ const onProjectSettingsConfirm = async (payload = {}) => {
   debugLog('✅ 项目设置已保存')
   const nextTerminalMode = payload?.terminalMode === 'liquid' ? 'liquid' : 'split'
   const nextTerminalModeApplyGlobally = payload?.terminalModeApplyGlobally !== false
+  const nextTerminalScrollback = sanitizeTerminalScrollback(payload?.terminalScrollback)
   const terminalModeChanged = terminalMode.value !== nextTerminalMode
   if (terminalModeChanged && terminalMounted.value) {
     await unmountTerminalForModeChange()
   }
   terminalMode.value = nextTerminalMode
   terminalModeApplyGlobally.value = nextTerminalModeApplyGlobally
+  terminalScrollback.value = nextTerminalScrollback
   if (terminalModeChanged && currentView.value === 'terminal') {
     terminalMounted.value = true
     await nextTick()
@@ -2811,6 +2828,9 @@ const onProjectSettingsConfirm = async (payload = {}) => {
   } else if (props.path) {
     void setConfigString(getProjectTerminalModeKey(props.path), nextTerminalMode).catch(() => {})
   }
+  void setConfigNumber(TERMINAL_SCROLLBACK_CONFIG_KEY, nextTerminalScrollback).catch(() => {})
+  terminalRef.value?.updateScrollback?.(nextTerminalScrollback)
+  liquidTerminalRef.value?.updateScrollback?.(nextTerminalScrollback)
   // 刷新远程分支列表
   refreshRemoteBranches()
 }
@@ -2837,6 +2857,7 @@ watch(() => props.path, async (newPath, oldPath) => {
   if (newPath) {
     terminalModeApplyGlobally.value = await getSavedTerminalModeScope()
     terminalMode.value = await getSavedTerminalMode(newPath)
+    terminalScrollback.value = await getSavedTerminalScrollback()
     isGitRepository.value = null
     activePipelineSummary.value = null
     // 恢复该项目保存的视图状态和展开状态（electron-store）
