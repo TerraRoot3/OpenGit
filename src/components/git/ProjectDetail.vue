@@ -695,13 +695,18 @@ const isDocumentVisible = ref(typeof document === 'undefined' ? true : document.
 const activePipelineSummary = ref(null)
 
 const PROJECT_GIT_MONITOR_INTERVAL_MS = 2000
+const PIPELINE_TRIGGER_DELAY_MS = 2000
 const PIPELINE_SUMMARY_ACTIVE_INTERVAL_MS = 8000
 const PIPELINE_SUMMARY_IDLE_INTERVAL_MS = 20000
 const PIPELINE_SUMMARY_TERMINAL_HOLD_MS = 12000
+const PIPELINE_SUMMARY_TRACKING_WINDOW_MS = 120000
 let projectGitMonitorTimer = null
 let projectGitMonitorInFlight = false
 let pipelineSummaryTimer = null
+let pipelineTriggerRefreshTimer = null
 let pipelineSummaryHoldUntil = 0
+let pipelineSummaryTrackingUntil = 0
+let pipelineSummaryInFlight = false
 
 // ==================== UI 状态 ====================
 /** 主进程 electron-store（get-config / set-config），无 Electron 时不持久化 */
@@ -1243,6 +1248,21 @@ const clearPipelineSummaryTimer = () => {
   pipelineSummaryTimer = null
 }
 
+const clearPipelineTriggerRefreshTimer = () => {
+  if (pipelineTriggerRefreshTimer != null && typeof window !== 'undefined') {
+    window.clearTimeout(pipelineTriggerRefreshTimer)
+  }
+  pipelineTriggerRefreshTimer = null
+}
+
+const clearPipelineRefreshState = () => {
+  clearPipelineSummaryTimer()
+  clearPipelineTriggerRefreshTimer()
+  pipelineSummaryHoldUntil = 0
+  pipelineSummaryTrackingUntil = 0
+  pipelineSummaryInFlight = false
+}
+
 const isActivePipelineStatus = (status) => {
   return ['running', 'pending', 'preparing', 'waiting_for_resource', 'created'].includes(status)
 }
@@ -1251,15 +1271,40 @@ const isTerminalPipelineStatus = (status) => {
   return ['success', 'failed', 'canceled'].includes(status)
 }
 
+const shouldTrackPipelineSummary = () => pipelineSummaryTrackingUntil > Date.now()
+
+const armPipelineSummaryTracking = (durationMs = PIPELINE_SUMMARY_TRACKING_WINDOW_MS) => {
+  pipelineSummaryTrackingUntil = Math.max(pipelineSummaryTrackingUntil, Date.now() + durationMs)
+}
+
+const scheduleTriggeredPipelineRefresh = ({
+  delay = PIPELINE_TRIGGER_DELAY_MS,
+  trackingWindowMs = PIPELINE_SUMMARY_TRACKING_WINDOW_MS
+} = {}) => {
+  if (!props.path || isGitRepository.value === false || typeof window === 'undefined') return
+  armPipelineSummaryTracking(trackingWindowMs)
+  clearPipelineTriggerRefreshTimer()
+  pipelineTriggerRefreshTimer = window.setTimeout(() => {
+    pipelineTriggerRefreshTimer = null
+    refreshPipelineSummary({ silent: true })
+  }, delay)
+}
+
 const schedulePipelineSummaryRefresh = () => {
   clearPipelineSummaryTimer()
-  if (!props.isActive || !props.path || isGitRepository.value === false || !isDocumentVisible.value || typeof window === 'undefined') {
+  if (!props.path || isGitRepository.value === false || typeof window === 'undefined') {
     return
   }
 
-  let delay = activePipelineSummary.value
+  const shouldPollFromContext = props.isActive && isDocumentVisible.value
+  const shouldPollFromTracking = shouldTrackPipelineSummary()
+  if (!shouldPollFromContext && !shouldPollFromTracking) return
+
+  let delay = shouldPollFromTracking
     ? PIPELINE_SUMMARY_ACTIVE_INTERVAL_MS
-    : PIPELINE_SUMMARY_IDLE_INTERVAL_MS
+    : activePipelineSummary.value
+      ? PIPELINE_SUMMARY_ACTIVE_INTERVAL_MS
+      : PIPELINE_SUMMARY_IDLE_INTERVAL_MS
 
   if (pipelineSummaryHoldUntil > Date.now()) {
     delay = Math.min(delay, Math.max(500, pipelineSummaryHoldUntil - Date.now()))
@@ -1276,6 +1321,9 @@ const refreshPipelineSummary = async ({ silent = false } = {}) => {
     activePipelineSummary.value = null
     return
   }
+
+  if (pipelineSummaryInFlight) return
+  pipelineSummaryInFlight = true
 
   try {
     const result = await window.electronAPI.gitlabProjectPipelines({
@@ -1299,6 +1347,7 @@ const refreshPipelineSummary = async ({ silent = false } = {}) => {
     if (currentRunning) {
       activePipelineSummary.value = currentRunning
       pipelineSummaryHoldUntil = 0
+      armPipelineSummaryTracking()
     } else if (
       previousSummary &&
       isActivePipelineStatus(previousSummary.status) &&
@@ -1306,6 +1355,7 @@ const refreshPipelineSummary = async ({ silent = false } = {}) => {
     ) {
       activePipelineSummary.value = latestRecent
       pipelineSummaryHoldUntil = Date.now() + PIPELINE_SUMMARY_TERMINAL_HOLD_MS
+      pipelineSummaryTrackingUntil = Math.max(pipelineSummaryTrackingUntil, pipelineSummaryHoldUntil)
     } else if (
       isTerminalPipelineStatus(activePipelineSummary.value?.status) &&
       pipelineSummaryHoldUntil > Date.now()
@@ -1324,6 +1374,7 @@ const refreshPipelineSummary = async ({ silent = false } = {}) => {
       pipelineSummaryHoldUntil = 0
     }
   } finally {
+    pipelineSummaryInFlight = false
     schedulePipelineSummaryRefresh()
   }
 }
@@ -1943,6 +1994,10 @@ const handleFileStatusChanged = async (payload = {}) => {
   
   bumpCommitHistoryRevision()
   emitPendingStatusChanged(props.path)
+
+  if (payload?.type === 'commit' || payload?.type === 'commit-and-push') {
+    scheduleTriggeredPipelineRefresh()
+  }
 }
 
 // 处理待定文件数量变化
@@ -2199,6 +2254,7 @@ const pushProject = async () => {
     if (result.success) {
       finishOperation({ hideDialog: true })
       queueProjectRefresh({ reloadBranchStatus: true, reloadCommitHistory: true })
+      scheduleTriggeredPipelineRefresh()
     } else {
       finishOperation()
       // 分析错误类型给出更友好的提示
@@ -2227,6 +2283,7 @@ const pushProject = async () => {
           operationOutput.value += '\n\n✅ 推送完成'
           showOperationDialog.value = false
           queueProjectRefresh({ reloadBranchStatus: true, reloadCommitHistory: true })
+          scheduleTriggeredPipelineRefresh()
           return
         }
         operationOutput.value += '\n\n❌ 推送失败'
@@ -2574,6 +2631,7 @@ const pushTagAction = async () => {
     if (result.success) {
       finishOperation({ hideDialog: true })
       queueProjectRefresh({ reloadTags: true, reloadCommitHistory: true })
+      scheduleTriggeredPipelineRefresh()
     } else {
       finishOperation()
       operationOutput.value += '\n\n❌ 推送标签失败'
@@ -2649,6 +2707,9 @@ const confirmCreateTag = async () => {
       
       finishOperation({ hideDialog: true })
       queueProjectRefresh({ reloadTags: true, reloadCommitHistory: true })
+      if (pushTagAfterCreate.value) {
+        scheduleTriggeredPipelineRefresh()
+      }
     } else {
       finishOperation()
       operationOutput.value += '\n\n❌ 创建标签失败'
@@ -2734,6 +2795,7 @@ const confirmCreateMR = async () => {
     
     operationOutput.value += `\n正在打开 GitLab MR 页面...\n`
     emit('navigate', mrUrl)
+    scheduleTriggeredPipelineRefresh({ trackingWindowMs: 300000 })
     
     finishOperation({ hideDialog: true })
   } catch (error) {
@@ -2851,7 +2913,7 @@ const cancelOperation = () => {
 watch(() => props.path, async (newPath, oldPath) => {
   clearAiSessionsPreload()
   clearWorkspacePreload()
-  clearPipelineSummaryTimer()
+  clearPipelineRefreshState()
   stopProjectGitMonitor()
   resetProjectGitMonitorState()
   if (newPath) {
@@ -2941,6 +3003,7 @@ watch(() => props.path, async (newPath, oldPath) => {
     projectInfo.value = null
     isGitRepository.value = false
     activePipelineSummary.value = null
+    clearPipelineRefreshState()
     // 切换项目时重置状态
     branchStatus.value = null
     allBranchStatus.value = {}
@@ -3067,7 +3130,7 @@ onBeforeUnmount(() => {
 onUnmounted(() => {
   clearAiSessionsPreload()
   clearWorkspacePreload()
-  clearPipelineSummaryTimer()
+  clearPipelineRefreshState()
   stopProjectGitMonitor()
   window.removeEventListener('focus', handleWindowFocus)
   document.removeEventListener('visibilitychange', handleVisibilityChange)

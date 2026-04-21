@@ -30,7 +30,7 @@
                 <span class="pipeline-time">{{ formatTime(pipeline.updatedAt || pipeline.createdAt) }}</span>
               </div>
               <div class="pipeline-row bottom">
-                <span class="pipeline-status">{{ getStatusLabel(pipeline.status) }}</span>
+                <span :class="['pipeline-status', statusTextClass(pipeline.status)]">{{ getStatusLabel(pipeline.status) }}</span>
                 <span class="pipeline-id">#{{ pipeline.id }}</span>
               </div>
             </button>
@@ -50,7 +50,7 @@
                 <span class="pipeline-time">{{ formatTime(pipeline.updatedAt || pipeline.createdAt) }}</span>
               </div>
               <div class="pipeline-row bottom">
-                <span class="pipeline-status">{{ getStatusLabel(pipeline.status) }}</span>
+                <span :class="['pipeline-status', statusTextClass(pipeline.status)]">{{ getStatusLabel(pipeline.status) }}</span>
                 <span class="pipeline-id">#{{ pipeline.id }}</span>
               </div>
             </button>
@@ -87,7 +87,7 @@
           <div class="pipeline-summary-grid">
             <div class="summary-card">
               <span class="summary-label">状态</span>
-              <span :class="['summary-value', statusClass(selectedPipeline.status)]">
+              <span :class="['summary-value', statusTextClass(selectedPipeline.status)]">
                 {{ getStatusLabel(selectedPipeline.status) }}
               </span>
             </div>
@@ -126,7 +126,7 @@
                     <span class="job-name">{{ job.name }}</span>
                   </div>
                   <div class="job-meta">
-                    <span class="job-status">{{ getStatusLabel(job.status) }}</span>
+                    <span :class="['job-status', statusTextClass(job.status)]">{{ getStatusLabel(job.status) }}</span>
                     <span class="job-duration">{{ formatJobDuration(job) }}</span>
                   </div>
                 </div>
@@ -204,6 +204,7 @@ const getStatusLabel = (status) => ({
 }[status] || status || '未知')
 
 const statusClass = (status) => `status-${status || 'unknown'}`
+const statusTextClass = (status) => `status-text-${status || 'unknown'}`
 
 const getPipelineDisplayRef = (pipeline) => {
   if (!pipeline) return '-'
@@ -596,23 +597,30 @@ onUnmounted(() => {
 }
 
 .stage-count.running,
-.summary-value.status-running,
-.summary-value.status-pending,
-.summary-value.status-preparing,
-.summary-value.status-waiting_for_resource,
-.summary-value.status-created {
+.status-text-running,
+.status-text-pending,
+.status-text-preparing,
+.status-text-waiting_for_resource,
+.status-text-created {
   color: #f4d37d;
 }
 
 .stage-count.failed,
-.summary-value.status-failed,
-.summary-value.status-canceled {
+.status-text-failed,
+.status-text-canceled {
   color: #fca5a5;
 }
 
 .stage-count.success,
-.summary-value.status-success {
+.status-text-success {
   color: #86efac;
+}
+
+.status-text-skipped,
+.status-text-manual,
+.status-text-scheduled,
+.status-text-unknown {
+  color: rgba(255, 255, 255, 0.58);
 }
 
 .job-list {
