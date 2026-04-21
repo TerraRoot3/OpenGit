@@ -32,7 +32,7 @@
             @mousedown.prevent.stop
             @click.stop="emit('pane-clear', node.termId)"
           >
-            <Eraser :size="11" />
+            <Eraser :size="14" />
           </button>
           <button
             class="pane-action-btn"
@@ -40,7 +40,7 @@
             @mousedown.prevent.stop
             @click.stop="emit('pane-restart', node.termId)"
           >
-            <RefreshCw :size="11" />
+            <RefreshCw :size="14" />
           </button>
           <button
             v-if="closable"
@@ -49,7 +49,7 @@
             @mousedown.prevent.stop
             @click.stop="emit('pane-close', node.termId)"
           >
-            <X :size="11" />
+            <X :size="14" />
           </button>
         </div>
       </template>

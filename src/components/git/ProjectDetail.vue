@@ -1949,9 +1949,15 @@ const handleResumeAiSession = async (session) => {
   if (props.isActive) {
     const targetCwd = session.cwd || terminalProjectPath.value
     if (terminalMode.value === 'liquid') {
-      await liquidTerminalRef.value?.runCommand?.(command, { cwd: targetCwd })
+      await liquidTerminalRef.value?.runCommand?.(command, {
+        cwd: targetCwd,
+        forceNewTerminal: true
+      })
     } else {
-      await terminalRef.value?.runCommand?.(command, { cwd: targetCwd })
+      await terminalRef.value?.runCommand?.(command, {
+        cwd: targetCwd,
+        forceNewTerminal: true
+      })
     }
   }
 }

@@ -621,6 +621,15 @@ function paneStyle(i) {
 }
 
 async function runCommand(command, options = {}) {
+  const wantsDedicatedPane = !!options?.forceNewTerminal
+  if (wantsDedicatedPane && sessions.value.length >= MAX_SESSIONS) {
+    return false
+  }
+  if (wantsDedicatedPane) {
+    addSession()
+    await nextTick()
+  }
+
   const targetId = focusedId.value || sessions.value[0]?.id
   if (!targetId) return false
   const panel = panelRefById.get(targetId)
