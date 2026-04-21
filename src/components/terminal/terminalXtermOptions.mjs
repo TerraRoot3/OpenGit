@@ -32,11 +32,33 @@ export const XTERM_OPTS = {
   fontSize: 13,
   fontFamily: TERMINAL_FONT_FAMILY,
   rescaleOverlappingGlyphs: true,
-  theme: {
-    background: '#1b1c1f',
+  theme: null,
+  allowProposedApi: true,
+  // Codex / Claude 这类长对话会迅速放大 xterm buffer 的内存占用。
+  // 默认控制在 1500 行，用户可在项目设置中调整。
+  scrollback: DEFAULT_TERMINAL_SCROLLBACK
+}
+
+const DEFAULT_XTERM_BACKGROUND = '#161b22'
+
+export function resolveTerminalThemeBackground() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return DEFAULT_XTERM_BACKGROUND
+  }
+
+  const computed = window.getComputedStyle(document.documentElement)
+  const background = computed.getPropertyValue('--theme-sem-bg-project').trim()
+  return background || DEFAULT_XTERM_BACKGROUND
+}
+
+export function createXtermTheme() {
+  const background = resolveTerminalThemeBackground()
+
+  return {
+    background,
     foreground: '#d4d4d4',
     cursor: '#d4d4d4',
-    cursorAccent: '#1b1c1f',
+    cursorAccent: background,
     selectionBackground: 'rgba(255, 255, 255, 0.3)',
     black: '#000000',
     red: '#cd3131',
@@ -54,9 +76,5 @@ export const XTERM_OPTS = {
     brightMagenta: '#d670d6',
     brightCyan: '#29b8db',
     brightWhite: '#ffffff'
-  },
-  allowProposedApi: true,
-  // Codex / Claude 这类长对话会迅速放大 xterm buffer 的内存占用。
-  // 默认控制在 1500 行，用户可在项目设置中调整。
-  scrollback: DEFAULT_TERMINAL_SCROLLBACK
+  }
 }

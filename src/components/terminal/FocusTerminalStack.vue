@@ -819,8 +819,8 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--app-workspace-bg);
-  border-radius: var(--app-selected-radius);
+  background: var(--theme-sem-bg-project);
+  border-radius: var(--theme-comp-radius-selected);
   overflow: hidden;
   min-height: 0;
 }
@@ -844,19 +844,20 @@ onUnmounted(() => {
   flex-shrink: 0;
   padding: 0;
   min-height: 0;
-  border-bottom: 1px solid var(--app-border);
-  background: color-mix(in srgb, var(--app-surface-1) 82%, transparent);
+  border-bottom: 1px solid var(--theme-sem-border-default);
+  background: var(--theme-comp-child-header-bg);
 }
 
 .focus-terminal-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   width: 100%;
   min-width: 0;
   overflow-x: auto;
   height: 40px;
   min-height: 40px;
+  padding: 0 6px;
 }
 
 .focus-terminal-tabs::-webkit-scrollbar {
@@ -866,7 +867,7 @@ onUnmounted(() => {
 .focus-tablist {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex: 0 0 auto;
   min-width: 0;
   position: relative;
@@ -876,11 +877,12 @@ onUnmounted(() => {
 .focus-tab {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  height: 100%;
+  gap: 6px;
+  padding: 0 12px;
+  height: calc(100% - 8px);
+  margin: 4px 0;
   box-sizing: border-box;
-  border-radius: 0;
+  border-radius: 10px;
   color: rgba(255, 255, 255, 0.68);
   font-size: 12px;
   cursor: pointer;
@@ -892,16 +894,15 @@ onUnmounted(() => {
 }
 
 .focus-tab:hover {
-  background: transparent;
+  background: var(--theme-sem-hover);
   color: rgba(255, 255, 255, 0.9);
 }
 
 .focus-tab.is-active {
-  background: var(--app-tab-selected-bg);
-  box-shadow: none;
-  color: var(--app-text-primary);
+  background: var(--theme-comp-tab-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
+  color: var(--theme-sem-text-primary);
   border-bottom-color: transparent;
-  border-radius: var(--app-selected-radius);
 }
 
 .focus-tab__label {
@@ -920,19 +921,19 @@ onUnmounted(() => {
   padding: 0;
   background: transparent;
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   color: rgba(255, 255, 255, 0.45);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.28;
   transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
 
 .focus-tab:hover .focus-tab__close {
-  opacity: 1;
+  opacity: 0.72;
 }
 
 .focus-tab.is-active .focus-tab__close {
-  opacity: 0.55;
+  opacity: 0.56;
 }
 
 .focus-tab__close:hover {
@@ -946,23 +947,22 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  margin-left: 2px;
+  margin-left: 0;
   margin-bottom: 0;
-  color: var(--app-text-secondary);
+  color: rgba(255, 255, 255, 0.54);
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  border: none;
+  border-radius: 10px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background-color 0.15s, color 0.15s;
 }
 
 .toolbar-add-btn:hover:not(:disabled) {
-  background: var(--app-hover);
-  border-color: var(--app-border-strong);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .toolbar-add-btn:disabled {
@@ -1032,7 +1032,7 @@ onUnmounted(() => {
   position: absolute;
   min-width: 0;
   min-height: 0;
-  border-radius: var(--app-selected-radius);
+  border-radius: var(--theme-comp-radius-selected);
   overflow: hidden;
   box-sizing: border-box;
   border: none;
@@ -1055,7 +1055,7 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: color-mix(in srgb, var(--app-warning-bg) 70%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 70%, transparent);
   pointer-events: none;
   z-index: 5;
   opacity: 1;
@@ -1075,12 +1075,12 @@ onUnmounted(() => {
 }
 
 .focus-terminal-pane.is-drop-target {
-  background: color-mix(in srgb, var(--app-info-bg) 75%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-info-bg) 75%, transparent);
 }
 
 .focus-terminal-pane.is-drop-target :deep(.terminal-header) {
-  border-bottom-color: var(--app-info-border);
-  background: color-mix(in srgb, var(--app-info-bg) 78%, transparent);
+  border-bottom-color: var(--theme-sem-info-border);
+  background: color-mix(in srgb, var(--theme-sem-info-bg) 78%, transparent);
 }
 
 .focus-terminal-pane.is-dragging {
@@ -1090,13 +1090,13 @@ onUnmounted(() => {
 
 /* 标题栏：聚焦蓝、未聚焦偏黄，和外层边框/蒙层形成统一层级 */
 .focus-terminal-pane :deep(.terminal-header) {
-  border-bottom: 1px solid var(--app-warning-border);
-  background: color-mix(in srgb, var(--app-warning-bg) 55%, transparent);
+  border-bottom: 1px solid var(--theme-sem-warning-border);
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 55%, transparent);
 }
 
 .focus-terminal-pane.is-focused :deep(.terminal-header) {
-  border-bottom-color: var(--app-info-border);
-  background: color-mix(in srgb, var(--app-info-bg) 70%, transparent);
+  border-bottom-color: var(--theme-sem-info-border);
+  background: color-mix(in srgb, var(--theme-sem-info-bg) 70%, transparent);
 }
 
 </style>

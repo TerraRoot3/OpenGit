@@ -232,6 +232,7 @@ import { useTerminalRouter } from '../../composables/useTerminalRouter'
 import { buildDropPayload } from './terminalInteractions.mjs'
 import { shouldCreateInitialTerminal } from './terminalInitialBootstrap.mjs'
 import {
+  createXtermTheme,
   DEFAULT_TERMINAL_SCROLLBACK,
   TERMINAL_SCROLLBACK_CONFIG_KEY,
   XTERM_OPTS,
@@ -330,7 +331,7 @@ function applyTerminalScrollbackToXterm(xterm, scrollback) {
     xterm.options.scrollback = nextValue
   } catch (error) {
     try {
-      xterm.options = { ...XTERM_OPTS, scrollback: nextValue }
+      xterm.options = { ...XTERM_OPTS, theme: createXtermTheme(), scrollback: nextValue }
     } catch (innerError) {
       // ignore
     }
@@ -695,6 +696,7 @@ const createXterm = async () => {
   const scrollback = await loadTerminalScrollbackSetting()
   const xterm = new Terminal({
     ...XTERM_OPTS,
+    theme: createXtermTheme(),
     scrollback
   })
   const fitAddon = new FitAddon()
@@ -2563,8 +2565,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--app-project-bg);
-  border-radius: var(--app-selected-radius);
+  background: var(--theme-sem-bg-project);
+  border-radius: var(--theme-comp-radius-selected);
   overflow: hidden;
   border: none;
 }
@@ -2576,7 +2578,7 @@ defineExpose({
   height: 40px;
   min-height: 40px;
   box-sizing: border-box;
-  background: var(--app-project-bg);
+  background: var(--theme-comp-child-header-bg);
 }
 .terminal-header--single-pane {
   padding: 0 10px 0 12px;
@@ -2635,21 +2637,23 @@ defineExpose({
 .terminal-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   overflow-x: auto;
   flex: 1;
   min-width: 0;
   height: 100%;
+  padding: 0 6px;
 }
 .terminal-tabs::-webkit-scrollbar { height: 0; }
 .terminal-tab {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  height: 100%;
+  gap: 6px;
+  padding: 0 12px;
+  height: calc(100% - 8px);
+  margin: 4px 0;
   box-sizing: border-box;
-  border-radius: 0;
+  border-radius: 10px;
   user-select: none;
   -webkit-user-select: none;
   color: rgba(255, 255, 255, 0.68);
@@ -2661,15 +2665,14 @@ defineExpose({
   flex-shrink: 0;
 }
 .terminal-tab:hover {
-  background: transparent;
+  background: var(--theme-sem-hover);
   color: rgba(255, 255, 255, 0.9);
 }
 .terminal-tab.active {
-  background: var(--app-tab-selected-bg);
-  box-shadow: none;
-  color: var(--app-text-primary);
+  background: var(--theme-comp-tab-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
+  color: var(--theme-sem-text-primary);
   border-bottom-color: transparent;
-  border-radius: var(--app-selected-radius);
 }
 .tab-label {
   max-width: 120px;
@@ -2688,19 +2691,19 @@ defineExpose({
   border-radius: 3px;
   color: rgba(255, 255, 255, 0.45);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.28;
   transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
-.terminal-tab:hover .tab-close-btn { opacity: 1; }
-.terminal-tab.active .tab-close-btn { opacity: 0.55; }
+.terminal-tab:hover .tab-close-btn { opacity: 0.72; }
+.terminal-tab.active .tab-close-btn { opacity: 0.56; }
 .tab-close-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.9);
   opacity: 1 !important;
 }
 .add-btn {
   flex-shrink: 0;
-  margin-left: 2px;
+  margin-left: 0;
 }
 .terminal-actions {
   display: flex;
@@ -2715,20 +2718,22 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 26px;
+  height: 32px;
   min-width: 220px;
   max-width: 280px;
-  padding: 0 6px;
-  border: none;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, white 12%);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .terminal-search.is-not-found {
   background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.32);
 }
 .terminal-search-icon {
   flex-shrink: 0;
-  color: #7dd3fc;
+  color: rgba(255, 255, 255, 0.54);
 }
 .terminal-search-input {
   flex: 1;
@@ -2742,24 +2747,28 @@ defineExpose({
   font-size: 12px;
 }
 .terminal-search-input::placeholder {
-  color: #6b7280;
+  color: rgba(255, 255, 255, 0.32);
+}
+.terminal-search:focus-within {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
 }
 .terminal-search-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
-  color: #9ca3af;
+  color: rgba(255, 255, 255, 0.46);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 .terminal-search-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-sem-hover);
   color: #f3f4f6;
 }
 .terminal-search-btn.close:hover {
@@ -2779,29 +2788,29 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   background: transparent;
   border: none;
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.5);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.54);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.15s ease, color 0.15s ease;
   outline: none;
 }
 .terminal-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-sem-hover);
   color: rgba(255, 255, 255, 0.9);
 }
 .terminal-btn:focus-visible {
   outline: none;
 }
 .terminal-btn-split {
-  width: 26px;
+  width: 30px;
   border: none;
 }
 .terminal-btn-split:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-sem-hover);
   color: rgba(255, 255, 255, 0.92);
 }
 .split-btn-icon {
@@ -2818,7 +2827,7 @@ defineExpose({
   padding: 0;
   overflow: hidden;
   position: relative;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 .terminal-body.drag-over {
   background: rgba(14, 116, 144, 0.14);
@@ -2905,7 +2914,7 @@ defineExpose({
   position: absolute;
   top: 100%;
   left: 0;
-  background: #26272b;
+  background: var(--theme-sem-bg-menu);
   border: 1px solid rgba(255,255,255,0.06);
   border-radius: 10px;
   min-width: 140px;
@@ -2914,13 +2923,15 @@ defineExpose({
   padding: 4px 0;
 }
 .cwd-item {
-  padding: 5px 12px;
+  margin: 0 6px;
+  padding: 8px 10px;
   font-size: 12px;
   color: #d4d4d4;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 6px;
+  border-radius: 8px;
 }
-.cwd-item:hover { background: rgba(255,255,255,0.08); }
+.cwd-item:hover { background: var(--theme-sem-hover); }
 </style>

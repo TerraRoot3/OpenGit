@@ -212,7 +212,7 @@ const handleNavigateCurrent = (url) => {
 }
 
 .new-tab-page.route-single-project {
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 .new-tab-page.is-active {

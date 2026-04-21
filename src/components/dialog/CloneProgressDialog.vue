@@ -435,7 +435,7 @@ const scrollToBottom = () => {
 }
 
 .clone-dialog {
-  background: #2d2d2d;
+  background: var(--theme-sem-bg-dialog);
   border-radius: 12px;
   width: 500px;
   max-width: calc(100vw - 40px);
@@ -452,7 +452,7 @@ const scrollToBottom = () => {
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  background: linear-gradient(135deg, #00d4ff 0%, #0066ff 100%);
+  background: linear-gradient(135deg, var(--theme-sem-accent-primary-strong) 0%, var(--theme-sem-accent-primary) 100%);
   color: white;
 }
 
@@ -483,7 +483,7 @@ const scrollToBottom = () => {
 .progress-section {
   padding: 16px 24px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: #2d2d2d;
+  background: var(--theme-sem-bg-dialog);
 }
 
 .progress-bar {
@@ -497,7 +497,7 @@ const scrollToBottom = () => {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #00d4ff, #0099ff, #0066ff);
+  background: linear-gradient(90deg, var(--theme-sem-accent-primary-strong), var(--theme-sem-accent-primary), color-mix(in srgb, var(--theme-sem-accent-primary) 82%, black 18%));
   border-radius: 4px;
   transition: width 0.3s ease;
 }
@@ -552,7 +552,7 @@ const scrollToBottom = () => {
 }
 
 .tick.active .tick-line {
-  background: #6c5ce7;
+  background: var(--theme-sem-accent-primary);
 }
 
 .tick-label {
@@ -563,7 +563,7 @@ const scrollToBottom = () => {
 }
 
 .tick.active .tick-label {
-  color: #6c5ce7;
+  color: var(--theme-sem-accent-primary);
   font-weight: 600;
 }
 
@@ -571,13 +571,13 @@ const scrollToBottom = () => {
 .git-output {
   padding: 20px 24px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: #2d2d2d;
+  background: var(--theme-sem-bg-dialog);
 }
 
 .output-content {
   height: 200px;
   overflow-y: auto;
-  background: #1e1e1e;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 92%, black 8%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   padding: 12px;
@@ -607,7 +607,7 @@ const scrollToBottom = () => {
   padding: 20px 24px;
   overflow-y: auto;
   min-height: 150px;
-  background: #2d2d2d;
+  background: var(--theme-sem-bg-dialog);
 }
 
 .completed-header {
@@ -639,19 +639,19 @@ const scrollToBottom = () => {
 }
 
 .success-icon {
-  color: #28a745;
+  color: var(--theme-sem-accent-success-strong);
   flex-shrink: 0;
   margin-top: 2px;
 }
 
 .error-icon {
-  color: #dc3545;
+  color: var(--theme-sem-accent-danger-strong);
   flex-shrink: 0;
   margin-top: 2px;
 }
 
 .cloning-icon {
-  color: #6c5ce7;
+  color: var(--theme-sem-accent-primary);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -678,25 +678,25 @@ const scrollToBottom = () => {
 
 .project-error {
   font-size: 11px;
-  color: #dc3545;
+  color: var(--theme-sem-accent-danger-strong);
   font-style: italic;
 }
 
 /* 项目状态文本样式 */
 .success-text {
-  color: #28a745;
+  color: var(--theme-sem-accent-success-strong);
   font-weight: 600;
   margin-left: 4px;
 }
 
 .error-text {
-  color: #dc3545;
+  color: var(--theme-sem-accent-danger-strong);
   font-weight: 600;
   margin-left: 4px;
 }
 
 .cloning-text {
-  color: #6c5ce7;
+  color: var(--theme-sem-accent-primary);
   font-weight: 600;
   margin-left: 4px;
 }
@@ -708,10 +708,10 @@ const scrollToBottom = () => {
 
 @keyframes dots {
   0%, 20% {
-    color: rgba(108, 92, 231, 1);
+    color: color-mix(in srgb, var(--theme-sem-accent-primary) 100%, white 0%);
     text-shadow:
-      0 0 0 rgba(108, 92, 231, 0),
-      0 0 0 rgba(108, 92, 231, 0);
+      0 0 0 color-mix(in srgb, var(--theme-sem-accent-primary) 0%, transparent),
+      0 0 0 color-mix(in srgb, var(--theme-sem-accent-primary) 0%, transparent);
   }
   40% {
     color: rgba(108, 92, 231, 1);

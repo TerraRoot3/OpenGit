@@ -4220,19 +4220,19 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  background: var(--app-workspace-bg);
+  background: var(--theme-sem-bg-workspace);
 }
 
 .browser-tabs-bar {
   display: flex;
   align-items: center;
-  background: var(--app-sidebar-bg);
-  padding: 0 0 0 0;
+  background: var(--theme-comp-child-header-bg);
+  padding: 0 6px;
   gap: 0;
   flex-shrink: 0;
   overflow: hidden; /* 禁止整个标签栏滚动 */
-  height: 36px;
-  min-height: 36px;
+  height: 40px;
+  min-height: 40px;
   -webkit-app-region: no-drag; /* 标签栏本身不可拖拽 */
   position: relative;
 }
@@ -4248,7 +4248,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 .browser-tabs-list {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 4px;
   flex: 0 1 auto; /* 只占用内容所需空间，不扩展 */
   height: 100%;
   overflow: hidden; /* 不允许滚动，标签自动缩小 */
@@ -4293,7 +4293,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 0 8px 0 10px;
+  padding: 0 10px 0 12px;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -4302,7 +4302,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   min-width: 60px; /* 最小宽度，只显示图标和部分标题 */
   width: 200px; /* 默认固定宽度 */
   flex: 0 1 200px; /* 不扩展，只在空间不足时缩小 */
-  height: 100%;
+  height: calc(100% - 8px);
+  margin: 4px 0;
   box-sizing: border-box;
   position: relative;
   color: rgba(255, 255, 255, 0.68);
@@ -4313,6 +4314,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   user-select: none; /* 标签项本身不可选中，保持可点击 */
   z-index: 20; /* 确保在拖拽区域上方 */
   pointer-events: auto; /* 确保可以点击 */
+  border-radius: 10px;
 }
 
 .browser-tab-item.leading-tab {
@@ -4329,13 +4331,13 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-item.drag-over {
-  background: color-mix(in srgb, var(--app-tab-selected-bg) 82%, transparent);
+  background: color-mix(in srgb, var(--theme-comp-tab-active-bg) 82%, transparent);
   border-radius: 10px;
 }
 
 /* 拖拽克隆元素样式 */
 .drag-clone {
-  background: var(--app-surface-2);
+  background: var(--theme-sem-surface-2);
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -4350,7 +4352,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   top: 4px;
   bottom: 4px;
   width: 2px;
-  background: var(--app-primary);
+  background: var(--theme-sem-accent-primary);
   border-radius: 1px;
 }
 
@@ -4389,14 +4391,20 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-item.active {
-  background: var(--app-tab-selected-bg);
-  color: var(--app-text-primary);
+  background: var(--theme-comp-tab-active-bg);
+  color: var(--theme-sem-text-primary);
   font-weight: 500; /* 保持与未选中状态相同的字重，避免视觉上的放大效果 */
-  box-shadow: none;
-  height: 100%;
-  border-radius: var(--app-selected-radius);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
   position: relative;
   z-index: 1;
+}
+
+.browser-tab-item:hover {
+  background: var(--theme-sem-hover);
+}
+
+.browser-tab-item.active:hover {
+  background: var(--theme-comp-tab-active-bg);
 }
 
 /* 选中态下边的柔和衔接 */
@@ -4465,8 +4473,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   border-radius: 3px;
   cursor: pointer;
   color: rgba(255, 255, 255, 0.5);
-  opacity: 0.8;
-  transition: none; /* 移除过渡，hover时立即显示 */
+  opacity: 0.34;
+  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
   flex-shrink: 0;
   margin-left: 4px;
   -webkit-app-region: no-drag; /* 关闭按钮不可拖拽窗口 */
@@ -4478,13 +4486,17 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 .browser-tab-item.active .browser-tab-close {
   color: rgba(255, 255, 255, 0.7); /* 浅色关闭按钮 */
+  opacity: 0.56;
+}
+
+.browser-tab-item:hover .browser-tab-close {
+  opacity: 0.72;
 }
 
 .browser-tab-close:hover {
-  color: #dc2626;
-  background: rgba(220, 38, 38, 0.08);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
   opacity: 1;
-  transform: scale(1.1);
 }
 
 .browser-tab-new {
@@ -4495,10 +4507,10 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   height: 32px;
   border: none;
   background: transparent;
-  border-radius: 4px;
+  border-radius: 10px;
   cursor: pointer;
   color: rgba(255, 255, 255, 0.7);
-  transition: all 0.3s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
   flex-shrink: 0;
   margin-left: 4px;
   -webkit-app-region: no-drag; /* 创建按钮不可拖拽窗口 */
@@ -4508,7 +4520,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-new:hover {
-  background: var(--app-hover);
+  background: var(--theme-sem-hover);
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -4516,7 +4528,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   display: flex;
   align-items: center;
   padding: 6px 12px;
-  background: var(--app-sidebar-bg);
+  background: var(--theme-comp-child-header-bg);
   gap: 8px;
   flex-shrink: 0;
   min-height: 44px;
@@ -4528,14 +4540,14 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 .loading-progress-track {
   height: 2px;
   width: 100%;
-  background: var(--app-border);
+  background: var(--theme-sem-border-default);
   flex-shrink: 0;
   overflow: hidden;
 }
 
 .loading-progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, var(--app-primary) 0%, var(--app-primary-strong) 100%);
+  background: linear-gradient(90deg, var(--theme-sem-accent-primary) 0%, var(--theme-sem-accent-primary-strong) 100%);
   transition: width 0.14s ease-out;
 }
 
@@ -4566,8 +4578,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 .toolbar-menu {
   position: fixed; /* 使用 fixed 定位，不受父容器影响 */
-  background: var(--app-surface-2);
-  border: 1px solid var(--app-border);
+  background: var(--theme-sem-bg-menu);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
   min-width: 160px;
@@ -4580,14 +4592,16 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
-  color: var(--app-text-primary);
+  margin: 0 6px;
+  padding: 9px 10px;
+  color: var(--theme-sem-text-primary);
   cursor: pointer;
   transition: background 0.2s;
-  font-size: 14px;
+  font-size: 13px;
   pointer-events: auto !important;
   -webkit-app-region: no-drag !important;
   user-select: none;
+  border-radius: 8px;
 }
 
 .menu-item * {
@@ -4595,13 +4609,13 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .menu-item:hover {
-  background: var(--app-hover);
+  background: var(--theme-sem-hover);
 }
 
 .menu-divider {
   height: 1px;
-  background: var(--app-border);
-  margin: 4px 0;
+  background: var(--theme-sem-border-default);
+  margin: 6px 6px;
 }
 
 .menu-item svg {
@@ -4625,13 +4639,14 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   flex: 1;
   width: 100%;
   padding: 6px 104px 6px 12px; /* 右侧留出空间给地址栏动作按钮组 */
-  border: 1px solid transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   font-size: 14px;
   outline: none;
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, white 12%);
+  color: var(--theme-sem-text-primary);
   -webkit-app-region: no-drag; /* URL输入框不可拖拽窗口 */
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 /* about: 自动补全提示（无 Electron 浮层 API 时的降级，在地址栏下方展开） */
@@ -4644,8 +4659,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   max-height: min(42vh, 360px);
   overflow-x: hidden;
   overflow-y: auto;
-  background: var(--app-surface-2);
-  border: 1px solid var(--app-border);
+  background: var(--theme-sem-bg-menu);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
   z-index: 10000;
@@ -4655,14 +4670,21 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  margin: 0 6px;
+  padding: 9px 10px;
   cursor: pointer;
   transition: background 0.15s ease;
+  border-radius: 8px;
 }
 
 .suggestion-item:hover,
 .suggestion-item.active {
-  background: var(--app-hover);
+  background: var(--theme-sem-hover);
+}
+
+.suggestion-item.active {
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 .suggestion-icon {
@@ -4679,18 +4701,18 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .suggestion-item.active .suggestion-icon {
-  color: var(--app-primary);
+  color: var(--theme-sem-accent-primary);
 }
 
 .suggestion-url {
   font-family: 'SF Mono', Monaco, Consolas, monospace;
   font-size: 13px;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
 }
 
 .suggestion-title {
   font-size: 12px;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
   margin-left: auto;
 }
 
@@ -4706,19 +4728,21 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border: none;
   background: transparent; /* 无背景 */
+  border-radius: 10px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.7);
-  transition: all 0.2s ease;
+  color: rgba(255, 255, 255, 0.58);
+  transition: background-color 0.15s ease, color 0.15s ease;
   -webkit-app-region: no-drag; /* 收藏按钮不可拖拽窗口 */
   padding: 0;
   flex-shrink: 0;
 }
 
 .url-input-favorite-btn:hover {
+  background: var(--theme-sem-hover);
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -4736,12 +4760,12 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .url-input::placeholder {
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
 }
 
 .url-input:focus {
-  border-color: var(--app-selected-border);
-  background: color-mix(in srgb, var(--app-hover) 75%, white 25%);
+  border-color: rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
 }
 
 .toolbar-btn {
@@ -4752,15 +4776,15 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   height: 32px;
   border: none;
   background: transparent;
-  border-radius: 4px;
+  border-radius: 10px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.7);
-  transition: all 0.3s ease;
+  color: rgba(255, 255, 255, 0.58);
+  transition: background-color 0.15s ease, color 0.15s ease;
   -webkit-app-region: no-drag; /* 工具栏按钮不可拖拽窗口 */
 }
 
 .toolbar-btn:hover:not(:disabled) {
-  background: var(--app-hover);
+  background: var(--theme-sem-hover);
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -4772,7 +4796,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 .toolbar-btn.active {
   color: rgba(255, 255, 255, 0.9);
-  background: var(--app-hover);
+  background: var(--theme-sem-hover);
 }
 
 .browser-content {
@@ -4931,9 +4955,9 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   justify-content: space-between;
   padding: 8px 10px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--app-surface-2) 94%, transparent);
-  border: 1px solid var(--app-border);
-  color: var(--app-text-primary);
+  background: color-mix(in srgb, var(--theme-sem-surface-2) 94%, transparent);
+  border: 1px solid var(--theme-sem-border-default);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
   font-weight: 600;
 }
@@ -4958,9 +4982,9 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 .download-empty {
   padding: 12px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--app-surface-2) 90%, transparent);
-  border: 1px solid var(--app-border);
-  color: var(--app-text-secondary);
+  background: color-mix(in srgb, var(--theme-sem-surface-2) 90%, transparent);
+  border: 1px solid var(--theme-sem-border-default);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
   text-align: center;
 }
@@ -4972,9 +4996,9 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   align-items: center;
   padding: 8px 10px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--app-surface-2) 90%, transparent);
-  border: 1px solid var(--app-border);
-  color: var(--app-text-primary);
+  background: color-mix(in srgb, var(--theme-sem-surface-2) 90%, transparent);
+  border: 1px solid var(--theme-sem-border-default);
+  color: var(--theme-sem-text-primary);
   backdrop-filter: blur(8px);
 }
 
@@ -4997,7 +5021,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   flex-direction: column;
   overflow: hidden;
   position: relative;
-  background: var(--app-workspace-bg);
+  background: var(--theme-sem-bg-workspace);
 }
 
 /* 内容容器样式 - 使用绝对定位覆盖整个区域 */
@@ -5021,7 +5045,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--app-workspace-bg);
+  background: var(--theme-sem-bg-workspace);
 }
 
 
@@ -5032,8 +5056,8 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--app-workspace-bg);
-  color: var(--app-text-muted);
+  background: var(--theme-sem-bg-workspace);
+  color: var(--theme-sem-text-muted);
 }
 
 .placeholder-text {
@@ -5050,7 +5074,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--app-workspace-bg);
+  background: var(--theme-sem-bg-workspace);
   display: flex;
   flex-direction: column;
 }
@@ -5082,7 +5106,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   height: 100%;
   overflow: hidden;
   z-index: 10;
-  background: var(--app-workspace-bg);
+  background: var(--theme-sem-bg-workspace);
 }
 
 /* 特殊页面容器样式 */
@@ -5095,7 +5119,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   width: 100%;
   height: 100%;
   overflow: auto;
-  background: var(--app-workspace-bg);
+  background: var(--theme-sem-bg-workspace);
   z-index: 10;
 }
 
@@ -5103,7 +5127,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 /* WebView 容器 - 默认隐藏 */
 .webview-container {
-  background: var(--app-workspace-bg);
+  background: var(--theme-sem-bg-workspace);
   position: absolute;
   top: 0;
   left: 0;

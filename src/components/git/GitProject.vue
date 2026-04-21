@@ -2258,7 +2258,7 @@ onUnmounted(() => {
 }
 
 .refresh-btn {
-  background: #28a745;
+  background: var(--theme-sem-accent-success-strong);
   color: white;
   border: none;
   padding: 4px 8px;
@@ -2272,21 +2272,21 @@ onUnmounted(() => {
 }
 
 .refresh-btn:hover {
-  background: #218838;
+  background: color-mix(in srgb, var(--theme-sem-accent-success-strong) 82%, black 18%);
 }
 
 .refresh-btn:disabled {
-  background: #6c757d;
+  background: rgba(255, 255, 255, 0.16);
   cursor: not-allowed;
   opacity: 0.7;
 }
 
 .refresh-btn.refreshing {
-  background: #6c757d;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .refresh-btn.success {
-  background: #28a745;
+  background: var(--theme-sem-accent-success-strong);
   transition: background-color 0.3s ease;
 }
 
@@ -2828,7 +2828,7 @@ onUnmounted(() => {
 }
 
 .push-count-number {
-  color: #28a745;
+  color: var(--theme-sem-accent-success);
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -2850,7 +2850,7 @@ onUnmounted(() => {
 }
 
 .pull-count {
-  color: #ffc107;
+  color: var(--theme-sem-accent-warning);
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -2860,27 +2860,30 @@ onUnmounted(() => {
 /* 右键菜单样式 */
 .context-menu {
   position: fixed;
-  background: #2d2d2d;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  background: var(--theme-sem-bg-menu);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   z-index: 1000;
   min-width: 120px;
   overflow: hidden;
+  padding: 6px 0;
 }
 
 .context-menu-item {
-  padding: 8px 12px;
+  margin: 0 6px;
+  padding: 9px 10px;
   cursor: pointer;
   color: rgba(255, 255, 255, 0.9);
   font-size: 13px;
   transition: background-color 0.2s ease;
   user-select: none;
+  border-radius: 8px;
 }
 
 .context-menu-item:hover {
-  background: rgba(102, 126, 234, 0.2);
-  color: #8b9eff;
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .context-menu-item.disabled {
@@ -2923,30 +2926,30 @@ onUnmounted(() => {
 }
 
 .create-btn:hover {
-  background: #5a6268;
-  border-color: #5a6268;
+  background: var(--theme-sem-hover);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .pull-single-btn {
-  background: #ffc107;
-  color: #000;
-  border-color: #ffc107;
+  background: var(--theme-sem-warning-bg);
+  color: var(--theme-sem-accent-warning);
+  border-color: transparent;
 }
 
 .pull-single-btn:hover {
-  background: #e0a800;
-  border-color: #e0a800;
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 82%, white 18%);
+  border-color: transparent;
 }
 
 .push-single-btn {
-  background: #28a745;
+  background: var(--theme-sem-success-bg);
   color: white;
-  border-color: #28a745;
+  border-color: transparent;
 }
 
 .push-single-btn:hover {
-  background: #218838;
-  border-color: #218838;
+  background: color-mix(in srgb, var(--theme-sem-success-bg) 82%, white 18%);
+  border-color: transparent;
 }
 
 /* 按钮内的计数徽标 */

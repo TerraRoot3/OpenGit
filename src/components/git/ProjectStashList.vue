@@ -598,7 +598,7 @@ const escapeHtml = (text) => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--theme-comp-child-header-bg);
   font-weight: 500;
   color: rgba(255, 255, 255, 0.9);
   font-size: 13px;
@@ -638,11 +638,12 @@ const escapeHtml = (text) => {
 }
 
 .stash-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--theme-sem-hover);
 }
 
 .stash-item.active {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
   font-weight: 500;
 }
 
@@ -692,7 +693,7 @@ const escapeHtml = (text) => {
 
 .stash-diff-header {
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--theme-comp-child-header-bg);
   font-weight: 500;
   color: rgba(255, 255, 255, 0.9);
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
@@ -757,7 +758,7 @@ const escapeHtml = (text) => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--theme-sem-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -765,7 +766,7 @@ const escapeHtml = (text) => {
 }
 
 .dialog-content {
-  background: #26272b;
+  background: var(--theme-sem-bg-dialog);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 14px;
   min-width: 400px;
@@ -860,7 +861,7 @@ const escapeHtml = (text) => {
 /* 右键菜单样式 */
 .context-menu {
   position: fixed;
-  background: #26272b;
+  background: var(--theme-sem-bg-menu);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
   padding: 6px 0;
@@ -870,29 +871,31 @@ const escapeHtml = (text) => {
 }
 
 .context-menu-item {
-  padding: 10px 16px;
+  margin: 0 6px;
+  padding: 9px 10px;
   cursor: pointer;
   transition: background-color 0.15s ease;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
 }
 
 .context-menu-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--theme-sem-hover);
 }
 
 .context-menu-item.delete {
-  color: #ff6b6b;
+  color: var(--theme-sem-accent-danger);
 }
 
 .context-menu-item.delete:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--theme-sem-danger-bg);
 }
 
 .context-menu-divider {
   height: 1px;
   background: rgba(255, 255, 255, 0.1);
-  margin: 6px 0;
+  margin: 6px 6px;
 }
 
 .checkbox-label {

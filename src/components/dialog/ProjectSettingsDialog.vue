@@ -390,7 +390,7 @@ const confirm = async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--theme-sem-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -398,7 +398,7 @@ const confirm = async () => {
 }
 
 .settings-dialog {
-  background: #1e1e1e;
+  background: var(--theme-sem-bg-dialog);
   border-radius: 12px;
   width: 600px;
   max-width: 90vw;
@@ -440,8 +440,8 @@ const confirm = async () => {
   border-radius: 10px;
   border: none;
   outline: none;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 84%, white 16%);
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
 }
 
@@ -460,7 +460,7 @@ const confirm = async () => {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: #fff;
+  color: var(--theme-sem-text-primary);
 }
 
 .dialog-body {
@@ -487,7 +487,7 @@ const confirm = async () => {
 .section-title {
   font-size: 14px;
   font-weight: 500;
-  color: #fff;
+  color: var(--theme-sem-text-primary);
 }
 
 .add-remote-btn {
@@ -495,7 +495,7 @@ const confirm = async () => {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  background: #0066ff;
+  background: var(--theme-sem-accent-primary);
   color: #fff;
   border: none;
   border-radius: 4px;
@@ -505,22 +505,22 @@ const confirm = async () => {
 }
 
 .add-remote-btn:hover {
-  background: #0055dd;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 82%, black 18%);
 }
 
 .section-content {
-  background: #2a2a2a;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
   border-radius: 8px;
   padding: 12px;
 }
 
 .template-input {
   width: 100%;
-  background: #1e1e1e;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 92%, black 8%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 10px;
-  color: #fff;
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
   font-family: 'Monaco', 'Menlo', monospace;
   resize: vertical;
@@ -529,7 +529,7 @@ const confirm = async () => {
 
 .template-input:focus {
   outline: none;
-  border-color: #0066ff;
+  border-color: var(--theme-sem-accent-primary);
 }
 
 .template-scope {
@@ -548,7 +548,7 @@ const confirm = async () => {
 }
 
 .scope-option input[type="radio"] {
-  accent-color: #0066ff;
+  accent-color: var(--theme-sem-accent-primary);
 }
 
 .terminal-mode-global-option {
@@ -562,7 +562,7 @@ const confirm = async () => {
 }
 
 .terminal-mode-global-option input[type="checkbox"] {
-  accent-color: #0066ff;
+  accent-color: var(--theme-sem-accent-primary);
 }
 
 .empty-remotes {
@@ -579,7 +579,7 @@ const confirm = async () => {
 }
 
 .remote-item {
-  background: #1e1e1e;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 92%, black 8%);
   border-radius: 6px;
   padding: 10px 12px;
 }
@@ -592,7 +592,7 @@ const confirm = async () => {
 
 .remote-name {
   font-weight: 500;
-  color: #0099ff;
+  color: var(--theme-sem-accent-primary);
   min-width: 60px;
 }
 
@@ -623,12 +623,12 @@ const confirm = async () => {
 
 .edit-btn:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: #0099ff;
+  color: var(--theme-sem-accent-primary);
 }
 
 .delete-btn:hover {
   background: rgba(255, 100, 100, 0.2);
-  color: #ff6b6b;
+  color: var(--theme-sem-accent-danger);
 }
 
 .remote-edit {
@@ -640,10 +640,10 @@ const confirm = async () => {
 .remote-name-input {
   width: 80px;
   padding: 6px 8px;
-  background: #2a2a2a;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
-  color: #fff;
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
 }
 
@@ -651,17 +651,17 @@ const confirm = async () => {
   flex: 1;
   min-width: 150px;
   padding: 6px 8px;
-  background: #2a2a2a;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
-  color: #fff;
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
 }
 
 .remote-name-input:focus,
 .remote-url-input:focus {
   outline: none;
-  border-color: #0066ff;
+  border-color: var(--theme-sem-accent-primary);
 }
 
 .edit-actions {
@@ -678,12 +678,12 @@ const confirm = async () => {
 }
 
 .save-btn {
-  background: #22c55e;
+  background: var(--theme-sem-accent-success-strong);
   color: #fff;
 }
 
 .save-btn:hover {
-  background: #16a34a;
+  background: color-mix(in srgb, var(--theme-sem-accent-success-strong) 82%, black 18%);
 }
 
 .cancel-edit-btn {
@@ -722,11 +722,11 @@ const confirm = async () => {
 }
 
 .confirm-btn {
-  background: #0066ff;
+  background: var(--theme-sem-accent-primary);
   color: #fff;
 }
 
 .confirm-btn:hover {
-  background: #0055dd;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 82%, black 18%);
 }
 </style>

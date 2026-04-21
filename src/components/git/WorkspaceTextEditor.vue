@@ -34,6 +34,8 @@ const pathToModel = new Map()
 const pathToViewState = new Map()
 let currentModelPath = ''
 
+const DEFAULT_WORKSPACE_EDITOR_BACKGROUND = '#161b22'
+
 const LANG_MAP = {
   js: 'javascript',
   mjs: 'javascript',
@@ -108,6 +110,15 @@ function relativeToProjectPath (targetPath) {
 
 function uriForPath (filePath) {
   return monaco.Uri.file(filePath)
+}
+
+function resolveWorkspaceEditorBackground () {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return DEFAULT_WORKSPACE_EDITOR_BACKGROUND
+  }
+  const computed = window.getComputedStyle(document.documentElement)
+  const background = computed.getPropertyValue('--theme-sem-bg-project').trim()
+  return background || DEFAULT_WORKSPACE_EDITOR_BACKGROUND
 }
 
 function quoteShellPath (value) {
@@ -396,7 +407,7 @@ onMounted(async () => {
     inherit: true,
     rules: [],
     colors: {
-      'editor.background': '#17181a'
+      'editor.background': resolveWorkspaceEditorBackground()
     }
   })
   editor = monaco.editor.create(editorContainerRef.value, {
@@ -475,7 +486,7 @@ watch(
   inset: 0;
   min-height: 0;
   min-width: 0;
-  background: #17181a;
+  background: var(--theme-sem-bg-project);
 }
 
 .editor-change-nav {
@@ -490,7 +501,7 @@ watch(
   padding: 6px 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
-  background: rgba(31, 32, 36, 0.92);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 90%, black 10%);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 

@@ -3433,7 +3433,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .batch-clone-btn {
-  background: #28a745;
+  background: var(--theme-sem-accent-success-strong);
   color: white;
   border: none;
   padding: 0 14px;
@@ -3446,11 +3446,11 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .batch-clone-btn:hover {
-  background: #218838;
+  background: color-mix(in srgb, var(--theme-sem-accent-success-strong) 82%, black 18%);
 }
 
 .batch-clone-btn:disabled {
-  background: #6c757d;
+  background: rgba(255, 255, 255, 0.16);
   cursor: not-allowed;
 }
 
@@ -3507,7 +3507,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 
 .add-local-btn {
   padding: 6px 12px;
-  background: #667eea;
+  background: var(--theme-sem-accent-primary);
   color: white;
   border: none;
   border-radius: 6px;
@@ -3518,7 +3518,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .add-local-btn:hover {
-  background: #5a6fd6;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 82%, black 18%);
 }
 
 
@@ -3604,9 +3604,9 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .platform-btn.active {
-  border-color: #667eea;
-  background: rgba(102, 126, 234, 0.15);
-  color: #667eea;
+  border-color: var(--theme-sem-accent-primary);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 15%, transparent);
+  color: var(--theme-sem-accent-primary);
 }
 
 .platform-btn:disabled {
@@ -3634,9 +3634,9 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .permission-highlight {
-  color: #667eea;
+  color: var(--theme-sem-accent-primary);
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  background: rgba(102, 126, 234, 0.2);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 18%, transparent);
   padding: 2px 6px;
   border-radius: 3px;
   font-size: 13px;
@@ -3648,7 +3648,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
   background: rgba(255, 77, 79, 0.1);
   border: 1px solid rgba(255, 77, 79, 0.3);
   border-radius: 8px;
-  color: #ff6b6b;
+  color: var(--theme-sem-accent-danger);
   font-size: 13px;
 }
 
@@ -3662,7 +3662,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .ssh-key-warning strong {
-  color: #ff4d4f;
+  color: var(--theme-sem-accent-danger-strong);
 }
 
 .form-actions {
@@ -4066,7 +4066,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .clone-deep-nested-subgroup-btn {
-  background: #28a745;
+  background: var(--theme-sem-accent-success-strong);
   color: white;
   border: none;
   padding: 3px 6px;
@@ -4076,7 +4076,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .clone-deep-nested-subgroup-btn:hover {
-  background: #218838;
+  background: color-mix(in srgb, var(--theme-sem-accent-success-strong) 82%, black 18%);
 }
 
 
@@ -4097,7 +4097,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .clone-nested-subgroup-btn {
-  background: #28a745;
+  background: var(--theme-sem-accent-success-strong);
   color: white;
   border: none;
   padding: 4px 8px;
@@ -4107,7 +4107,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .clone-nested-subgroup-btn:hover {
-  background: #218838;
+  background: color-mix(in srgb, var(--theme-sem-accent-success-strong) 82%, black 18%);
 }
 
 /* 项目列表样式 */
@@ -4174,12 +4174,12 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
   width: 16px;
   height: 16px;
   cursor: pointer;
-  accent-color: #667eea;
+  accent-color: var(--theme-sem-accent-primary);
 }
 
 .project-item:hover {
-  border-color: #667eea;
-  background: rgba(102, 126, 234, 0.1);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 12%, transparent);
 }
 
 
@@ -4224,8 +4224,8 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 
 .project-stats .branch {
   margin-left: 8px;
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.2);
+  color: var(--theme-sem-accent-primary);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 18%, transparent);
   padding: 1px 6px;
   border-radius: 8px;
   font-family: monospace;
@@ -4250,12 +4250,12 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .gitlab-btn:hover {
-  background: rgba(102, 126, 234, 0.3);
-  border-color: #667eea;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 24%, transparent);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 45%, transparent);
 }
 
 .clone-project-btn {
-  background: #28a745;
+  background: var(--theme-sem-accent-success-strong);
   color: white;
   border: none;
   padding: 6px 12px;
@@ -4269,11 +4269,11 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .clone-project-btn:hover {
-  background: #218838;
+  background: color-mix(in srgb, var(--theme-sem-accent-success-strong) 82%, black 18%);
 }
 
 .clone-project-btn:disabled {
-  background: #6c757d;
+  background: rgba(255, 255, 255, 0.16);
   cursor: not-allowed;
 }
 
@@ -4359,7 +4359,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .expand-btn.expanded {
-  background: #667eea;
+  background: var(--theme-sem-accent-primary);
   color: white;
 }
 
@@ -4371,7 +4371,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 
 .clone-group-btn {
   padding: 6px 12px;
-  background: #667eea;
+  background: var(--theme-sem-accent-primary);
   color: white;
   border: none;
   border-radius: 4px;
@@ -4383,11 +4383,11 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .clone-group-btn:hover:not(:disabled) {
-  background: #5a67d8;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 82%, black 18%);
 }
 
 .clone-group-btn:disabled {
-  background: #cbd5e0;
+  background: rgba(255, 255, 255, 0.16);
   cursor: not-allowed;
 }
 
@@ -4414,8 +4414,8 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .subgroup-item:hover {
-  border-color: #667eea;
-  background: rgba(102, 126, 234, 0.1);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 12%, transparent);
 }
 
 .subgroup-main {
@@ -4424,8 +4424,8 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .project-item:hover {
-  border-color: #667eea;
-  background: rgba(102, 126, 234, 0.1);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 12%, transparent);
 }
 
 .subgroup-info {
@@ -4483,7 +4483,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 
 .clone-subgroup-btn {
   padding: 6px 12px;
-  background: #28a745;
+  background: var(--theme-sem-accent-success-strong);
   color: white;
   border: none;
   border-radius: 4px;
@@ -4495,11 +4495,11 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .clone-subgroup-btn:hover:not(:disabled) {
-  background: #218838;
+  background: color-mix(in srgb, var(--theme-sem-accent-success-strong) 82%, black 18%);
 }
 
 .clone-subgroup-btn:disabled {
-  background: #cbd5e0;
+  background: rgba(255, 255, 255, 0.16);
   cursor: not-allowed;
 }
 
@@ -4529,7 +4529,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
   height: 32px;
   margin: 0 auto 16px;
   border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top: 3px solid #667eea;
+  border-top: 3px solid var(--theme-sem-accent-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -4541,7 +4541,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 
 /* 展开/收起按钮样式 */
 .expand-btn, .collapse-btn, .expand-subgroup-btn {
-  background: rgba(102, 126, 234, 0.1);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 12%, transparent);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   padding: 4px 8px;
@@ -4551,16 +4551,16 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
   transition: all 0.2s ease;
   min-width: 24px;
   text-align: center;
-  color: #667eea;
+  color: var(--theme-sem-accent-primary);
 }
 
 .expand-btn:hover, .collapse-btn:hover, .expand-subgroup-btn:hover {
-  background: rgba(102, 126, 234, 0.2);
-  border-color: #667eea;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 20%, transparent);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 45%, transparent);
 }
 
 .expand-btn:active, .collapse-btn:active, .expand-subgroup-btn:active {
-  background: rgba(102, 126, 234, 0.3);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 28%, transparent);
 }
 
 /* 新增的文字收起按钮样式 */
@@ -4660,8 +4660,8 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .config-item:hover {
-  background: rgba(102, 126, 234, 0.1);
-  border-color: #667eea;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 45%, transparent);
 }
 
 .config-info {
@@ -4732,8 +4732,8 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 
 .history-select:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+  border-color: var(--theme-sem-accent-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-accent-primary) 22%, transparent);
 }
 
 .history-select:disabled {
@@ -4743,7 +4743,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .open-btn {
-  background: #28a745;
+  background: var(--theme-sem-accent-success-strong);
   color: white;
   border: none;
   padding: 6px 12px;
@@ -4754,7 +4754,7 @@ console.log('🔍 当前savedConfigs:', savedConfigs.value.length)
 }
 
 .open-btn:hover {
-  background: #218838;
+  background: color-mix(in srgb, var(--theme-sem-accent-success-strong) 82%, black 18%);
 }
 
 .delete-btn {

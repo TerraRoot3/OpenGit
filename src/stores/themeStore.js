@@ -1,20 +1,20 @@
 import { ref } from 'vue'
+import { DEFAULT_THEME, SUPPORTED_THEMES, THEME_DEFINITIONS } from '../theme/themes.js'
 
 const THEME_KEY = 'opengit-theme'
-const DEFAULT_THEME = 'slate-dual'
-const SUPPORTED_THEMES = new Set([DEFAULT_THEME])
+const SUPPORTED_THEME_SET = new Set(SUPPORTED_THEMES)
 
 const currentTheme = ref(DEFAULT_THEME)
 
 const applyTheme = (themeName) => {
   if (typeof document === 'undefined') return
-  const nextTheme = SUPPORTED_THEMES.has(themeName) ? themeName : DEFAULT_THEME
+  const nextTheme = SUPPORTED_THEME_SET.has(themeName) ? themeName : DEFAULT_THEME
   document.documentElement.setAttribute('data-theme', nextTheme)
 }
 
 export function useThemeStore() {
   const setTheme = (themeName) => {
-    const nextTheme = SUPPORTED_THEMES.has(themeName) ? themeName : DEFAULT_THEME
+    const nextTheme = SUPPORTED_THEME_SET.has(themeName) ? themeName : DEFAULT_THEME
     currentTheme.value = nextTheme
     applyTheme(nextTheme)
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -34,6 +34,7 @@ export function useThemeStore() {
     currentTheme,
     setTheme,
     hydrate,
-    supportedThemes: Array.from(SUPPORTED_THEMES)
+    supportedThemes: SUPPORTED_THEMES,
+    themeDefinitions: THEME_DEFINITIONS
   }
 }

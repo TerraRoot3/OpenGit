@@ -2687,9 +2687,9 @@ watch(
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
   color: rgba(255, 255, 255, 0.88);
-  border-radius: var(--app-selected-radius);
+  border-radius: var(--theme-comp-radius-selected);
   overflow: hidden;
   box-sizing: border-box;
   /* 仅左右留白，避免 margin 纵向吃掉 flex 可用高度 */
@@ -2703,7 +2703,7 @@ watch(
   flex: 1 1 0%;
   min-height: 0;
   min-width: 0;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 .tree-pane {
@@ -2714,7 +2714,7 @@ watch(
   max-width: 520px;
   min-height: 0;
   align-self: stretch;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
   overflow: hidden;
   outline: none;
 }
@@ -2733,6 +2733,7 @@ watch(
   font-weight: 600;
   color: rgba(255, 255, 255, 0.45);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--theme-comp-child-header-bg);
 }
 
 .tree-toolbar__header {
@@ -2764,21 +2765,22 @@ watch(
 }
 
 .tree-toolbar__action {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 6px;
+  border-radius: 10px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.48);
+  color: rgba(255, 255, 255, 0.54);
   cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .tree-toolbar__action:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.84);
+  background: var(--theme-sem-hover);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .tree-filter-wrap {
@@ -2788,18 +2790,24 @@ watch(
 
 .tree-filter-button {
   width: 100%;
-  height: 28px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 0 10px 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, white 12%);
   color: rgba(255, 255, 255, 0.88);
   font-size: 12px;
   cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.tree-filter-button:hover {
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .tree-filter-button__arrow {
@@ -2815,19 +2823,21 @@ watch(
   padding: 8px 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
-  background: #2d2d30;
+  background: var(--theme-sem-bg-menu);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
   z-index: 20;
 }
 
 .tree-filter-menu__item {
   width: 100%;
-  height: 38px;
+  height: 34px;
+  margin: 0;
   padding: 0 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border: none;
+  border-radius: 8px;
   background: transparent;
   color: rgba(255, 255, 255, 0.92);
   font-size: 12px;
@@ -2835,25 +2845,33 @@ watch(
 }
 
 .tree-filter-menu__item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--theme-sem-hover);
 }
 
 .tree-filter-menu__item.active {
   color: #fff;
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 .tree-search {
   min-width: 0;
-  height: 28px;
+  height: 32px;
   display: flex;
   align-items: center;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, white 12%);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .tree-search--invalid {
   border-color: rgba(255, 123, 123, 0.7);
+}
+
+.tree-search:focus-within {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
 }
 
 .tree-search__input {
@@ -2915,15 +2933,16 @@ watch(
   color: rgba(255, 255, 255, 0.76);
   text-align: left;
   cursor: pointer;
+  border-radius: 10px;
 }
 
 .workspace-modified-row:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--theme-sem-hover);
 }
 
 .workspace-modified-row.selected {
-  background: var(--app-sidebar-selected-bg);
-  border-radius: var(--app-selected-radius);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 .workspace-modified-check {
@@ -2973,15 +2992,16 @@ watch(
   font-size: 12px;
   text-align: left;
   cursor: pointer;
+  border-radius: 10px;
 }
 
 .workspace-tree-row:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--theme-sem-hover);
 }
 
 .workspace-tree-row.selected {
-  background: var(--app-sidebar-selected-bg);
-  border-radius: var(--app-selected-radius);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 .workspace-tree-row--drop-target {
@@ -3130,7 +3150,7 @@ watch(
   display: grid;
   grid-template-rows: auto auto auto;
   gap: 8px;
-  background: rgba(0, 0, 0, 0.22);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 86%, black 14%);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -3175,23 +3195,23 @@ watch(
 }
 
 .workspace-git-actions__btn--stash {
-  background: rgba(106, 141, 255, 0.18);
-  color: #adc2ff;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 18%, transparent);
+  color: color-mix(in srgb, var(--theme-sem-accent-primary) 62%, white 38%);
 }
 
 .workspace-git-actions__btn--discard {
-  background: rgba(255, 116, 116, 0.15);
-  color: #ffb0b0;
+  background: var(--theme-sem-danger-bg);
+  color: var(--theme-sem-accent-danger);
 }
 
 .workspace-git-actions__btn--commit {
-  background: #5c8dff;
+  background: var(--theme-sem-accent-primary);
   color: #fff;
 }
 
 .workspace-git-actions__btn--push {
-  background: rgba(101, 205, 150, 0.18);
-  color: #b7f0cb;
+  background: var(--theme-sem-success-bg);
+  color: var(--theme-sem-accent-success);
 }
 
 .workspace-git-actions__btn:not(:disabled):hover {
@@ -3203,60 +3223,62 @@ watch(
   min-width: 132px;
   padding: 6px 0;
   border-radius: 8px;
-  background: #25262b;
+  background: var(--theme-sem-bg-menu);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
   border: 1px solid rgba(255, 255, 255, 0.08);
   z-index: 3000;
 }
 
 .context-menu-item {
-  padding: 9px 14px;
+  margin: 0 6px;
+  padding: 9px 10px;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.86);
   cursor: pointer;
   white-space: nowrap;
+  border-radius: 8px;
 }
 
 .context-menu-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--theme-sem-hover);
 }
 
 .context-menu-item.delete {
-  color: #ff8d8d;
+  color: var(--theme-sem-accent-danger);
 }
 
 .context-menu-item.delete:hover {
-  background: rgba(255, 108, 108, 0.12);
+  background: var(--theme-sem-danger-bg);
 }
 
 .context-menu-divider {
   height: 1px;
-  margin: 6px 0;
+  margin: 6px 6px;
   background: rgba(255, 255, 255, 0.08);
 }
 
 .workspace-tree-row--conflict {
-  color: #ffb86b;
+  color: var(--theme-sem-file-conflict);
 }
 
 .workspace-tree-row--deleted {
-  color: #ff7f87;
+  color: var(--theme-sem-file-deleted);
 }
 
 .workspace-tree-row--renamed {
-  color: #79c0ff;
+  color: var(--theme-sem-file-renamed);
 }
 
 .workspace-tree-row--added {
-  color: #6bd39f;
+  color: var(--theme-sem-file-added);
 }
 
 .workspace-tree-row--modified {
-  color: #f2d06b;
+  color: var(--theme-sem-file-modified);
 }
 
 .workspace-tree-row--untracked {
-  color: #b8b8c2;
+  color: var(--theme-sem-file-untracked);
 }
 
 .splitter {
@@ -3292,7 +3314,7 @@ watch(
   /* 无 Tab 时单行占满；有 Tab 时首行 auto、预览区 minmax 可滚 */
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
-  background: #17181a;
+  background: var(--theme-sem-bg-project);
 }
 
 .editor-pane--tabs {
@@ -3301,13 +3323,13 @@ watch(
 
 .tab-bar {
   display: flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 0 8px 0 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 6px;
   height: v-bind(WORKSPACE_HEADER_HEIGHT);
   min-height: v-bind(WORKSPACE_HEADER_HEIGHT);
   box-sizing: border-box;
-  background: var(--app-sidebar-bg);
+  background: var(--theme-comp-child-header-bg);
   border-bottom: none;
   overflow-x: auto;
   scrollbar-width: none;
@@ -3322,11 +3344,12 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 100%;
+  height: calc(100% - 8px);
   max-width: 200px;
-  padding: 0 10px;
+  padding: 0 12px;
+  margin: 4px 0;
   border: none;
-  border-radius: 0;
+  border-radius: 10px;
   background: transparent;
   color: rgba(255, 255, 255, 0.68);
   font-size: 12px;
@@ -3335,15 +3358,14 @@ watch(
 }
 
 .tab-item:hover {
-  background: transparent;
+  background: var(--theme-sem-hover);
   color: rgba(255, 255, 255, 0.9);
 }
 
 .tab-item.active {
-  background: var(--app-tab-selected-bg);
-  box-shadow: none;
-  border-radius: var(--app-selected-radius);
-  color: var(--app-text-primary);
+  background: var(--theme-comp-tab-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
+  color: var(--theme-sem-text-primary);
 }
 
 .tab-title {
@@ -3354,15 +3376,31 @@ watch(
 
 .tab-close {
   flex-shrink: 0;
-  opacity: 0.65;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  opacity: 0.38;
   font-size: 14px;
   line-height: 1;
-  padding: 0 2px;
+  padding: 0;
+  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.tab-item:hover .tab-close {
+  opacity: 0.72;
+}
+
+.tab-item.active .tab-close {
+  opacity: 0.56;
 }
 
 .tab-close:hover {
   opacity: 1;
   color: #fff;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .preview-body {
@@ -3370,7 +3408,7 @@ watch(
   min-width: 0;
   position: relative;
   overflow: hidden;
-  background: #17181a;
+  background: var(--theme-sem-bg-project);
 }
 
 .preview-empty {
@@ -3393,7 +3431,7 @@ watch(
   overflow-x: hidden;
   padding: 12px;
   box-sizing: border-box;
-  background: #17181a;
+  background: var(--theme-sem-bg-project);
 }
 
 .image-preview {
@@ -3408,14 +3446,14 @@ watch(
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  background: #17181a;
+  background: var(--theme-sem-bg-project);
 }
 
 .pdf-preview-frame {
   width: 100%;
   height: 100%;
   border: none;
-  background: #17181a;
+  background: var(--theme-sem-bg-project);
 }
 
 .binary-hint {
@@ -3428,6 +3466,6 @@ watch(
   font-size: 13px;
   padding: 24px;
   text-align: center;
-  background: #17181a;
+  background: var(--theme-sem-bg-project);
 }
 </style>

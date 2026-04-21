@@ -59,9 +59,9 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
   width: 360px;
   max-height: 320px;
   overflow: auto;
-  border: 1px solid var(--app-border-strong);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 10px;
-  background: var(--app-dialog-bg);
+  background: var(--theme-sem-bg-dialog);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
   z-index: 10;
 }
@@ -71,7 +71,7 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--app-border);
+  border-bottom: 1px solid var(--theme-sem-border-default);
 }
 
 .download-panel-actions {
@@ -82,17 +82,17 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
 
 .download-panel-empty {
   padding: 14px 12px;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
 }
 
 .download-row {
   padding: 10px 12px;
-  border-bottom: 1px solid var(--app-border);
+  border-bottom: 1px solid var(--theme-sem-border-default);
 }
 
 .download-name {
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
@@ -103,7 +103,7 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
   margin-top: 6px;
   display: flex;
   gap: 8px;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   font-size: 11px;
 }
 
@@ -114,9 +114,9 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
 }
 
 .download-btn {
-  border: 1px solid var(--app-border-strong);
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  border: 1px solid var(--theme-sem-border-strong);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
   border-radius: 6px;
   font-size: 11px;
   line-height: 1;
@@ -125,12 +125,12 @@ defineEmits(['open-folder', 'retry', 'clear-completed', 'close'])
 }
 
 .download-btn:hover {
-  background: color-mix(in srgb, var(--app-hover) 70%, white 30%);
+  background: color-mix(in srgb, var(--theme-sem-hover) 70%, white 30%);
 }
 
 .download-btn.subtle {
   font-size: 10px;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
 }
 
 .download-btn.icon {

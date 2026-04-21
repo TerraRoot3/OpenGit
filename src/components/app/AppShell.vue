@@ -661,7 +661,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  background: var(--app-shell-bg);
+  background: var(--theme-sem-bg-app);
   overflow: hidden;
 }
 
@@ -671,8 +671,8 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   min-width: 0;
   height: 100%;
-  background: var(--app-sidebar-bg);
-  box-shadow: inset -1px 0 0 var(--app-border);
+  background: var(--theme-sem-bg-sidebar);
+  box-shadow: inset -1px 0 0 var(--theme-sem-border-default);
 }
 
 .workspace-pane {
@@ -682,7 +682,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   height: 100%;
   position: relative;
-  background: var(--app-workspace-bg);
+  background: var(--theme-sem-bg-workspace);
   overflow: hidden;
 }
 
@@ -703,13 +703,13 @@ onBeforeUnmount(() => {
   left: 4px;
   width: 1px;
   height: 100%;
-  background: var(--app-border);
+  background: var(--theme-sem-border-default);
   transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .sidebar-resizer:hover::before {
-  background: var(--app-primary);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-primary) 34%, transparent);
+  background: var(--theme-sem-accent-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-sem-accent-primary) 34%, transparent);
 }
 
 .sidebar-collapsed-rail {
@@ -721,12 +721,12 @@ onBeforeUnmount(() => {
   width: 52px;
   height: 100%;
   padding-top: 30px;
-  background: var(--app-sidebar-bg);
-  border-right: 1px solid var(--app-border);
+  background: var(--theme-sem-bg-sidebar);
+  border-right: 1px solid var(--theme-sem-border-default);
 }
 
 .app-shell.resizing .workspace-pane {
-  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--app-primary) 34%, transparent);
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--theme-sem-accent-primary) 34%, transparent);
 }
 
 .rail-btn {
@@ -737,12 +737,12 @@ onBeforeUnmount(() => {
   height: 34px;
   border: 0;
   border-radius: 10px;
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
   cursor: pointer;
 }
 
 .rail-btn:hover {
-  background: color-mix(in srgb, var(--app-hover) 72%, white 28%);
+  background: color-mix(in srgb, var(--theme-sem-hover) 72%, white 28%);
 }
 </style>

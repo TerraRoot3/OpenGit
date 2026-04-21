@@ -1939,12 +1939,12 @@ onUnmounted(() => {
   --detail-right-min-width: clamp(420px, 40vw, 960px);
   display: flex;
   flex-direction: column;
-  background-color: var(--app-project-bg);
+  background-color: var(--theme-sem-bg-project);
   color: rgba(255, 255, 255, 0.9);
   flex: 1;
   height: 100%;
   border: none;
-  border-radius: var(--app-selected-radius);
+  border-radius: var(--theme-comp-radius-selected);
   overflow: hidden;
 }
 
@@ -1964,7 +1964,7 @@ onUnmounted(() => {
   overflow-x: auto;
   overflow-y: auto;
   flex-shrink: 0;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 /* 
@@ -2035,7 +2035,7 @@ onUnmounted(() => {
   font-size: 13px;
   position: sticky;
   top: 0;
-  background-color: var(--app-project-bg);
+  background-color: var(--theme-sem-bg-project);
   backdrop-filter: blur(6px);
   z-index: 20;
   user-select: none;
@@ -2117,8 +2117,8 @@ onUnmounted(() => {
 }
 
 .git-log .log-highlight {
-  background: var(--app-sidebar-selected-bg);
-  border-radius: var(--app-selected-radius);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  border-radius: var(--theme-comp-radius-selected);
 }
 
 .git-log tbody tr {
@@ -2253,7 +2253,7 @@ onUnmounted(() => {
 
 .panel-header {
   padding: 10px 14px;
-  background: var(--app-project-bg);
+  background: var(--theme-comp-child-header-bg);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2296,12 +2296,12 @@ onUnmounted(() => {
 }
 
 .file-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--theme-sem-hover);
 }
 
 .file-item.active {
-  background: var(--app-sidebar-selected-bg);
-  border-radius: var(--app-selected-radius);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 .file-icon {
@@ -2311,15 +2311,15 @@ onUnmounted(() => {
 }
 
 .file-icon.added {
-  color: #28a745;
+  color: var(--theme-sem-file-added);
 }
 
 .file-icon.modified {
-  color: #ffc107;
+  color: var(--theme-sem-file-modified);
 }
 
 .file-icon.deleted {
-  color: #dc3545;
+  color: var(--theme-sem-file-deleted);
 }
 
 .file-path {
@@ -2372,9 +2372,7 @@ onUnmounted(() => {
 
 .search-bar {
   padding: 12px 16px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)),
-    rgba(255, 255, 255, 0.02);
+  background: var(--theme-comp-child-header-bg);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2623,7 +2621,7 @@ onUnmounted(() => {
 /* 右键菜单 */
 .context-menu {
   position: fixed;
-  background: #26272b;
+  background: var(--theme-sem-bg-menu);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
   padding: 6px 0;
@@ -2633,19 +2631,21 @@ onUnmounted(() => {
 }
 
 .context-menu-item {
-  padding: 10px 16px;
+  margin: 0 6px;
+  padding: 9px 10px;
   cursor: pointer;
   transition: background-color 0.15s ease;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
 }
 
-.context-menu-item:hover { background: rgba(255, 255, 255, 0.06); }
+.context-menu-item:hover { background: var(--theme-sem-hover); }
 
 .context-menu-divider {
   height: 1px;
   background: rgba(255, 255, 255, 0.1);
-  margin: 6px 0;
+  margin: 6px 6px;
 }
 
 @media (min-width: 1600px) {

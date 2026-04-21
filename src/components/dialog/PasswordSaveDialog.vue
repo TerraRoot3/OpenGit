@@ -93,7 +93,7 @@ const handleCancel = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--app-overlay);
+  background: var(--theme-sem-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -101,7 +101,7 @@ const handleCancel = () => {
 }
 
 .password-save-dialog {
-  background: var(--app-dialog-bg);
+  background: var(--theme-sem-bg-dialog);
   border-radius: 12px;
   width: 480px;
   max-width: 90vw;
@@ -114,20 +114,20 @@ const handleCancel = () => {
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid var(--app-border);
+  border-bottom: 1px solid var(--theme-sem-border-default);
 }
 
 .password-dialog-header h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
 }
 
 .password-dialog-close {
   background: transparent;
   border: none;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   cursor: pointer;
   padding: 4px;
   display: flex;
@@ -138,8 +138,8 @@ const handleCancel = () => {
 }
 
 .password-dialog-close:hover {
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .password-dialog-body {
@@ -161,13 +161,13 @@ const handleCancel = () => {
 
 .password-info-item label {
   font-size: 14px;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   min-width: 60px;
 }
 
 .password-info-item span {
   font-size: 14px;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
   word-break: break-all;
 }
 
@@ -180,7 +180,7 @@ const handleCancel = () => {
 
 .password-display {
   font-size: 14px;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
   font-family: monospace;
   word-break: break-all;
 }
@@ -188,7 +188,7 @@ const handleCancel = () => {
 .password-toggle-btn {
   background: transparent;
   border: none;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   cursor: pointer;
   padding: 4px;
   display: flex;
@@ -200,14 +200,14 @@ const handleCancel = () => {
 }
 
 .password-toggle-btn:hover {
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .password-dialog-hint {
   margin: 0;
   font-size: 14px;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   text-align: center;
 }
 
@@ -215,7 +215,7 @@ const handleCancel = () => {
   display: flex;
   gap: 12px;
   padding: 20px 24px;
-  border-top: 1px solid var(--app-border);
+  border-top: 1px solid var(--theme-sem-border-default);
   justify-content: flex-end;
 }
 
@@ -231,21 +231,21 @@ const handleCancel = () => {
 }
 
 .password-cancel-btn {
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .password-cancel-btn:hover {
-  background: color-mix(in srgb, var(--app-hover) 70%, white 30%);
+  background: color-mix(in srgb, var(--theme-sem-hover) 70%, white 30%);
 }
 
 .password-confirm-btn {
-  background: var(--app-primary);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-accent-primary);
+  color: var(--theme-sem-text-primary);
 }
 
 .password-confirm-btn:hover {
-  background: color-mix(in srgb, var(--app-primary) 82%, white 18%);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 82%, white 18%);
 }
 </style>
 

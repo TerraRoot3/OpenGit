@@ -368,9 +368,9 @@ onUnmounted(() => {
 <style scoped>
 .pipeline-section {
   flex: 1;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
   border: none;
-  border-radius: var(--app-selected-radius);
+  border-radius: var(--theme-comp-radius-selected);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -380,7 +380,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   min-height: 0;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 .pipeline-list-panel {
@@ -388,7 +388,7 @@ onUnmounted(() => {
   min-width: 240px;
   display: flex;
   flex-direction: column;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
   overflow: hidden;
 }
 
@@ -397,7 +397,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
   overflow: hidden;
 }
 
@@ -407,7 +407,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: var(--app-project-bg);
+  background: var(--theme-comp-child-header-bg);
   color: rgba(255, 255, 255, 0.92);
   font-size: 13px;
   font-weight: 500;
@@ -477,12 +477,12 @@ onUnmounted(() => {
 }
 
 .pipeline-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--theme-sem-hover);
 }
 
 .pipeline-item.active {
-  background: var(--app-sidebar-selected-bg);
-  border-radius: var(--app-selected-radius);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 .pipeline-row {

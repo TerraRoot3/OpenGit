@@ -80,7 +80,7 @@ defineExpose({ show })
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.24);
+  background: var(--theme-sem-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -94,7 +94,7 @@ defineExpose({ show })
 }
 
 .confirm-dialog {
-  background: #2d2d2d;
+  background: var(--theme-sem-bg-dialog);
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   min-width: 360px;
@@ -129,7 +129,7 @@ defineExpose({ show })
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: #fff;
+  color: var(--theme-sem-text-primary);
 }
 
 .confirm-dialog-body {
@@ -146,7 +146,7 @@ defineExpose({ show })
 .confirm-detail {
   margin: 12px 0 0;
   padding: 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, black 12%);
   border-radius: 6px;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.7);
@@ -184,28 +184,28 @@ defineExpose({ show })
 }
 
 .btn-confirm {
-  background: #007bff;
+  background: var(--theme-sem-accent-primary);
   color: #fff;
 }
 
 .btn-confirm:hover {
-  background: #0056b3;
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 82%, black 18%);
 }
 
 .btn-confirm.danger {
-  background: #dc3545;
+  background: var(--theme-sem-accent-danger-strong);
 }
 
 .btn-confirm.danger:hover {
-  background: #c82333;
+  background: color-mix(in srgb, var(--theme-sem-accent-danger-strong) 82%, black 18%);
 }
 
 .btn-confirm.warning {
-  background: #ffc107;
-  color: #212529;
+  background: var(--theme-sem-warning-bg);
+  color: var(--theme-sem-accent-warning);
 }
 
 .btn-confirm.warning:hover {
-  background: #e0a800;
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 82%, white 18%);
 }
 </style>

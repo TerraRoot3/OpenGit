@@ -22,6 +22,6 @@ defineProps({
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #1e1e1e;
+  background: var(--theme-sem-bg-project);
 }
 </style>

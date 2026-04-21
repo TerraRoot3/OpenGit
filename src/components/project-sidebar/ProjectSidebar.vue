@@ -246,8 +246,8 @@ const isFavorited = (path) => {
   width: 100%;
   min-width: 0;
   height: 100%;
-  background: var(--app-sidebar-bg);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-bg-sidebar);
+  color: var(--theme-sem-text-primary);
   overflow: hidden;
 }
 
@@ -258,10 +258,10 @@ const isFavorited = (path) => {
   min-width: 0;
   gap: 10px;
   padding: 30px 14px 12px;
-  border-bottom: 1px solid var(--app-border);
+  border-bottom: 1px solid var(--theme-sem-border-default);
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--app-sidebar-bg-soft) 36%, transparent),
+    color-mix(in srgb, var(--theme-sem-bg-sidebar-soft) 36%, transparent),
     transparent
   );
 }
@@ -323,9 +323,9 @@ const isFavorited = (path) => {
   padding: 0 10px;
   height: 34px;
   border-radius: 9px;
-  background: var(--app-hover);
+  background: var(--theme-sem-hover);
   border: 1px solid transparent;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   outline: none;
 }
 
@@ -343,7 +343,7 @@ const isFavorited = (path) => {
   border: 0;
   outline: none;
   background: transparent;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
   line-height: 34px;
   box-shadow: none;
@@ -370,7 +370,7 @@ const isFavorited = (path) => {
   align-items: center;
   gap: 8px;
   padding: 14px 12px;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
   font-size: 13px;
 }
 
@@ -399,13 +399,13 @@ const isFavorited = (path) => {
 
 .group-row:hover,
 .child-row:hover {
-  background: var(--app-hover);
+  background: var(--theme-sem-hover);
 }
 
 .group-row.selected,
 .child-row.selected {
-  background: var(--app-sidebar-selected-bg);
-  box-shadow: inset 0 0 0 1px var(--app-sidebar-selected-border);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 .group-row.selected .root-name,
@@ -413,7 +413,7 @@ const isFavorited = (path) => {
 .child-row.selected .child-name,
 .child-row.selected .child-git-meta,
 .child-row.selected .child-status {
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
 }
 
 .root-main {
@@ -436,8 +436,8 @@ const isFavorited = (path) => {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: var(--app-hover);
-  color: var(--app-text-secondary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-secondary);
 }
 
 .icon-btn:disabled {
@@ -447,7 +447,7 @@ const isFavorited = (path) => {
 
 .root-expand-btn:hover,
 .icon-btn:hover {
-  background: color-mix(in srgb, var(--app-hover) 65%, white 35%);
+  background: color-mix(in srgb, var(--theme-sem-hover) 65%, white 35%);
 }
 
 .spinning {
@@ -468,12 +468,12 @@ const isFavorited = (path) => {
   padding: 0;
   margin-left: 8px;
   background: transparent;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
 }
 
 .root-expand-btn:hover {
   background: transparent;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
 }
 
 .action-btn {
@@ -486,8 +486,8 @@ const isFavorited = (path) => {
   min-width: 0;
   padding: 0 10px;
   border-radius: 8px;
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .action-btn span {
@@ -500,12 +500,12 @@ const isFavorited = (path) => {
   flex: 0 0 auto;
   padding: 0 8px;
   gap: 4px;
-  background: var(--app-selected-bg);
-  box-shadow: inset 0 0 0 1px var(--app-selected-border);
+  background: var(--theme-sem-selected-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-sem-selected-border);
 }
 
 .action-btn.primary:hover {
-  background: color-mix(in srgb, var(--app-selected-bg) 85%, white 15%);
+  background: color-mix(in srgb, var(--theme-sem-selected-bg) 85%, white 15%);
 }
 
 .root-text,
@@ -554,12 +554,12 @@ const isFavorited = (path) => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
 }
 
 .child-kind {
   margin-left: 8px;
-  color: color-mix(in srgb, var(--app-text-muted) 80%, transparent);
+  color: color-mix(in srgb, var(--theme-sem-text-muted) 80%, transparent);
 }
 
 .root-meta {
@@ -570,7 +570,7 @@ const isFavorited = (path) => {
   min-width: 22px;
   margin-left: 8px;
   font-size: 11px;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
 }
 
 .child-list {
@@ -603,7 +603,7 @@ const isFavorited = (path) => {
 }
 
 .repo-branch-row {
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   font-size: 12px;
 }
 
@@ -629,14 +629,14 @@ const isFavorited = (path) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
   margin-left: 4px;
   margin-right: 4px;
   transition: all 0.2s ease;
 }
 
 .pending-files-icon:hover {
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
 }
 
 .push-count {
@@ -645,7 +645,7 @@ const isFavorited = (path) => {
 }
 
 .push-count-number {
-  color: #28a745;
+  color: var(--theme-sem-accent-success);
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -654,7 +654,7 @@ const isFavorited = (path) => {
 
 .pull-count {
   font-size: 11px;
-  color: #ffc107;
+  color: var(--theme-sem-accent-warning);
   font-weight: 500;
   white-space: nowrap;
   margin-left: 4px;

@@ -1,0 +1,103 @@
+:root {
+  color-scheme: dark;
+
+  /* Base tokens */
+  --theme-base-radius-sm: 6px;
+  --theme-base-radius-md: 10px;
+  --theme-base-radius-lg: 12px;
+
+  --theme-base-color-slate-975: #14171c;
+  --theme-base-color-slate-950: #161b22;
+  --theme-base-color-slate-925: #1d2127;
+  --theme-base-color-slate-900: #242931;
+  --theme-base-color-slate-875: #2a2e34;
+  --theme-base-color-slate-850: #2a2e35;
+  --theme-base-color-slate-825: #31363d;
+  --theme-base-color-slate-800: #364153;
+
+  --theme-base-color-blue-300: #93c5fd;
+  --theme-base-color-blue-400: #8eb9ff;
+  --theme-base-color-blue-500: #4f8cff;
+  --theme-base-color-cyan-400: #57d3ff;
+  --theme-base-color-amber-300: #f4d37d;
+  --theme-base-color-amber-500: #f59e0b;
+  --theme-base-color-green-300: #86efac;
+  --theme-base-color-green-500: #22c55e;
+  --theme-base-color-red-300: #fca5a5;
+  --theme-base-color-red-500: #ef4444;
+
+  --theme-base-color-file-added: #6bd39f;
+  --theme-base-color-file-modified: #f2d06b;
+  --theme-base-color-file-deleted: #ff7f87;
+  --theme-base-color-file-renamed: #79c0ff;
+  --theme-base-color-file-conflict: #ffb86b;
+  --theme-base-color-file-untracked: #b8b8c2;
+
+  --theme-base-alpha-white-92: rgba(255, 255, 255, 0.92);
+  --theme-base-alpha-white-72: rgba(255, 255, 255, 0.72);
+  --theme-base-alpha-white-52: rgba(255, 255, 255, 0.52);
+  --theme-base-alpha-white-08: rgba(255, 255, 255, 0.08);
+  --theme-base-alpha-black-56: rgba(0, 0, 0, 0.56);
+}
+
+html[data-theme='slate-dual'] {
+  /* Semantic tokens */
+  --theme-sem-bg-app: var(--theme-base-color-slate-975);
+  --theme-sem-bg-workspace: var(--theme-base-color-slate-975);
+  --theme-sem-bg-project: var(--theme-base-color-slate-950);
+  --theme-sem-bg-sidebar: var(--theme-base-color-slate-875);
+  --theme-sem-bg-sidebar-soft: var(--theme-base-color-slate-825);
+  --theme-sem-surface-1: var(--theme-base-color-slate-925);
+  --theme-sem-surface-2: var(--theme-base-color-slate-900);
+  --theme-sem-bg-dialog: var(--theme-base-color-slate-850);
+  --theme-sem-bg-menu: var(--theme-base-color-slate-850);
+  --theme-sem-bg-tooltip: rgba(25, 28, 33, 0.98);
+  --theme-sem-bg-overlay: var(--theme-base-alpha-black-56);
+
+  --theme-sem-text-primary: var(--theme-base-alpha-white-92);
+  --theme-sem-text-secondary: var(--theme-base-alpha-white-72);
+  --theme-sem-text-muted: var(--theme-base-alpha-white-52);
+
+  --theme-sem-border-default: transparent;
+  --theme-sem-border-strong: transparent;
+
+  --theme-sem-hover: var(--theme-base-alpha-white-08);
+  --theme-sem-selected-bg: var(--theme-sem-bg-sidebar-soft);
+  --theme-sem-selected-border: transparent;
+
+  --theme-sem-accent-primary: var(--theme-base-color-blue-500);
+  --theme-sem-accent-primary-strong: var(--theme-base-color-cyan-400);
+  --theme-sem-accent-info: var(--theme-base-color-blue-300);
+  --theme-sem-accent-warning: var(--theme-base-color-amber-300);
+  --theme-sem-accent-warning-strong: var(--theme-base-color-amber-500);
+  --theme-sem-accent-success: var(--theme-base-color-green-300);
+  --theme-sem-accent-success-strong: var(--theme-base-color-green-500);
+  --theme-sem-accent-danger: var(--theme-base-color-red-300);
+  --theme-sem-accent-danger-strong: var(--theme-base-color-red-500);
+
+  --theme-sem-info-bg: rgba(59, 130, 246, 0.2);
+  --theme-sem-info-border: rgba(59, 130, 246, 0.34);
+  --theme-sem-warning-bg: rgba(217, 155, 32, 0.2);
+  --theme-sem-warning-border: rgba(217, 155, 32, 0.32);
+  --theme-sem-success-bg: rgba(34, 197, 94, 0.2);
+  --theme-sem-danger-bg: rgba(220, 80, 80, 0.24);
+
+  --theme-sem-file-added: var(--theme-base-color-file-added);
+  --theme-sem-file-modified: var(--theme-base-color-file-modified);
+  --theme-sem-file-deleted: var(--theme-base-color-file-deleted);
+  --theme-sem-file-renamed: var(--theme-base-color-file-renamed);
+  --theme-sem-file-conflict: var(--theme-base-color-file-conflict);
+  --theme-sem-file-untracked: var(--theme-base-color-file-untracked);
+
+  /* Component alias tokens */
+  --theme-comp-radius-control: var(--theme-base-radius-md);
+  --theme-comp-radius-panel: var(--theme-base-radius-lg);
+  --theme-comp-radius-selected: var(--theme-base-radius-md);
+
+  --theme-comp-sidebar-item-active-bg: color-mix(in srgb, var(--theme-sem-bg-sidebar-soft) 82%, #5d7290 18%);
+  --theme-comp-sidebar-item-active-border: transparent;
+  --theme-comp-tab-active-bg: var(--theme-base-color-slate-800);
+  --theme-comp-tab-active-border: transparent;
+  --theme-comp-tab-active-accent: var(--theme-base-color-blue-400);
+  --theme-comp-child-header-bg: rgba(255, 255, 255, 0.025);
+}

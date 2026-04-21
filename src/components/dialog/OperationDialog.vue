@@ -110,7 +110,7 @@ watch(() => props.output, () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.22);
+  background: var(--theme-sem-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -118,7 +118,7 @@ watch(() => props.output, () => {
 }
 
 .operation-dialog {
-  background: #1e1e1e;
+  background: var(--theme-sem-bg-dialog);
   border-radius: 12px;
   width: 450px;
   max-width: 90vw;
@@ -141,7 +141,7 @@ watch(() => props.output, () => {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: #fff;
+  color: var(--theme-sem-text-primary);
 }
 
 .operation-output {
@@ -158,10 +158,10 @@ watch(() => props.output, () => {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: #e0e0e0;
+  color: rgba(255, 255, 255, 0.88);
   white-space: pre-wrap;
   word-wrap: break-word;
-  background: #2a2a2a;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
   padding: 12px;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -196,7 +196,7 @@ watch(() => props.output, () => {
 
 .progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, #00d4ff, #0099ff, #0066ff);
+  background: linear-gradient(90deg, var(--theme-sem-accent-primary-strong), var(--theme-sem-accent-primary), color-mix(in srgb, var(--theme-sem-accent-primary) 82%, black 18%));
   width: 0;
   transition: width 0.3s ease;
 }
@@ -207,12 +207,12 @@ watch(() => props.output, () => {
 
 .progress-bar.success {
   width: 100%;
-  background: #22c55e;
+  background: var(--theme-sem-accent-success-strong);
 }
 
 .progress-bar.error {
   width: 100%;
-  background: #dc3545;
+  background: var(--theme-sem-accent-danger-strong);
 }
 
 @keyframes progress {
@@ -252,7 +252,7 @@ watch(() => props.output, () => {
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: #dc3545;
+  background: var(--theme-sem-accent-danger-strong);
   color: white;
   border-radius: 6px;
   cursor: pointer;
@@ -260,6 +260,6 @@ watch(() => props.output, () => {
 }
 
 .cancel-btn:hover {
-  background: #c82333;
+  background: color-mix(in srgb, var(--theme-sem-accent-danger-strong) 82%, black 18%);
 }
 </style>

@@ -499,9 +499,9 @@ onUnmounted(() => {
 <style scoped>
 .ai-sessions-section {
   flex: 1;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
   border: none;
-  border-radius: var(--app-selected-radius);
+  border-radius: var(--theme-comp-radius-selected);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -511,7 +511,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   min-height: 0;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 .provider-panel {
@@ -520,7 +520,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 .provider-header,
@@ -529,7 +529,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: var(--app-project-bg);
+  background: var(--theme-comp-child-header-bg);
   color: rgba(255, 255, 255, 0.92);
   font-size: 13px;
   font-weight: 500;
@@ -582,17 +582,17 @@ onUnmounted(() => {
 
 .provider-item:hover,
 .session-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--theme-sem-hover);
 }
 
 .provider-item.active {
-  background: var(--app-sidebar-selected-bg);
-  border-radius: var(--app-selected-radius);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 .session-item.active {
-  background: var(--app-sidebar-selected-bg);
-  border-radius: var(--app-selected-radius);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 .provider-item-main,
@@ -636,7 +636,7 @@ onUnmounted(() => {
   min-height: 0;
   max-width: 100%;
   overflow: hidden;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 .session-tip {
@@ -747,7 +747,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--theme-sem-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -755,7 +755,7 @@ onUnmounted(() => {
 }
 
 .dialog-content {
-  background: #26272b;
+  background: var(--theme-sem-bg-dialog);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 14px;
   min-width: 420px;
@@ -985,11 +985,11 @@ onUnmounted(() => {
 }
 
 .warning-text {
-  color: #ffc107 !important;
-  background: rgba(255, 193, 7, 0.1);
+  color: var(--theme-sem-accent-warning) !important;
+  background: var(--theme-sem-warning-bg);
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 193, 7, 0.3);
+  border: 1px solid var(--theme-sem-warning-border);
   font-size: 13px;
 }
 

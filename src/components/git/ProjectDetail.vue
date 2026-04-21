@@ -3178,7 +3178,7 @@ defineExpose({
   overflow: hidden;
   padding-left: 0;
   box-sizing: border-box;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 .empty-state {
@@ -3187,11 +3187,11 @@ defineExpose({
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
 }
 
 .empty-state-icon { opacity: 0.3; margin-bottom: 16px; }
-.empty-state h3 { margin: 0 0 8px 0; font-size: 18px; color: var(--app-text-secondary); }
+.empty-state h3 { margin: 0 0 8px 0; font-size: 18px; color: var(--theme-sem-text-secondary); }
 .empty-state p { margin: 0; font-size: 14px; }
 
 .loading-state {
@@ -3199,7 +3199,7 @@ defineExpose({
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
   font-size: 13px;
 }
 
@@ -3218,7 +3218,7 @@ defineExpose({
   left: 0;
   right: 0;
   bottom: 0;
-  background: color-mix(in srgb, var(--app-project-bg) 92%, black 8%);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 92%, black 8%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3232,19 +3232,19 @@ defineExpose({
 
 .project-detail {
   /* ProjectDetail 作用域内统一把工作区底色映射为项目底色，确保子页面同步 */
-  --app-workspace-bg: var(--app-project-bg);
+  --theme-sem-bg-workspace: var(--theme-sem-bg-project);
   flex: 1 1 0%;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 .header {
   height: 34px;
   padding: 0 16px;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
   border: none;
   box-shadow: none;
   border-radius: 0;
@@ -3267,7 +3267,7 @@ defineExpose({
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3278,7 +3278,7 @@ defineExpose({
   align-items: center;
   gap: 4px;
   font-weight: 400;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   font-size: 13px;
 }
 
@@ -3289,7 +3289,7 @@ defineExpose({
 }
 
 .status-loading {
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   font-size: 16px;
   margin-left: 8px;
   animation: spin 1s linear infinite;
@@ -3332,34 +3332,34 @@ defineExpose({
 .mr-single-btn,
 .gitlab-open-btn,
 .finder-open-btn {
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
 }
 
 .create-btn {
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .create-btn:hover {
-  background: color-mix(in srgb, var(--app-hover) 70%, white 30%);
+  background: color-mix(in srgb, var(--theme-sem-hover) 70%, white 30%);
 }
 
 .pull-single-btn {
-  background: var(--app-warning-bg);
-  color: var(--app-warning);
+  background: var(--theme-sem-warning-bg);
+  color: var(--theme-sem-accent-warning);
 }
 
 .pull-single-btn:hover {
-  background: color-mix(in srgb, var(--app-warning-bg) 80%, white 20%);
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 80%, white 20%);
 }
 
 .push-single-btn {
-  background: var(--app-info-bg);
-  color: var(--app-info);
+  background: var(--theme-sem-info-bg);
+  color: var(--theme-sem-accent-info);
 }
 
 .push-single-btn:hover {
-  background: color-mix(in srgb, var(--app-info-bg) 80%, white 20%);
+  background: color-mix(in srgb, var(--theme-sem-info-bg) 80%, white 20%);
 }
 
 .mr-single-btn {
@@ -3391,7 +3391,7 @@ defineExpose({
 
 .favorite-project-btn {
   background: rgba(250, 204, 21, 0.08);
-  color: var(--app-warning);
+  color: var(--theme-sem-accent-warning);
   padding: 8px;
 }
 
@@ -3406,13 +3406,13 @@ defineExpose({
 }
 
 .settings-btn {
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
   padding: 8px;
 }
 .settings-btn:hover { 
-  background: color-mix(in srgb, var(--app-hover) 65%, white 35%);
-  color: var(--app-text-primary);
+  background: color-mix(in srgb, var(--theme-sem-hover) 65%, white 35%);
+  color: var(--theme-sem-text-primary);
 }
 
 .pull-count-badge, .push-count-badge {
@@ -3430,7 +3430,7 @@ defineExpose({
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 .project-main-area--branch-rail {
@@ -3444,7 +3444,7 @@ defineExpose({
   overflow: hidden;
   gap: 0;
   padding: 0;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 /* 左栏图标条：允许悬停提示伸到右侧主区域上方，避免被 overflow 裁掉 */
@@ -3464,7 +3464,7 @@ defineExpose({
   flex-shrink: 0;
   min-height: 0;
   box-sizing: border-box;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -3481,7 +3481,7 @@ defineExpose({
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
@@ -3516,7 +3516,7 @@ defineExpose({
   align-items: stretch;
   min-width: 0;
   padding: 0;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 /* 标题条背景撑满侧栏宽；左右用 padding 与下方列表项「外边距+内边距」对齐（8+12=20） */
@@ -3533,8 +3533,8 @@ defineExpose({
   box-sizing: border-box;
   border: none;
   border-radius: 14px 14px 0 0;
-  background: var(--app-project-bg);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-bg-project);
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -3544,8 +3544,8 @@ defineExpose({
 }
 
 .branches-panel-list-head-btn:hover {
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
 }
 
 .branches-panel-list-head-ico {
@@ -3573,15 +3573,15 @@ defineExpose({
   min-height: 0;
   border-radius: 11px;
   background: transparent;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   font-weight: 400;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 /* 必须盖过上面的 .branches-panel-list-head-btn:hover（0.045），与 .file-status-button:hover 一致 */
 .branches-panel.branches-panel--icon-rail .branches-panel-list-head-btn:hover {
-  background: var(--app-hover);
-  color: var(--app-text-secondary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-secondary);
 }
 
 .branches-panel.branches-panel--icon-rail {
@@ -3610,7 +3610,7 @@ defineExpose({
   gap: 4px;
   padding: 10px 6px;
   margin: 0 4px 4px;
-  border-radius: 11px;
+  border-radius: 10px;
 }
 
 .branches-panel--icon-rail .branches-nav-label,
@@ -3667,9 +3667,9 @@ defineExpose({
   font-weight: 500;
   line-height: 1.25;
   white-space: nowrap;
-  color: var(--app-text-primary);
-  background: var(--app-tooltip-bg);
-  border: 1px solid var(--app-border-strong);
+  color: var(--theme-sem-text-primary);
+  background: var(--theme-sem-bg-tooltip);
+  border: 1px solid var(--theme-sem-border-strong);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
   opacity: 0;
   visibility: hidden;
@@ -3701,18 +3701,18 @@ defineExpose({
   padding: 10px 20px;
   cursor: pointer;
   transition: background-color 0.2s;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   font-size: 13px;
   user-select: none;
   margin: 0 0 2px;
-  border-radius: 11px;
+  border-radius: 10px;
 }
 
-.file-status-button:hover { background: var(--app-hover); }
+.file-status-button:hover { background: var(--theme-sem-hover); }
 .file-status-button.active {
-  background: var(--app-sidebar-selected-bg);
-  border-radius: var(--app-selected-radius);
-  color: var(--app-text-primary);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
+  color: var(--theme-sem-text-primary);
   font-weight: 500;
 }
 
@@ -3727,18 +3727,18 @@ defineExpose({
   padding: 10px 20px;
   cursor: pointer;
   transition: background-color 0.2s;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   font-size: 13px;
   user-select: none;
   margin: 0 0 2px;
   border-radius: 11px;
 }
 
-.branch-section-header:hover { background: var(--app-hover); }
+.branch-section-header:hover { background: var(--theme-sem-hover); }
 
 .expand-arrow {
   margin-left: auto;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
   transition: transform 0.2s ease;
   flex-shrink: 0;
 }
@@ -3760,7 +3760,7 @@ defineExpose({
   padding: 4px;
   background: transparent;
   border: none;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
   cursor: pointer;
   border-radius: 4px;
   display: flex;
@@ -3768,9 +3768,9 @@ defineExpose({
   justify-content: center;
 }
 
-.refresh-btn:hover { background: var(--app-hover); color: var(--app-text-primary); }
+.refresh-btn:hover { background: var(--theme-sem-hover); color: var(--theme-sem-text-primary); }
 .refresh-btn.refreshing { animation: spin 1s linear infinite; }
-.refresh-btn.success { color: var(--app-success); }
+.refresh-btn.success { color: var(--theme-sem-accent-success); }
 
 .branch-list {
   padding: 0 0 4px;
@@ -3783,7 +3783,7 @@ defineExpose({
   padding: 5px 16px 5px 24px;
   cursor: pointer;
   transition: background-color 0.2s;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   font-size: 11px;
   user-select: none;
   margin: 1px 0;
@@ -3795,11 +3795,11 @@ defineExpose({
   margin-top: 0 !important;
 }
 
-.branch-item:hover { background: var(--app-hover); }
+.branch-item:hover { background: var(--theme-sem-hover); }
 .branch-item.active {
-  background: var(--app-sidebar-selected-bg);
-  border-radius: var(--app-selected-radius);
-  color: var(--app-text-primary);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  border-radius: var(--theme-comp-radius-selected);
+  color: var(--theme-sem-text-primary);
 }
 
 .branch-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
@@ -3811,8 +3811,8 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.pull-indicator { color: var(--app-warning); font-size: 11px; }
-.push-indicator { color: var(--app-success); font-size: 11px; }
+.pull-indicator { color: var(--theme-sem-accent-warning); font-size: 11px; }
+.push-indicator { color: var(--theme-sem-accent-success); font-size: 11px; }
 
 .pending-indicator {
   display: inline-flex;
@@ -3826,7 +3826,7 @@ defineExpose({
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
   margin-left: 6px;
   flex-shrink: 0;
   margin-left: auto;
@@ -3856,21 +3856,21 @@ defineExpose({
   padding: 2px 8px;
   border: 0;
   border-radius: 999px;
-  background: var(--app-warning-bg);
-  color: var(--app-warning);
+  background: var(--theme-sem-warning-bg);
+  color: var(--theme-sem-accent-warning);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
 }
 
 .pipeline-status-pill:hover {
-  background: color-mix(in srgb, var(--app-warning-bg) 80%, white 20%);
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 80%, white 20%);
 }
 
 .pipeline-inline-status {
   margin-left: auto;
   font-size: 11px;
-  color: var(--app-warning);
+  color: var(--theme-sem-accent-warning);
 }
 
 .pipeline-status-running,
@@ -3878,16 +3878,16 @@ defineExpose({
 .pipeline-status-preparing,
 .pipeline-status-waiting_for_resource,
 .pipeline-status-created {
-  color: var(--app-warning);
+  color: var(--theme-sem-accent-warning);
 }
 
 .pipeline-status-failed,
 .pipeline-status-canceled {
-  color: var(--app-danger);
+  color: var(--theme-sem-accent-danger);
 }
 
 .pipeline-status-success {
-  color: var(--app-success);
+  color: var(--theme-sem-accent-success);
 }
 
 .remote-branch { 
@@ -3900,17 +3900,17 @@ defineExpose({
   padding: 5px 16px 5px 24px;
   cursor: pointer;
   transition: background-color 0.2s;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
   user-select: none;
   margin: 1px 0;
   border-radius: 9px;
 }
 
-.tag-item:hover { background: var(--app-hover); }
+.tag-item:hover { background: var(--theme-sem-hover); }
 
 .empty-tags {
   padding: 8px 16px;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
   font-size: 11px;
 }
 
@@ -3922,8 +3922,10 @@ defineExpose({
   min-width: 0;
   overflow: hidden;
   position: relative;
-  background: var(--app-project-bg);
-  border-radius: 0;
+  background: var(--theme-sem-bg-project);
+  border-radius: var(--theme-comp-radius-selected);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 /* 右侧各视图占满剩余高度，避免子组件 height:100% 无参照 */
@@ -3931,7 +3933,7 @@ defineExpose({
   flex: 1 1 0%;
   min-height: 0;
   min-width: 0;
-  background: var(--app-project-bg);
+  background: var(--theme-sem-bg-project);
 }
 
 /* 弹框样式 */
@@ -3949,7 +3951,7 @@ defineExpose({
 }
 
 .dialog-content {
-  background: var(--app-dialog-bg);
+  background: var(--theme-sem-bg-dialog);
   border-radius: 12px;
   padding: 0;
   min-width: 450px;
@@ -3960,12 +3962,12 @@ defineExpose({
 
 .dialog-header-simple {
   padding: 16px 20px;
-  border-bottom: 1px solid var(--app-border);
+  border-bottom: 1px solid var(--theme-sem-border-default);
 }
 
 .dialog-header-simple h3 {
   margin: 0;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
   font-size: 16px;
   font-weight: 600;
 }
@@ -3977,7 +3979,7 @@ defineExpose({
 
 .dialog-body p {
   margin: 0 0 16px;
-  color: var(--app-text-secondary);
+  color: var(--theme-sem-text-secondary);
 }
 
 .form-group {
@@ -3992,7 +3994,7 @@ defineExpose({
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
   font-size: 14px;
 }
 
@@ -4002,8 +4004,8 @@ defineExpose({
   font-size: 13px;
   border: 1px solid transparent;
   border-radius: 10px;
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
   box-sizing: border-box;
 }
 
@@ -4018,14 +4020,14 @@ defineExpose({
 }
 
 .branch-select option {
-  background: var(--app-dialog-bg);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-bg-dialog);
+  color: var(--theme-sem-text-primary);
   padding: 8px 12px;
 }
 
 .branch-select:focus, .branch-input:focus {
   outline: none;
-  border-color: var(--app-border-strong);
+  border-color: var(--theme-sem-border-strong);
 }
 
 .mr-description {
@@ -4036,15 +4038,15 @@ defineExpose({
   font-size: 13px;
   resize: vertical;
   min-height: 60px;
-  background: var(--app-hover);
-  color: var(--app-text-primary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
   box-sizing: border-box;
   font-family: inherit;
 }
 
 .mr-description:focus {
   outline: none;
-  border-color: var(--app-border-strong);
+  border-color: var(--theme-sem-border-strong);
 }
 
 .dialog-footer {
@@ -4052,7 +4054,7 @@ defineExpose({
   justify-content: flex-end;
   gap: 10px;
   padding: 16px 20px;
-  border-top: 1px solid var(--app-border);
+  border-top: 1px solid var(--theme-sem-border-default);
 }
 
 .cancel-btn-large {
@@ -4060,15 +4062,15 @@ defineExpose({
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: var(--app-hover);
-  color: var(--app-text-secondary);
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-secondary);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .cancel-btn-large:hover {
-  background: color-mix(in srgb, var(--app-hover) 70%, white 30%);
+  background: color-mix(in srgb, var(--theme-sem-hover) 70%, white 30%);
 }
 
 .confirm-btn-large {
@@ -4076,14 +4078,14 @@ defineExpose({
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: var(--app-primary);
+  background: var(--theme-sem-accent-primary);
   color: white;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.confirm-btn-large:hover:not(:disabled) { background: color-mix(in srgb, var(--app-primary) 82%, black 18%); }
+.confirm-btn-large:hover:not(:disabled) { background: color-mix(in srgb, var(--theme-sem-accent-primary) 82%, black 18%); }
 .confirm-btn-large:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .delete-btn-large {
@@ -4091,20 +4093,20 @@ defineExpose({
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: var(--app-danger-bg);
+  background: var(--theme-sem-danger-bg);
   color: white;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.delete-btn-large:hover { background: color-mix(in srgb, var(--app-danger-bg) 85%, black 15%); }
+.delete-btn-large:hover { background: color-mix(in srgb, var(--theme-sem-danger-bg) 85%, black 15%); }
 
 /* 右键菜单 */
 .context-menu {
   position: fixed;
-  background: var(--app-menu-bg);
-  border: 1px solid var(--app-border-strong);
+  background: var(--theme-sem-bg-menu);
+  border: 1px solid var(--theme-sem-border-strong);
   border-radius: 8px;
   padding: 6px 0;
   min-width: 160px;
@@ -4117,15 +4119,15 @@ defineExpose({
   cursor: pointer;
   transition: background-color 0.15s ease;
   font-size: 13px;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
 }
 
-.context-menu-item:hover { background: var(--app-hover); }
+.context-menu-item:hover { background: var(--theme-sem-hover); }
 .context-menu-item.disabled { opacity: 0.5; cursor: not-allowed; }
 
 .context-menu-divider {
   height: 1px;
-  background: var(--app-border);
+  background: var(--theme-sem-border-default);
   margin: 6px 0;
 }
 

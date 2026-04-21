@@ -299,15 +299,15 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   display: flex;
   flex-direction: column;
   border: 0;
-  border-radius: var(--app-selected-radius);
+  border-radius: var(--theme-comp-radius-selected);
   overflow: hidden;
-  background: color-mix(in srgb, var(--app-surface-1) 88%, transparent);
+  background: var(--theme-sem-bg-project);
   transition: border-color 0.22s ease, box-shadow 0.22s ease;
 }
 
 .terminal-pane.liquid-style {
   border: none;
-  border-radius: var(--app-selected-radius);
+  border-radius: var(--theme-comp-radius-selected);
 }
 
 .terminal-pane.liquid-style:not(.inactive) {
@@ -324,14 +324,14 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 }
 
 .terminal-pane.is-drop-target {
-  border-color: var(--app-info-border);
+  border-color: var(--theme-sem-info-border);
   box-shadow: none;
-  background: color-mix(in srgb, var(--app-info-bg) 75%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-info-bg) 75%, transparent);
 }
 
 .terminal-pane.is-drop-target .terminal-pane-topbar {
-  background: color-mix(in srgb, var(--app-info-bg) 75%, transparent);
-  border-bottom-color: var(--app-info-border);
+  background: color-mix(in srgb, var(--theme-sem-info-bg) 75%, transparent);
+  border-bottom-color: var(--theme-sem-info-border);
 }
 
 .terminal-pane.is-dragging {
@@ -347,8 +347,8 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   justify-content: space-between;
   gap: 10px;
   padding: 0 10px 0 12px;
-  background: color-mix(in srgb, var(--app-info-bg) 70%, transparent);
-  border-bottom: 1px solid var(--app-info-border);
+  background: color-mix(in srgb, var(--theme-sem-info-bg) 70%, transparent);
+  border-bottom: 1px solid var(--theme-sem-info-border);
 }
 
 .terminal-pane-topbar.draggable {
@@ -377,14 +377,14 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
   font-size: 11px;
   line-height: 1.3;
 }
 
 .terminal-pane-sep {
   flex-shrink: 0;
-  color: var(--app-text-muted);
+  color: var(--theme-sem-text-muted);
 }
 
 .terminal-pane-cwd {
@@ -413,14 +413,14 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   content: '';
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--app-warning-bg) 70%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 70%, transparent);
   pointer-events: none;
   z-index: 2;
 }
 
 .terminal-pane.inactive .terminal-pane-topbar {
-  background: color-mix(in srgb, var(--app-warning-bg) 55%, transparent);
-  border-bottom-color: var(--app-warning-border);
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 55%, transparent);
+  border-bottom-color: var(--theme-sem-warning-border);
 }
 
 .terminal-pane-actions {
@@ -436,7 +436,7 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -445,16 +445,16 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 }
 
 .pane-action-btn:hover {
-  background: color-mix(in srgb, var(--app-hover) 65%, white 35%);
-  color: var(--app-text-primary);
+  background: color-mix(in srgb, var(--theme-sem-hover) 65%, white 35%);
+  color: var(--theme-sem-text-primary);
 }
 
 .pane-close-btn {
-  color: var(--app-text-primary);
+  color: var(--theme-sem-text-primary);
 }
 
 .pane-close-btn:hover {
-  background: var(--app-danger-bg);
+  background: var(--theme-sem-danger-bg);
 }
 
 .terminal-split-tree {
@@ -523,7 +523,7 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   right: 0;
   width: 2px;
   margin: 0 auto;
-  background: var(--app-border-strong);
+  background: var(--theme-sem-border-strong);
 }
 
 .terminal-split-divider.is-column {
@@ -535,11 +535,11 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   bottom: 0;
   height: 2px;
   margin: auto 0;
-  background: var(--app-border-strong);
+  background: var(--theme-sem-border-strong);
 }
 
 .terminal-split-divider:hover::before {
-  background: color-mix(in srgb, var(--app-primary) 68%, white 32%);
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 68%, white 32%);
   opacity: 1;
 }
 </style>
