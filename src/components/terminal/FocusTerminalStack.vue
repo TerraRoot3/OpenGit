@@ -15,9 +15,9 @@
             :key="s.id"
             :id="'focus-tab-' + s.id"
             class="focus-tab"
-            :class="{ 'is-active': focusedId === s.id }"
+            :class="{ 'is-active': visualFocusedId === s.id }"
             role="tab"
-            :aria-selected="focusedId === s.id"
+            :aria-selected="visualFocusedId === s.id"
             :ref="(el) => setTabElRef(s.id, el)"
             @click="activateSession(s.id)"
           >
@@ -61,7 +61,7 @@
         :key="s.id"
         class="focus-terminal-pane"
         :class="{
-          'is-focused': focusedId === s.id,
+          'is-focused': visualFocusedId === s.id,
           'is-drop-target': dropTargetSessionId === s.id && draggingSessionId && draggingSessionId !== s.id,
           'is-dragging': draggingSessionId === s.id
         }"
@@ -120,6 +120,7 @@ const PANE_LAYOUT_SETTLE_TIMEOUT_MS = 900
 let activationSequence = 0
 let pendingActivationCleanup = null
 const activatingSessionId = ref('')
+const visualFocusedId = ref('')
 const draggingSessionId = ref('')
 const dropTargetSessionId = ref('')
 const pendingPaneDrag = ref(null)
@@ -144,8 +145,8 @@ async function activateSession(sessionId) {
   activationSequence += 1
   const sequence = activationSequence
   const isAlreadyFocused = focusedId.value === sessionId
-  focusSession(sessionId)
   clearPendingActivationWait()
+  visualFocusedId.value = sessionId
   activatingSessionId.value = isAlreadyFocused ? '' : sessionId
   await nextTick()
   if (isAlreadyFocused) {
@@ -154,6 +155,8 @@ async function activateSession(sessionId) {
   }
   await waitForPaneLayoutSettled()
   if (sequence !== activationSequence) return
+  focusSession(sessionId)
+  await nextTick()
   activatingSessionId.value = ''
   panelRefById.get(sessionId)?.revealCurrentTerminalAfterAnimation?.()
 }
@@ -369,6 +372,9 @@ watch(
     for (const key of Object.keys(paneTitles)) {
       if (!ids.has(key)) delete paneTitles[key]
     }
+    if (visualFocusedId.value && !ids.has(visualFocusedId.value)) {
+      visualFocusedId.value = focusedId.value || list[0]?.id || ''
+    }
   },
   { deep: true }
 )
@@ -382,15 +388,25 @@ function setTabElRef(id, el) {
 }
 
 function scrollFocusedTabIntoView() {
-  const el = tabElById.get(focusedId.value)
+  const el = tabElById.get(visualFocusedId.value)
   el?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
 
-watch(focusedId, () => {
+watch(visualFocusedId, () => {
   nextTick(() => {
     scrollFocusedTabIntoView()
   })
 })
+
+watch(
+  focusedId,
+  (id) => {
+    if (!activatingSessionId.value) {
+      visualFocusedId.value = id || ''
+    }
+  },
+  { immediate: true }
+)
 
 function paneSnapshotKey(sessionId) {
   const scope = String(props.defaultCwd || '__standalone__').replace(/[^a-zA-Z0-9]/g, '_')
@@ -398,7 +414,7 @@ function paneSnapshotKey(sessionId) {
 }
 
 const focusIndex = computed(() =>
-  sessions.value.findIndex((s) => s.id === focusedId.value)
+  sessions.value.findIndex((s) => s.id === visualFocusedId.value)
 )
 
 const count = computed(() => sessions.value.length)
