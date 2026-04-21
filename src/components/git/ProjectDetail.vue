@@ -3980,7 +3980,7 @@ defineExpose({
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.22);
+  background: var(--theme-sem-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3990,6 +3990,7 @@ defineExpose({
 .dialog-content {
   background: var(--theme-sem-bg-dialog);
   border-radius: 12px;
+  border: 1px solid var(--theme-sem-border-default);
   padding: 0;
   min-width: 450px;
   max-width: 600px;
@@ -4039,9 +4040,9 @@ defineExpose({
   width: 100%;
   padding: 10px 12px;
   font-size: 13px;
-  border: 1px solid transparent;
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
-  background: var(--theme-sem-hover);
+  background: color-mix(in srgb, var(--theme-sem-surface-1) 72%, var(--theme-sem-bg-project) 28%);
   color: var(--theme-sem-text-primary);
   box-sizing: border-box;
 }
@@ -4065,17 +4066,18 @@ defineExpose({
 .branch-select:focus, .branch-input:focus {
   outline: none;
   border-color: var(--theme-sem-border-strong);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-sem-border-strong) 72%, transparent);
 }
 
 .mr-description {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid transparent;
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
   font-size: 13px;
   resize: vertical;
   min-height: 60px;
-  background: var(--theme-sem-hover);
+  background: color-mix(in srgb, var(--theme-sem-surface-1) 72%, var(--theme-sem-bg-project) 28%);
   color: var(--theme-sem-text-primary);
   box-sizing: border-box;
   font-family: inherit;
@@ -4084,6 +4086,7 @@ defineExpose({
 .mr-description:focus {
   outline: none;
   border-color: var(--theme-sem-border-strong);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-sem-border-strong) 72%, transparent);
 }
 
 .dialog-footer {
@@ -4092,14 +4095,15 @@ defineExpose({
   gap: 10px;
   padding: 16px 20px;
   border-top: 1px solid var(--theme-sem-border-default);
+  background: color-mix(in srgb, var(--theme-sem-surface-1) 58%, var(--theme-sem-bg-dialog) 42%);
 }
 
 .cancel-btn-large {
   padding: 8px 20px;
   font-size: 13px;
   font-weight: 500;
-  border: none;
-  background: var(--theme-sem-hover);
+  border: 1px solid var(--theme-sem-border-default);
+  background: color-mix(in srgb, var(--theme-sem-surface-1) 68%, var(--theme-sem-bg-project) 32%);
   color: var(--theme-sem-text-secondary);
   border-radius: 6px;
   cursor: pointer;
@@ -4107,7 +4111,7 @@ defineExpose({
 }
 
 .cancel-btn-large:hover {
-  background: color-mix(in srgb, var(--theme-sem-hover) 82%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-surface-1) 82%, var(--theme-sem-hover) 18%);
 }
 
 .confirm-btn-large {
@@ -4124,6 +4128,10 @@ defineExpose({
 
 .confirm-btn-large:hover:not(:disabled) { background: color-mix(in srgb, var(--theme-sem-accent-primary) 82%, black 18%); }
 .confirm-btn-large:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.form-group input[type="checkbox"] {
+  accent-color: var(--theme-sem-accent-primary);
+}
 
 .delete-btn-large {
   padding: 8px 20px;

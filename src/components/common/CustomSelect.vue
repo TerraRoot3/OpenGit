@@ -135,7 +135,7 @@ const selectHighlighted = () => {
 }
 
 // 点击外部关闭
-const handleClickOutside = (event) => {
+const handlePointerDownOutside = (event) => {
   if (selectRef.value && !selectRef.value.contains(event.target)) {
     closeDropdown()
   }
@@ -147,11 +147,11 @@ watch(() => props.modelValue, () => {
 })
 
 onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
+  document.addEventListener('mousedown', handlePointerDownOutside, true)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
+  document.removeEventListener('mousedown', handlePointerDownOutside, true)
 })
 </script>
 
@@ -164,15 +164,16 @@ onUnmounted(() => {
 .select-trigger {
   display: flex;
   align-items: center;
-  background: #2a2a2a;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  background: color-mix(in srgb, var(--theme-sem-surface-1) 72%, var(--theme-sem-bg-project) 28%);
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 10px;
   cursor: pointer;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
 }
 
 .custom-select.open .select-trigger {
-  border-color: #0066ff;
+  border-color: var(--theme-sem-border-strong);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-sem-border-strong) 72%, transparent);
 }
 
 .select-input {
@@ -181,17 +182,17 @@ onUnmounted(() => {
   background: transparent;
   border: none;
   outline: none;
-  color: #fff;
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
   cursor: pointer;
 }
 
 .select-input::placeholder {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-sem-text-muted);
 }
 
 .select-arrow {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-sem-text-muted);
   transition: transform 0.2s;
   flex-shrink: 0;
   margin-right: 12px;
@@ -208,9 +209,9 @@ onUnmounted(() => {
   right: 0;
   max-height: 200px;
   overflow-y: auto;
-  background: #2a2a2a;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
+  background: var(--theme-sem-bg-menu);
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   z-index: 100;
 }
@@ -218,29 +219,29 @@ onUnmounted(() => {
 .select-option {
   padding: 10px 12px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-sem-text-secondary);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .select-option:hover,
 .select-option.highlighted {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-sem-hover);
 }
 
 .select-option.selected {
-  background: rgba(0, 102, 255, 0.2);
-  color: #0099ff;
+  background: var(--theme-comp-sidebar-item-active-bg);
+  color: var(--theme-sem-text-primary);
 }
 
 .select-option.selected.highlighted {
-  background: rgba(0, 102, 255, 0.3);
+  background: color-mix(in srgb, var(--theme-comp-sidebar-item-active-bg) 88%, var(--theme-sem-hover) 12%);
 }
 
 .select-empty {
   padding: 16px 12px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   text-align: center;
 }
 
@@ -254,11 +255,11 @@ onUnmounted(() => {
 }
 
 .select-dropdown::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--theme-sem-border-strong);
   border-radius: 3px;
 }
 
 .select-dropdown::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--theme-sem-border-strong);
 }
 </style>
