@@ -10,6 +10,11 @@ export const THEME_DEFINITIONS = Object.freeze({
     id: 'graphite-moss',
     label: 'Graphite Moss',
     appearance: 'dark'
+  },
+  'abyss-blue': {
+    id: 'abyss-blue',
+    label: 'Abyss Blue',
+    appearance: 'dark'
   }
 })
 

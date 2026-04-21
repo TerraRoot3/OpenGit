@@ -22,11 +22,23 @@
   --theme-base-color-graphite-900: #2c342e;
   --theme-base-color-graphite-880: #354038;
   --theme-base-color-graphite-860: #3d4a41;
+  --theme-base-color-abyss-980: #0f141d;
+  --theme-base-color-abyss-960: #141b26;
+  --theme-base-color-abyss-940: #1a2230;
+  --theme-base-color-abyss-920: #212b3a;
+  --theme-base-color-abyss-900: #293548;
+  --theme-base-color-abyss-880: #33415a;
+  --theme-base-color-abyss-860: #3d5070;
 
   --theme-base-color-blue-300: #93c5fd;
   --theme-base-color-blue-400: #8eb9ff;
   --theme-base-color-blue-500: #4f8cff;
   --theme-base-color-cyan-400: #57d3ff;
+  --theme-base-color-sea-300: #9ec4f0;
+  --theme-base-color-sea-400: #7da8db;
+  --theme-base-color-sea-500: #4f78b8;
+  --theme-base-color-foam-300: #9fd8cf;
+  --theme-base-color-foam-500: #5aa89e;
   --theme-base-color-mist-300: #9ecdc2;
   --theme-base-color-mist-500: #66a99d;
   --theme-base-color-moss-300: #a9d1b1;
@@ -181,4 +193,66 @@ html[data-theme='graphite-moss'] {
   --theme-comp-tab-active-border: rgba(152, 196, 163, 0.14);
   --theme-comp-tab-active-accent: var(--theme-base-color-moss-400);
   --theme-comp-child-header-bg: rgba(255, 255, 255, 0.028);
+}
+
+html[data-theme='abyss-blue'] {
+  /* Semantic tokens */
+  --theme-sem-bg-app: var(--theme-base-color-abyss-980);
+  --theme-sem-bg-workspace: var(--theme-base-color-abyss-980);
+  --theme-sem-bg-project: var(--theme-base-color-abyss-960);
+  --theme-sem-bg-sidebar: var(--theme-base-color-abyss-920);
+  --theme-sem-bg-sidebar-soft: var(--theme-base-color-abyss-900);
+  --theme-sem-surface-1: var(--theme-base-color-abyss-940);
+  --theme-sem-surface-2: var(--theme-base-color-abyss-920);
+  --theme-sem-bg-dialog: color-mix(in srgb, var(--theme-base-color-abyss-900) 90%, #20334c 10%);
+  --theme-sem-bg-menu: color-mix(in srgb, var(--theme-base-color-abyss-900) 92%, #223956 8%);
+  --theme-sem-bg-tooltip: rgba(19, 26, 37, 0.985);
+  --theme-sem-bg-overlay: rgba(6, 10, 18, 0.62);
+
+  --theme-sem-text-primary: rgba(245, 249, 255, 0.94);
+  --theme-sem-text-secondary: rgba(218, 228, 243, 0.78);
+  --theme-sem-text-muted: rgba(184, 198, 218, 0.56);
+
+  --theme-sem-border-default: rgba(152, 177, 211, 0.08);
+  --theme-sem-border-strong: rgba(152, 177, 211, 0.12);
+
+  --theme-sem-hover: rgba(255, 255, 255, 0.088);
+  --theme-sem-selected-bg: color-mix(in srgb, var(--theme-base-color-abyss-880) 76%, var(--theme-base-color-sea-500) 24%);
+  --theme-sem-selected-border: rgba(137, 167, 214, 0.17);
+
+  --theme-sem-accent-primary: var(--theme-base-color-sea-500);
+  --theme-sem-accent-primary-strong: var(--theme-base-color-sea-400);
+  --theme-sem-accent-info: var(--theme-base-color-sea-300);
+  --theme-sem-accent-warning: #e4ca88;
+  --theme-sem-accent-warning-strong: #cb9841;
+  --theme-sem-accent-success: var(--theme-base-color-foam-300);
+  --theme-sem-accent-success-strong: var(--theme-base-color-foam-500);
+  --theme-sem-accent-danger: #e8a0a4;
+  --theme-sem-accent-danger-strong: #d46b72;
+
+  --theme-sem-info-bg: rgba(79, 120, 184, 0.2);
+  --theme-sem-info-border: rgba(125, 168, 219, 0.32);
+  --theme-sem-warning-bg: rgba(203, 152, 65, 0.18);
+  --theme-sem-warning-border: rgba(203, 152, 65, 0.3);
+  --theme-sem-success-bg: rgba(90, 168, 158, 0.18);
+  --theme-sem-danger-bg: rgba(212, 107, 114, 0.2);
+
+  --theme-sem-file-added: #7ac8b5;
+  --theme-sem-file-modified: #d8c182;
+  --theme-sem-file-deleted: #d98991;
+  --theme-sem-file-renamed: #88b4ea;
+  --theme-sem-file-conflict: #d9a06e;
+  --theme-sem-file-untracked: #afbccf;
+
+  /* Component alias tokens */
+  --theme-comp-radius-control: var(--theme-base-radius-md);
+  --theme-comp-radius-panel: var(--theme-base-radius-lg);
+  --theme-comp-radius-selected: var(--theme-base-radius-md);
+
+  --theme-comp-sidebar-item-active-bg: color-mix(in srgb, var(--theme-base-color-abyss-880) 72%, var(--theme-base-color-sea-500) 28%);
+  --theme-comp-sidebar-item-active-border: rgba(137, 167, 214, 0.14);
+  --theme-comp-tab-active-bg: color-mix(in srgb, var(--theme-base-color-abyss-860) 80%, var(--theme-base-color-sea-500) 20%);
+  --theme-comp-tab-active-border: rgba(137, 167, 214, 0.18);
+  --theme-comp-tab-active-accent: var(--theme-base-color-sea-400);
+  --theme-comp-child-header-bg: color-mix(in srgb, var(--theme-base-color-abyss-920) 88%, #5d7ea8 12%);
 }

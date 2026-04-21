@@ -899,6 +899,10 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #121613 0%, #2c342e 52%, #4e8f64 100%);
 }
 
+.theme-swatch-abyss-blue {
+  background: linear-gradient(135deg, #0f141d 0%, #293548 52%, #4f78b8 100%);
+}
+
 .theme-option-meta {
   display: flex;
   flex-direction: column;
