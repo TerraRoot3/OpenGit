@@ -6,7 +6,8 @@ OpenGit is a desktop Git client built with `Electron + Vue 3`, designed for dail
 
 It is positioned as a practical, lightweight alternative to `GitKraken`, with a stronger focus on project-oriented Git operations, GitLab collaboration, built-in terminal workflows, and project-scoped AI session management.
 
-![OpenGit Screenshot](./示例1.jpg)
+![OpenGit Screenshot 1](./图1.jpg)
+![OpenGit Screenshot 2](./图2.jpg)
 
 ---
 
@@ -28,6 +29,19 @@ OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKr
 - 内置浏览器与相关权限、下载、恢复能力
 
 如果你想要一个更贴近日常开发、支持 GitLab、终端、AI 会话和项目视角的一体化桌面 Git 工具，OpenGit 可以作为 `GitKraken` 的轻量平替。
+
+### 最近新增
+
+- 新增完整主题系统，已内置 `4` 套主题：
+  - `Slate Dual`
+  - `Graphite Moss`
+  - `Abyss Blue`
+  - `Mist Paper`
+- 首页设置抽屉支持主题切换，并持久化保存主题选择
+- 浏览器、项目详情、工作区、终端、弹层与原生浮动菜单已接入统一主题变量
+- 支持深色与浅色主题混合扩展，便于后续继续增加新皮肤
+- GitLab Pipeline 在提交、推送、创建 MR、推送标签等操作后会自动触发延时刷新，并在后台跟踪运行状态
+- Project Detail 顶部可直接查看当前运行中的 Pipeline 摘要状态
 
 ### 核心能力
 
@@ -58,6 +72,8 @@ OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKr
 #### 4. 终端工作区
 
 - 项目内置终端
+- 支持 `灵动终端` 模式，适合快速聚焦当前项目命令操作
+- 支持 `分屏终端` 模式，适合并行执行多组命令
 - 从浏览器菜单以新标签页打开独立终端
 - 终端内容快照恢复
 - 无限水平 / 垂直分屏
@@ -77,6 +93,13 @@ OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKr
 - 基于 `WebContentsView` 的内置 Browser
 - 支持下载状态、权限提示、崩溃恢复
 - 支持隐私标签页与独立页面管理
+- 地址栏联想弹窗、首页浏览器菜单等原生浮层已适配主题
+
+#### 7. 主题与界面系统
+
+- 统一的 `theme token` 结构，支持语义色、组件别名和后续一键换肤扩展
+- 主链路界面已完成主题化：项目详情、工作区、终端、内置浏览器、菜单、弹窗
+- 常用功能按钮支持按语义分色，并随主题自动调整明暗与对比度
 
 ### 适合谁
 
@@ -215,6 +238,19 @@ Instead of trying to expose every Git concept equally, OpenGit focuses on the wo
 - project-scoped AI session management
 - built-in browser with download, permission, and recovery support
 
+### Recent Additions
+
+- A complete theme system with `4` built-in themes:
+  - `Slate Dual`
+  - `Graphite Moss`
+  - `Abyss Blue`
+  - `Mist Paper`
+- Theme switching from the Home settings drawer, with persisted selection
+- Unified theme tokens now cover the browser, project detail views, workspace, terminal, dialogs, and native floating popups
+- Theming now supports both dark and light theme expansion cleanly
+- GitLab Pipeline refresh is now triggered automatically after commit, push, MR-related submit flows, and tag push operations
+- Project Detail now keeps a running pipeline summary visible in the header
+
 ### Core Capabilities
 
 #### 1. Project-Centered Repository Management
@@ -244,6 +280,8 @@ Instead of trying to expose every Git concept equally, OpenGit focuses on the wo
 #### 4. Terminal Workspace
 
 - Built-in project terminal
+- Supports a `Focus Terminal` mode for quick project-scoped command work
+- Supports a `Split Terminal` mode for parallel command workflows
 - Open standalone terminal tabs from the browser menu
 - Terminal snapshot restore
 - Unlimited horizontal / vertical pane splitting
@@ -263,6 +301,13 @@ Instead of trying to expose every Git concept equally, OpenGit focuses on the wo
 - Browser flow based on `WebContentsView`
 - Download status, permission prompts, and crash recovery
 - Private tabs and standalone page management
+- Native suggestion popups and floating browser menus are theme-aware
+
+#### 7. Theme & UI System
+
+- Formal `theme token` architecture with semantic tokens and component aliases
+- High-frequency surfaces are now theme-driven: Project Detail, workspace, terminal, built-in browser, menus, and dialogs
+- Common action buttons use semantic functional colors that adapt to the active theme
 
 ### Who It Is For
 
