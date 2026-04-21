@@ -2779,6 +2779,9 @@ const toggleFavorite = () => {
 }
 
 const unmountTerminalForModeChange = async () => {
+  if (terminalMode.value === 'liquid') {
+    liquidTerminalRef.value?.clearLayoutCache?.()
+  }
   terminalMounted.value = false
   terminalRef.value = null
   liquidTerminalRef.value = null

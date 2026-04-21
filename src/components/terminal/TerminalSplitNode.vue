@@ -19,52 +19,38 @@
       @mousedown="emit('pane-focus', node.termId)"
       @mousedown.left.stop="handleDragMouseDown"
     >
-      <template v-if="liquidStyle">
-        <div class="terminal-pane-meta">
-          <span class="terminal-pane-title" :title="paneLabel">{{ paneLabel }}</span>
-          <span v-if="paneCwd" class="terminal-pane-sep" aria-hidden="true">·</span>
-          <span v-if="paneCwd" class="terminal-pane-cwd" :title="paneCwd">{{ paneCwd }}</span>
-        </div>
-        <div class="terminal-pane-actions">
-          <button
-            class="pane-action-btn"
-            title="清屏"
-            @mousedown.prevent.stop
-            @click.stop="emit('pane-clear', node.termId)"
-          >
-            <Eraser :size="14" />
-          </button>
-          <button
-            class="pane-action-btn"
-            title="重启终端"
-            @mousedown.prevent.stop
-            @click.stop="emit('pane-restart', node.termId)"
-          >
-            <RefreshCw :size="14" />
-          </button>
-          <button
-            v-if="closable"
-            class="pane-action-btn pane-close-btn"
-            title="关闭分屏"
-            @mousedown.prevent.stop
-            @click.stop="emit('pane-close', node.termId)"
-          >
-            <X :size="14" />
-          </button>
-        </div>
-      </template>
-      <template v-else>
+      <div class="terminal-pane-meta">
         <span class="terminal-pane-title" :title="paneLabel">{{ paneLabel }}</span>
+        <span v-if="paneCwd" class="terminal-pane-sep" aria-hidden="true">·</span>
+        <span v-if="paneCwd" class="terminal-pane-cwd" :title="paneCwd">{{ paneCwd }}</span>
+      </div>
+      <div class="terminal-pane-actions">
+        <button
+          class="pane-action-btn"
+          title="清屏"
+          @mousedown.prevent.stop
+          @click.stop="emit('pane-clear', node.termId)"
+        >
+          <Eraser :size="14" />
+        </button>
+        <button
+          class="pane-action-btn"
+          title="重启终端"
+          @mousedown.prevent.stop
+          @click.stop="emit('pane-restart', node.termId)"
+        >
+          <RefreshCw :size="14" />
+        </button>
         <button
           v-if="closable"
-          class="pane-close-btn"
+          class="pane-action-btn pane-close-btn"
           title="关闭分屏"
           @mousedown.prevent.stop
           @click.stop="emit('pane-close', node.termId)"
         >
-          <X :size="11" />
+          <X :size="14" />
         </button>
-      </template>
+      </div>
     </div>
     <div
       class="terminal-pane-content"
@@ -330,24 +316,15 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 }
 
 .terminal-pane-topbar {
-  height: 24px;
-  min-height: 24px;
+  height: 40px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 0 6px 0 10px;
-  background: var(--app-hover);
-  border-bottom: 1px solid var(--app-border);
-}
-
-.terminal-pane.liquid-style .terminal-pane-topbar {
-  height: 40px;
-  min-height: 40px;
   gap: 10px;
   padding: 0 10px 0 12px;
-  background: color-mix(in srgb, var(--app-sidebar-selected-bg) 82%, transparent);
-  border-bottom: 1px solid var(--app-sidebar-selected-border);
+  background: color-mix(in srgb, var(--app-info-bg) 70%, transparent);
+  border-bottom: 1px solid var(--app-info-border);
 }
 
 .terminal-pane-topbar.draggable {
@@ -392,7 +369,7 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   direction: rtl;
   text-align: left;
   unicode-bidi: plaintext;
-  color: var(--app-text-secondary);
+  color: rgba(255, 255, 255, 0.82);
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
@@ -416,11 +393,6 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 }
 
 .terminal-pane.inactive .terminal-pane-topbar {
-  background: var(--app-hover);
-  border-bottom-color: var(--app-border);
-}
-
-.terminal-pane.inactive.liquid-style .terminal-pane-topbar {
   background: color-mix(in srgb, var(--app-warning-bg) 55%, transparent);
   border-bottom-color: var(--app-warning-border);
 }
@@ -433,8 +405,8 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 }
 
 .pane-action-btn {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -444,11 +416,6 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   justify-content: center;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
-}
-
-.terminal-pane.liquid-style .pane-action-btn {
-  width: 24px;
-  height: 24px;
 }
 
 .pane-action-btn:hover {

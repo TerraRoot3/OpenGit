@@ -510,10 +510,7 @@ const getPaneTitle = (termId) => {
   const term = findTerminalById(termId)
   if (!term) return '终端'
   const runtimeTitle = typeof term.title === 'string' ? term.title.trim() : ''
-  if (runtimeTitle) return runtimeTitle
-  const cwd = normalizeIncomingPath(term.cwd || '')
-  const name = cwd ? cwd.split('/').filter(Boolean).pop() : ''
-  return name || '终端'
+  return runtimeTitle || '终端'
 }
 
 const getPaneCwd = (termId) => {
@@ -566,12 +563,12 @@ const resolvePaneDropTargetTermId = (clientX, clientY) => {
 const activeTab = computed(() => findTabById(activeTabId.value))
 const activeTabTermIds = computed(() => activeTab.value?.termIds || [])
 const splitPaneTabs = computed(() => {
-  return activeTabTermIds.value.map((termId, index) => ({
+  return activeTabTermIds.value.map((termId) => ({
     termId,
     label: (() => {
       const term = findTerminalById(termId)
       const runtimeTitle = typeof term?.title === 'string' ? term.title.trim() : ''
-      return runtimeTitle || `终端 ${index + 1}`
+      return runtimeTitle || '终端'
     })()
   }))
 })
@@ -1031,7 +1028,7 @@ const addTerminal = async (cwdOverride = null, options = {}) => {
     const tabIndex = nextTabIndex()
     targetTab = {
       tabId: `tab-${Date.now()}-${tabIndex}`,
-      label: `终端 ${tabIndex}`,
+      label: '终端',
       _tabIndex: tabIndex,
       layout: null,
       termIds: []
@@ -1944,7 +1941,7 @@ const normalizeSnapshotTabs = (tabSnapshots = [], terminalSnapshots = []) => {
       : buildLayoutFromTermIds(fallbackTermIds, !!tabSnapshot.split)
     return {
       tabId: tabSnapshot.tabId,
-      label: tabSnapshot.label || `终端 ${tabSnapshot.tabIndex || 1}`,
+      label: tabSnapshot.label || '终端',
       _tabIndex: tabSnapshot.tabIndex || 1,
       layout,
       termIds: collectLayoutTermIds(layout)
@@ -2175,7 +2172,7 @@ const restoreState = async (path) => {
     const tabIndex = nextTabIndex()
     const tab = {
       tabId: `tab-${Date.now()}-${tabIndex}`,
-      label: `终端 ${tabIndex}`,
+      label: '终端',
       _tabIndex: tabIndex,
       layout: buildLayoutFromTermIds(terminals.value.map(t => t.termId), terminals.value.length > 1),
       termIds: terminals.value.map(t => t.termId)
@@ -2290,8 +2287,8 @@ const ipcHandler = {
       if (term.ptyId !== data.id) return false
       const tab = Array.isArray(tabList) ? tabList.find(item => item.tabId === term.tabId) : null
       if (!tab) return false
-      const name = data.title.split('/').pop()
-      tab.label = `${name || '终端'} ${tab._tabIndex || 1}`
+      const nextTitle = typeof data.title === 'string' ? data.title.trim() : ''
+      tab.label = nextTitle || '终端'
       return true
     }
     for (const t of terminals.value) {
@@ -2508,7 +2505,7 @@ defineExpose({
   gap: 6px;
   font-size: 11px;
   line-height: 1.3;
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(255, 255, 255, 0.82);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 .terminal-path--single-pane .terminal-path__title {
@@ -2527,6 +2524,11 @@ defineExpose({
 .terminal-path--single-pane .terminal-path__cwd {
   flex: 1;
   min-width: 0;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.terminal-path--single-pane .terminal-path__cwd .terminal-path__ltr {
+  color: rgba(255, 255, 255, 0.92);
 }
 /* 过长时省略左侧，保留末尾目录名可见（完整路径见 title） */
 .terminal-path--ellipsis-start {

@@ -21,6 +21,7 @@
             :ref="(el) => setTabElRef(s.id, el)"
             @click="activateSession(s.id)"
           >
+            <TerminalIcon :size="12" />
             <span class="focus-tab__label" :title="tabLabel(s.id)">{{ tabLabel(s.id) }}</span>
             <button
               v-if="sessions.length > 1"
@@ -83,12 +84,12 @@
 </template>
 
 <script setup>
-import { TransitionGroup, computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { Plus, X } from 'lucide-vue-next'
+import { TransitionGroup, computed, nextTick, onMounted, onUnmounted, reactive, ref, watch, toRef } from 'vue'
+import { Plus, X, Terminal as TerminalIcon } from 'lucide-vue-next'
 import TerminalPanel from './TerminalPanel.vue'
 import { useFocusTerminalStore } from '../../stores/focusTerminalStore.js'
 
-defineProps({
+const props = defineProps({
   isActive: { type: Boolean, default: true },
   defaultCwd: { type: String, default: '' }
 })
@@ -103,7 +104,7 @@ const {
   addSession,
   removeSession,
   focusSession
-} = useFocusTerminalStore()
+} = useFocusTerminalStore(toRef(props, 'defaultCwd'))
 
 onMounted(() => {
   void hydrate()
@@ -262,7 +263,8 @@ watch(focusedId, () => {
 })
 
 function paneSnapshotKey(sessionId) {
-  return `focus-pane:${sessionId}`
+  const scope = String(props.defaultCwd || '__standalone__').replace(/[^a-zA-Z0-9]/g, '_')
+  return `focus-pane:${scope}:${sessionId}`
 }
 
 const focusIndex = computed(() =>
@@ -637,12 +639,15 @@ async function runCommand(command, options = {}) {
   return panel.runCommand(command, options)
 }
 
-defineExpose({ runCommand })
+const clearLayoutCache = () => {
+  resetLayout({ clearCache: true })
+}
+
+defineExpose({ runCommand, clearLayoutCache })
 
 onUnmounted(() => {
   clearPendingActivationWait()
   activatingSessionId.value = ''
-  resetLayout()
 })
 </script>
 
@@ -746,11 +751,10 @@ onUnmounted(() => {
 }
 
 .focus-tab__label {
-  max-width: 140px;
-  padding: 0 4px;
-  letter-spacing: 0.03em;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .focus-tab__close {
@@ -763,7 +767,7 @@ onUnmounted(() => {
   background: transparent;
   border: none;
   border-radius: 3px;
-  color: var(--app-text-muted);
+  color: rgba(255, 255, 255, 0.45);
   cursor: pointer;
   opacity: 0;
   transition: background 0.15s, color 0.15s, opacity 0.15s;
@@ -778,8 +782,8 @@ onUnmounted(() => {
 }
 
 .focus-tab__close:hover {
-  background: color-mix(in srgb, var(--app-hover) 60%, white 40%);
-  color: var(--app-text-primary);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
   opacity: 1 !important;
 }
 
