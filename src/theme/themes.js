@@ -5,6 +5,11 @@ export const THEME_DEFINITIONS = Object.freeze({
     id: 'slate-dual',
     label: 'Slate Dual',
     appearance: 'dark'
+  },
+  'graphite-moss': {
+    id: 'graphite-moss',
+    label: 'Graphite Moss',
+    appearance: 'dark'
   }
 })
 

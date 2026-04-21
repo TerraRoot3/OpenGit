@@ -82,14 +82,13 @@
               >
                 背景设置
               </div>
-              <!-- 预留其他分组 -->
-              <!-- <div 
+              <div
                 class="settings-sidebar-item"
-                :class="{ active: activeSettingsGroup === 'other' }"
-                @click="activeSettingsGroup = 'other'"
+                :class="{ active: activeSettingsGroup === 'theme' }"
+                @click="activeSettingsGroup = 'theme'"
               >
-                其他设置
-              </div> -->
+                主题设置
+              </div>
             </div>
             
             <!-- 右侧设置内容 -->
@@ -141,11 +140,27 @@
                   </div>
                 </div>
               </div>
-              
-              <!-- 其他设置（预留） -->
-              <!-- <div v-if="activeSettingsGroup === 'other'" class="settings-panel">
-                其他设置内容
-              </div> -->
+
+              <div v-else-if="activeSettingsGroup === 'theme'" class="settings-panel">
+                <div class="settings-item">
+                  <label>界面主题</label>
+                  <div class="theme-option-list">
+                    <button
+                      v-for="theme in themeOptions"
+                      :key="theme.id"
+                      class="theme-option"
+                      :class="{ active: currentTheme === theme.id }"
+                      @click="handleThemeChange(theme.id)"
+                    >
+                      <span class="theme-option-swatch" :class="`theme-swatch-${theme.id}`"></span>
+                      <span class="theme-option-meta">
+                        <span class="theme-option-name">{{ theme.label }}</span>
+                        <span class="theme-option-appearance">{{ themeAppearanceLabel(theme.appearance) }}</span>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -158,6 +173,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { Settings, X } from 'lucide-vue-next'
 import { useFavorites } from '../composables/useFavorites'
+import { useThemeStore } from '../stores/themeStore.js'
 
 const props = defineProps({
   // 是否是新标签页模式（新标签页点击在当前标签打开，首页点击在新标签打开）
@@ -171,6 +187,9 @@ const emit = defineEmits(['navigate', 'navigate-current'])
 
 // 使用收藏 composable
 const { favorites, loadFavorites } = useFavorites()
+const themeStore = useThemeStore()
+const currentTheme = computed(() => themeStore.currentTheme.value)
+const themeOptions = computed(() => Object.values(themeStore.themeDefinitions))
 
 // 按排序显示的收藏列表
 const sortedFavorites = computed(() => {
@@ -485,6 +504,16 @@ const handleNavigate = (url) => {
     // 首页模式：在新标签打开
   emit('navigate', url)
   }
+}
+
+const handleThemeChange = (themeId) => {
+  themeStore.setTheme(themeId)
+}
+
+const themeAppearanceLabel = (appearance) => {
+  if (appearance === 'dark') return '深色主题'
+  if (appearance === 'light') return '浅色主题'
+  return '主题'
 }
 
 
@@ -819,6 +848,73 @@ onUnmounted(() => {
 
 .settings-panel {
   /* 设置面板容器 */
+}
+
+.theme-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theme-option {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.88);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.theme-option:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.theme-option.active {
+  background: color-mix(in srgb, var(--theme-comp-sidebar-item-active-bg) 82%, transparent);
+  border-color: var(--theme-comp-sidebar-item-active-border);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
+}
+
+.theme-option-swatch {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.theme-swatch-slate-dual {
+  background: linear-gradient(135deg, #14171c 0%, #242931 52%, #4f8cff 100%);
+}
+
+.theme-swatch-graphite-moss {
+  background: linear-gradient(135deg, #121613 0%, #2c342e 52%, #4e8f64 100%);
+}
+
+.theme-option-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.theme-option-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.theme-option-appearance {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.56);
 }
 
 /* 抽屉动画 */

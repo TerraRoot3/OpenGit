@@ -27,6 +27,7 @@ const currentChangeLine = ref(null)
 
 let editor = null
 let layoutObserver = null
+let themeObserver = null
 let gitDiffDecorationIds = []
 /** @type {Map<string, import('monaco-editor').editor.ITextModel>} */
 const pathToModel = new Map()
@@ -119,6 +120,18 @@ function resolveWorkspaceEditorBackground () {
   const computed = window.getComputedStyle(document.documentElement)
   const background = computed.getPropertyValue('--theme-sem-bg-project').trim()
   return background || DEFAULT_WORKSPACE_EDITOR_BACKGROUND
+}
+
+function applyWorkspaceEditorTheme () {
+  monaco.editor.defineTheme('workspace-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': resolveWorkspaceEditorBackground()
+    }
+  })
+  monaco.editor.setTheme('workspace-dark')
 }
 
 function quoteShellPath (value) {
@@ -402,14 +415,7 @@ function disposeAllModels () {
 
 onMounted(async () => {
   if (!editorContainerRef.value) return
-  monaco.editor.defineTheme('workspace-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [],
-    colors: {
-      'editor.background': resolveWorkspaceEditorBackground()
-    }
-  })
+  applyWorkspaceEditorTheme()
   editor = monaco.editor.create(editorContainerRef.value, {
     readOnly: true,
     theme: 'workspace-dark',
@@ -435,6 +441,18 @@ onMounted(async () => {
     editor?.layout()
   })
   layoutObserver.observe(editorContainerRef.value)
+
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    themeObserver = new MutationObserver(() => {
+      applyWorkspaceEditorTheme()
+      editor?.layout()
+    })
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme']
+    })
+  }
+
   await nextTick()
   await syncEditorContent()
 })
@@ -442,6 +460,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   layoutObserver?.disconnect()
   layoutObserver = null
+  themeObserver?.disconnect()
+  themeObserver = null
   disposeAllModels()
   if (editor) {
     clearGitDiffDecorations()
