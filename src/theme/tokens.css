@@ -68,38 +68,38 @@ html[data-theme='slate-dual'] {
   --theme-sem-bg-sidebar-soft: var(--theme-base-color-slate-825);
   --theme-sem-surface-1: var(--theme-base-color-slate-925);
   --theme-sem-surface-2: var(--theme-base-color-slate-900);
-  --theme-sem-bg-dialog: var(--theme-base-color-slate-850);
-  --theme-sem-bg-menu: var(--theme-base-color-slate-850);
-  --theme-sem-bg-tooltip: rgba(25, 28, 33, 0.98);
-  --theme-sem-bg-overlay: var(--theme-base-alpha-black-56);
+  --theme-sem-bg-dialog: color-mix(in srgb, var(--theme-base-color-slate-850) 90%, #213246 10%);
+  --theme-sem-bg-menu: color-mix(in srgb, var(--theme-base-color-slate-850) 92%, #23364d 8%);
+  --theme-sem-bg-tooltip: rgba(24, 29, 37, 0.985);
+  --theme-sem-bg-overlay: rgba(7, 10, 15, 0.6);
 
-  --theme-sem-text-primary: var(--theme-base-alpha-white-92);
-  --theme-sem-text-secondary: var(--theme-base-alpha-white-72);
-  --theme-sem-text-muted: var(--theme-base-alpha-white-52);
+  --theme-sem-text-primary: rgba(247, 250, 255, 0.94);
+  --theme-sem-text-secondary: rgba(221, 229, 241, 0.78);
+  --theme-sem-text-muted: rgba(191, 201, 216, 0.56);
 
-  --theme-sem-border-default: transparent;
-  --theme-sem-border-strong: transparent;
+  --theme-sem-border-default: rgba(162, 181, 211, 0.08);
+  --theme-sem-border-strong: rgba(162, 181, 211, 0.12);
 
-  --theme-sem-hover: var(--theme-base-alpha-white-08);
-  --theme-sem-selected-bg: var(--theme-sem-bg-sidebar-soft);
-  --theme-sem-selected-border: transparent;
+  --theme-sem-hover: rgba(255, 255, 255, 0.092);
+  --theme-sem-selected-bg: color-mix(in srgb, var(--theme-base-color-slate-825) 78%, #58729a 22%);
+  --theme-sem-selected-border: rgba(140, 166, 206, 0.16);
 
   --theme-sem-accent-primary: var(--theme-base-color-blue-500);
   --theme-sem-accent-primary-strong: var(--theme-base-color-cyan-400);
   --theme-sem-accent-info: var(--theme-base-color-blue-300);
-  --theme-sem-accent-warning: var(--theme-base-color-amber-300);
-  --theme-sem-accent-warning-strong: var(--theme-base-color-amber-500);
-  --theme-sem-accent-success: var(--theme-base-color-green-300);
-  --theme-sem-accent-success-strong: var(--theme-base-color-green-500);
-  --theme-sem-accent-danger: var(--theme-base-color-red-300);
-  --theme-sem-accent-danger-strong: var(--theme-base-color-red-500);
+  --theme-sem-accent-warning: #e7cb84;
+  --theme-sem-accent-warning-strong: #d59d37;
+  --theme-sem-accent-success: #8fe0bb;
+  --theme-sem-accent-success-strong: #37be82;
+  --theme-sem-accent-danger: #eea0a8;
+  --theme-sem-accent-danger-strong: #da5f6b;
 
-  --theme-sem-info-bg: rgba(59, 130, 246, 0.2);
-  --theme-sem-info-border: rgba(59, 130, 246, 0.34);
-  --theme-sem-warning-bg: rgba(217, 155, 32, 0.2);
-  --theme-sem-warning-border: rgba(217, 155, 32, 0.32);
-  --theme-sem-success-bg: rgba(34, 197, 94, 0.2);
-  --theme-sem-danger-bg: rgba(220, 80, 80, 0.24);
+  --theme-sem-info-bg: rgba(59, 130, 246, 0.18);
+  --theme-sem-info-border: rgba(120, 169, 245, 0.34);
+  --theme-sem-warning-bg: rgba(213, 157, 55, 0.17);
+  --theme-sem-warning-border: rgba(213, 157, 55, 0.3);
+  --theme-sem-success-bg: rgba(55, 190, 130, 0.18);
+  --theme-sem-danger-bg: rgba(218, 95, 107, 0.2);
 
   --theme-sem-file-added: var(--theme-base-color-file-added);
   --theme-sem-file-modified: var(--theme-base-color-file-modified);
@@ -113,12 +113,12 @@ html[data-theme='slate-dual'] {
   --theme-comp-radius-panel: var(--theme-base-radius-lg);
   --theme-comp-radius-selected: var(--theme-base-radius-md);
 
-  --theme-comp-sidebar-item-active-bg: color-mix(in srgb, var(--theme-sem-bg-sidebar-soft) 82%, #5d7290 18%);
-  --theme-comp-sidebar-item-active-border: transparent;
-  --theme-comp-tab-active-bg: var(--theme-base-color-slate-800);
-  --theme-comp-tab-active-border: transparent;
+  --theme-comp-sidebar-item-active-bg: color-mix(in srgb, var(--theme-sem-bg-sidebar-soft) 74%, #5f7ba2 26%);
+  --theme-comp-sidebar-item-active-border: rgba(142, 170, 212, 0.14);
+  --theme-comp-tab-active-bg: color-mix(in srgb, var(--theme-base-color-slate-800) 82%, #7ea2da 18%);
+  --theme-comp-tab-active-border: rgba(142, 170, 212, 0.18);
   --theme-comp-tab-active-accent: var(--theme-base-color-blue-400);
-  --theme-comp-child-header-bg: rgba(255, 255, 255, 0.025);
+  --theme-comp-child-header-bg: color-mix(in srgb, var(--theme-base-color-slate-900) 88%, #6b89b5 12%);
 }
 
 html[data-theme='graphite-moss'] {

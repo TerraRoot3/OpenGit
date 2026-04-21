@@ -572,7 +572,7 @@ const escapeHtml = (text) => {
   flex: 1;
   background: transparent;
   border: none;
-  border-radius: 14px;
+  border-radius: var(--theme-comp-radius-selected);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -599,6 +599,7 @@ const escapeHtml = (text) => {
   justify-content: space-between;
   padding: 10px 14px;
   background: var(--theme-comp-child-header-bg);
+  border-top-left-radius: var(--theme-comp-radius-selected);
   font-weight: 500;
   color: rgba(255, 255, 255, 0.9);
   font-size: 13px;
@@ -694,6 +695,7 @@ const escapeHtml = (text) => {
 .stash-diff-header {
   padding: 10px 14px;
   background: var(--theme-comp-child-header-bg);
+  border-top-right-radius: var(--theme-comp-radius-selected);
   font-weight: 500;
   color: rgba(255, 255, 255, 0.9);
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
