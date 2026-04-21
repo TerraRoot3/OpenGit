@@ -425,7 +425,6 @@ const platform = window.electronAPI?.platform || 'darwin'
 const isRestoringWorkspaceState = ref(false)
 const isWorkspaceStatePersistenceSuspended = ref(false)
 const lastAppliedGitSignature = ref('')
-const hasRestoredTreeFilterPreference = ref(false)
 
 const systemFileManagerLabel = computed(() => {
   if (platform === 'win32') return '资源管理器'
@@ -470,15 +469,11 @@ async function loadWorkspaceState() {
   try {
     const parsed = await window.electronAPI?.getConfig?.(workspaceStateConfigKey())
     if (!parsed) return null
-    const filterMode = parsed?.filterMode === 'modified' || parsed?.filterMode === 'all'
-      ? parsed.filterMode
-      : ''
     return {
       treeWidth: Number.isFinite(Number(parsed?.treeWidth)) ? Number(parsed.treeWidth) : null,
       expandedKeys: Array.isArray(parsed?.expandedKeys) ? parsed.expandedKeys : [],
       openTabs: Array.isArray(parsed?.openTabs) ? parsed.openTabs : [],
-      activePath: typeof parsed?.activePath === 'string' ? parsed.activePath : '',
-      filterMode
+      activePath: typeof parsed?.activePath === 'string' ? parsed.activePath : ''
     }
   } catch (e) {
     return null
@@ -511,8 +506,7 @@ function saveWorkspaceState() {
       treeWidth: treeWidthPx.value,
       expandedKeys: expandedKeys.value.filter((key) => key && key !== props.projectPath),
       openTabs: tabs.value.map((tab) => tab.path),
-      activePath: activeTab?.path || '',
-      filterMode: treeFilterMode.value === 'modified' ? 'modified' : 'all'
+      activePath: activeTab?.path || ''
     }
     window.electronAPI?.setConfig?.(workspaceStateConfigKey(), payload)
   } catch (e) {}
@@ -764,6 +758,62 @@ async function refreshGitStatuses () {
 
 function applyDefaultTreeFilterMode() {
   treeFilterMode.value = modifiedFileEntries.value.length ? 'modified' : 'all'
+}
+
+async function refreshOpenTabsContent() {
+  if (!window.electronAPI || !tabs.value.length) return
+  const nextTabs = []
+  let tabChanged = false
+
+  for (const tab of tabs.value) {
+    if (!tab?.path) {
+      nextTabs.push(tab)
+      continue
+    }
+
+    if (tab.kind === 'text') {
+      try {
+        const content = await window.electronAPI.readFile(tab.path)
+        if (tab.content !== content) {
+          nextTabs.push({ ...tab, content })
+          tabChanged = true
+        } else {
+          nextTabs.push(tab)
+        }
+      } catch (error) {
+        nextTabs.push(tab)
+      }
+      continue
+    }
+
+    nextTabs.push(tab)
+  }
+
+  if (tabChanged) {
+    tabs.value = nextTabs
+  }
+
+  const currentTab = activeTab.value
+  if (!currentTab?.path) return
+
+  if (currentTab.kind === 'image') {
+    try {
+      const img = await window.electronAPI.readImageAsBase64(currentTab.path)
+      if (activeTabId.value === currentTab.id) {
+        imageDataUrl.value = img?.success ? img.dataUrl : ''
+      }
+    } catch (error) {}
+    return
+  }
+
+  if (currentTab.kind === 'pdf') {
+    try {
+      const fileResult = await window.electronAPI?.readFileAsBase64?.(currentTab.path)
+      if (activeTabId.value === currentTab.id) {
+        pdfDataUrl.value = fileResult?.success ? fileResult.dataUrl : ''
+      }
+    } catch (error) {}
+  }
 }
 
 function sameStatusMap (left, right) {
@@ -1342,10 +1392,6 @@ async function restoreWorkspaceState() {
     if (Number.isFinite(state.treeWidth) && state.treeWidth >= 200 && state.treeWidth <= 520) {
       treeWidthPx.value = state.treeWidth
     }
-    if (state.filterMode === 'modified' || state.filterMode === 'all') {
-      treeFilterMode.value = state.filterMode
-      hasRestoredTreeFilterPreference.value = true
-    }
 
     for (const key of state.expandedKeys) {
       if (!key || key === props.projectPath) continue
@@ -1748,7 +1794,6 @@ watch(
     if (!p) return
     isWorkspaceStatePersistenceSuspended.value = true
     try {
-      hasRestoredTreeFilterPreference.value = false
       commitMessage.value = ''
       await loadTreeWidth()
       resetTree()
@@ -1762,9 +1807,8 @@ watch(
       await restoreWorkspaceState()
       if (props.isActive) {
         await refreshGitStatuses()
-        if (!hasRestoredTreeFilterPreference.value) {
-          applyDefaultTreeFilterMode()
-        }
+        applyDefaultTreeFilterMode()
+        await refreshOpenTabsContent()
         lastAppliedGitSignature.value = props.gitSignature || ''
       }
     } finally {
@@ -2306,6 +2350,8 @@ async function refreshAfterGitAction({ clearCommit = false, eventPayload = null 
     await loadCommitTemplate(props.projectPath)
   }
   await refreshGitStatuses()
+  applyDefaultTreeFilterMode()
+  await refreshOpenTabsContent()
   await refreshTree()
   emit('status-changed', eventPayload || { type: 'refresh' })
 }
@@ -2504,6 +2550,8 @@ onMounted(async () => {
   await loadTreeWidth()
   if (props.isActive) {
     await refreshGitStatuses()
+    applyDefaultTreeFilterMode()
+    await refreshOpenTabsContent()
     lastAppliedGitSignature.value = props.gitSignature || ''
   }
 })
@@ -2518,6 +2566,8 @@ watch(
   async (active) => {
     if (active) {
       await refreshGitStatuses()
+      applyDefaultTreeFilterMode()
+      await refreshOpenTabsContent()
       lastAppliedGitSignature.value = props.gitSignature || ''
       void ensureActiveTabVisible()
     }
@@ -2531,6 +2581,8 @@ watch(
     const normalizedSignature = String(signature || '')
     if (!normalizedSignature || normalizedSignature === lastAppliedGitSignature.value) return
     await refreshGitStatuses()
+    applyDefaultTreeFilterMode()
+    await refreshOpenTabsContent()
     lastAppliedGitSignature.value = normalizedSignature
   }
 )

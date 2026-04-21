@@ -30,6 +30,9 @@ let layoutObserver = null
 let gitDiffDecorationIds = []
 /** @type {Map<string, import('monaco-editor').editor.ITextModel>} */
 const pathToModel = new Map()
+/** @type {Map<string, import('monaco-editor').editor.ICodeEditorViewState | null>} */
+const pathToViewState = new Map()
+let currentModelPath = ''
 
 const LANG_MAP = {
   js: 'javascript',
@@ -130,6 +133,19 @@ function clearGitDiffDecorations () {
   }
   changeNavigationLines.value = []
   currentChangeLine.value = null
+}
+
+function saveCurrentViewState() {
+  if (!editor || !currentModelPath) return
+  pathToViewState.set(currentModelPath, editor.saveViewState())
+}
+
+function restoreViewState(filePath) {
+  if (!editor || !filePath) return
+  const state = pathToViewState.get(filePath)
+  if (state) {
+    editor.restoreViewState(state)
+  }
 }
 
 function parseDiffRange (fragment) {
@@ -325,6 +341,7 @@ function disposeStaleModels () {
   )
   for (const [filePath, model] of pathToModel.entries()) {
     if (activePaths.has(filePath)) continue
+    pathToViewState.delete(filePath)
     model.dispose()
     pathToModel.delete(filePath)
   }
@@ -332,9 +349,11 @@ function disposeStaleModels () {
 
 async function syncEditorContent () {
   if (!editor) return
+  saveCurrentViewState()
   const tab = props.activeTab
   if (!tab || tab.kind !== 'text') {
     editor.setModel(null)
+    currentModelPath = ''
     clearGitDiffDecorations()
     return
   }
@@ -345,7 +364,9 @@ async function syncEditorContent () {
 
   if (model) {
     if (typeof tab.content === 'string' && model.getValue() !== tab.content) {
+      const existingViewState = currentModelPath === tab.path ? editor.saveViewState() : pathToViewState.get(tab.path) || null
       model.setValue(tab.content)
+      pathToViewState.set(tab.path, existingViewState)
     }
     monaco.editor.setModelLanguage(model, lang)
   } else {
@@ -354,11 +375,14 @@ async function syncEditorContent () {
   }
 
   editor.setModel(model)
+  currentModelPath = tab.path
+  restoreViewState(tab.path)
   editor.layout()
   await loadFileDiffMetadata(tab.path, model)
 }
 
 function disposeAllModels () {
+  pathToViewState.clear()
   for (const model of pathToModel.values()) {
     model.dispose()
   }
@@ -386,6 +410,14 @@ onMounted(async () => {
     scrollBeyondLastLine: false,
     wordWrap: 'on',
     glyphMargin: true
+  })
+
+  editor.onDidScrollChange(() => {
+    saveCurrentViewState()
+  })
+
+  editor.onDidChangeCursorPosition(() => {
+    saveCurrentViewState()
   })
 
   layoutObserver = new ResizeObserver(() => {
