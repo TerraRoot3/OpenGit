@@ -45,7 +45,7 @@
           <div
             v-for="session in selectedProviderSessions"
             :key="session.sessionId"
-            :class="['session-item', { active: selectedSessionId === session.sessionId }]"
+            class="session-item"
             @click="openSummaryDialog(session)"
             role="button"
             tabindex="0"
@@ -628,9 +628,17 @@ onUnmounted(() => {
   box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
-.session-item.active {
-  background: var(--theme-comp-sidebar-item-active-bg);
-  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
+.provider-item.active,
+.provider-item.active .provider-item-name,
+.provider-item.active .provider-name,
+.provider-item.active .provider-item-meta,
+.provider-item.active .provider-subtitle,
+.provider-item.active .provider-count {
+  color: var(--theme-comp-selected-text);
+}
+
+.provider-item.active .provider-count {
+  background: color-mix(in srgb, var(--theme-sem-text-on-accent) 18%, transparent);
 }
 
 .provider-item-main,
@@ -756,6 +764,12 @@ onUnmounted(() => {
   transition: all 0.2s ease;
 }
 
+.resume-btn {
+  background: var(--theme-comp-workspace-git-commit-bg);
+  border-color: transparent;
+  color: var(--theme-comp-workspace-git-commit-text);
+}
+
 .resume-btn:hover,
 .refresh-btn:hover:not(:disabled),
 .delete-btn-inline:hover {
@@ -763,16 +777,22 @@ onUnmounted(() => {
   color: var(--theme-sem-text-primary);
 }
 
+.resume-btn:hover {
+  background: var(--theme-comp-workspace-git-commit-hover-bg);
+  color: var(--theme-comp-workspace-git-commit-text);
+}
+
 .delete-btn-inline {
-  color: var(--theme-sem-text-secondary);
-  border-color: var(--theme-sem-border-default);
-  background: color-mix(in srgb, var(--theme-sem-hover) 76%, transparent);
+  color: var(--theme-sem-accent-danger);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-danger) 24%, var(--theme-sem-border-default) 76%);
+  background: color-mix(in srgb, var(--theme-sem-danger-bg) 78%, transparent);
 }
 
 .delete-btn-inline:hover {
-  background: color-mix(in srgb, var(--theme-sem-hover) 92%, transparent);
-  color: var(--theme-sem-text-primary);
+  background: color-mix(in srgb, var(--theme-sem-danger-bg) 92%, transparent);
+  color: var(--theme-sem-accent-danger-strong);
 }
+
 
 .refresh-btn:disabled {
   opacity: 0.6;

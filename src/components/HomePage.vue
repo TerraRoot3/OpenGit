@@ -1509,7 +1509,7 @@ onUnmounted(() => {
 }
 
 .settings-sidebar-item.active {
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-comp-selected-text);
   background: var(--theme-comp-sidebar-item-active-bg);
   box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
@@ -1590,6 +1590,10 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #e9eef5 0%, #d7dfeb 52%, #4f8cff 100%);
 }
 
+.theme-swatch-cobalt-mist {
+  background: linear-gradient(135deg, #edf3fb 0%, #d2ddee 52%, #2c7bff 100%);
+}
+
 .theme-option-meta {
   display: flex;
   flex-direction: column;
@@ -1633,7 +1637,7 @@ onUnmounted(() => {
 .source-toggle-btn.active {
   background: color-mix(in srgb, var(--theme-comp-sidebar-item-active-bg) 82%, transparent);
   border-color: var(--theme-comp-sidebar-item-active-border);
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-comp-selected-text);
   box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
@@ -1688,7 +1692,7 @@ onUnmounted(() => {
 .provider-chip.active {
   background: color-mix(in srgb, var(--theme-comp-sidebar-item-active-bg) 82%, transparent);
   border-color: var(--theme-comp-sidebar-item-active-border);
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-comp-selected-text);
 }
 
 .settings-item-content--stack {

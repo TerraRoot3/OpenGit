@@ -412,8 +412,12 @@ const isFavorited = (path) => {
 .group-row.selected .root-meta,
 .child-row.selected .child-name,
 .child-row.selected .child-git-meta,
-.child-row.selected .child-status {
-  color: var(--theme-sem-text-primary);
+.child-row.selected .child-status,
+.child-row.selected .repo-branch-row,
+.child-row.selected .repo-branch span,
+.child-row.selected .repo-meta,
+.child-row.selected .push-count-number {
+  color: var(--theme-comp-selected-text);
 }
 
 .root-main {
@@ -502,6 +506,7 @@ const isFavorited = (path) => {
   gap: 4px;
   background: var(--theme-sem-selected-bg);
   box-shadow: inset 0 0 0 1px var(--theme-sem-selected-border);
+  color: var(--theme-comp-selected-text);
 }
 
 .action-btn.primary:hover {

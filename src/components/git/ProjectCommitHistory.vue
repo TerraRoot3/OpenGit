@@ -2304,6 +2304,13 @@ onUnmounted(() => {
   box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
+.file-item.active,
+.file-item.active .file-name,
+.file-item.active .file-path,
+.file-item.active .file-status-text {
+  color: var(--theme-comp-selected-text);
+}
+
 .file-icon {
   width: 16px;
   text-align: center;

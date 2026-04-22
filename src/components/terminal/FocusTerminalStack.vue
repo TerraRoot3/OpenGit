@@ -901,7 +901,7 @@ onUnmounted(() => {
 .focus-tab.is-active {
   background: var(--theme-comp-tab-active-bg);
   box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-comp-selected-text);
   border-bottom-color: transparent;
 }
 

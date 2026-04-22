@@ -231,7 +231,7 @@ onUnmounted(() => {
 
 .select-option.selected {
   background: var(--theme-comp-sidebar-item-active-bg);
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-comp-selected-text);
 }
 
 .select-option.selected.highlighted {

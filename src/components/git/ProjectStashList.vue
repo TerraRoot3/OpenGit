@@ -648,6 +648,12 @@ const escapeHtml = (text) => {
   font-weight: 500;
 }
 
+.stash-item.active,
+.stash-item.active .stash-message,
+.stash-item.active .stash-date {
+  color: var(--theme-comp-selected-text);
+}
+
 .stash-content {
   display: flex;
   flex-direction: column;

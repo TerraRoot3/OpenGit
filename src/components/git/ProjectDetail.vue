@@ -3826,7 +3826,7 @@ defineExpose({
 .file-status-button.active {
   background: var(--theme-comp-sidebar-item-active-bg);
   box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-comp-selected-text);
   font-weight: 500;
 }
 
@@ -3913,7 +3913,15 @@ defineExpose({
 .branch-item.active {
   background: var(--theme-comp-sidebar-item-active-bg);
   border-radius: var(--theme-comp-radius-selected);
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-comp-selected-text);
+}
+
+.branch-item.active .branch-name,
+.branch-item.active .branch-current-badge,
+.branch-item.active .branch-local-badge,
+.branch-item.active .branch-remote-hint,
+.branch-item.active .branch-meta {
+  color: var(--theme-comp-selected-text);
 }
 
 .branch-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }

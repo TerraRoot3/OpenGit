@@ -485,6 +485,14 @@ onUnmounted(() => {
   box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
+.pipeline-item.active,
+.pipeline-item.active .pipeline-row,
+.pipeline-item.active .pipeline-label,
+.pipeline-item.active .pipeline-meta,
+.pipeline-item.active .pipeline-ref {
+  color: var(--theme-comp-selected-text);
+}
+
 .pipeline-row {
   display: flex;
   align-items: center;

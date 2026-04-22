@@ -4404,12 +4404,12 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-item.active .browser-tab-icon {
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-comp-selected-text);
 }
 
 .browser-tab-item.active {
   background: var(--theme-comp-tab-active-bg);
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-comp-selected-text);
   font-weight: 500; /* 保持与未选中状态相同的字重，避免视觉上的放大效果 */
   box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
   position: relative;
@@ -4475,7 +4475,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .browser-tab-item.active .browser-tab-title {
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-comp-selected-text);
   font-weight: 500; /* 保持与未选中状态相同的字重，避免视觉上的放大效果 */
 }
 
@@ -4727,7 +4727,12 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .suggestion-item.active .suggestion-icon {
-  color: var(--theme-sem-accent-primary);
+  color: var(--theme-comp-selected-text);
+}
+
+.suggestion-item.active .suggestion-url,
+.suggestion-item.active .suggestion-title {
+  color: var(--theme-comp-selected-text);
 }
 
 .suggestion-url {
@@ -4822,8 +4827,9 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 }
 
 .toolbar-btn.active {
-  color: var(--theme-sem-text-primary);
-  background: var(--theme-sem-hover);
+  color: var(--theme-comp-selected-text);
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
 }
 
 .browser-content {

@@ -30,6 +30,11 @@ export const THEME_DEFINITIONS = Object.freeze({
     id: 'aurora-paper',
     label: 'Aurora Paper',
     appearance: 'light'
+  },
+  'cobalt-mist': {
+    id: 'cobalt-mist',
+    label: 'Cobalt Mist',
+    appearance: 'light'
   }
 })
 
