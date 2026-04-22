@@ -103,8 +103,28 @@
             <div class="settings-content">
               <!-- 背景设置 -->
               <div v-if="activeSettingsGroup === 'background'" class="settings-panel">
-                <!-- 选择背景图片 -->
                 <div class="settings-item">
+                  <label>背景来源</label>
+                  <div class="source-toggle">
+                    <button
+                      class="source-toggle-btn"
+                      :class="{ active: backgroundMode === 'local' }"
+                      @click="setBackgroundMode('local')"
+                    >
+                      本地图片
+                    </button>
+                    <button
+                      class="source-toggle-btn"
+                      :class="{ active: backgroundMode === 'online' }"
+                      @click="setBackgroundMode('online')"
+                    >
+                      在线壁纸
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 选择背景图片 -->
+                <div v-if="backgroundMode === 'local'" class="settings-item">
                   <label>背景图片</label>
                   <div class="settings-item-content">
                     <button class="settings-btn-primary" @click="selectBackgroundImage">
@@ -117,6 +137,43 @@
                     >
                       清除
                     </button>
+                  </div>
+                </div>
+
+                <div v-else class="settings-item">
+                  <label>在线壁纸</label>
+                  <div class="settings-item-content settings-item-content--stack">
+                    <div class="online-wallpaper-summary">
+                      <div class="online-wallpaper-summary-main">
+                        <span class="online-wallpaper-summary-label">当前来源</span>
+                        <span class="online-wallpaper-summary-value">
+                          {{ currentOnlineProviderLabel }}
+                        </span>
+                      </div>
+                      <div class="online-wallpaper-summary-main">
+                        <span class="online-wallpaper-summary-label">当前壁纸</span>
+                        <span class="online-wallpaper-summary-value">
+                          {{ onlineWallpaper.title || '未选择在线壁纸' }}
+                        </span>
+                      </div>
+                    </div>
+                    <label class="settings-switch">
+                      <input
+                        type="checkbox"
+                        :checked="onlineWallpaper.autoUpdateLatest"
+                        @change="toggleAutoUpdateLatest"
+                      />
+                      <span>自动更新到最新壁纸</span>
+                    </label>
+                    <div class="settings-item-content">
+                      <button class="settings-btn-primary" @click="openOnlineWallpaperDialog">
+                        选择在线壁纸
+                      </button>
+                      <button class="settings-btn-secondary" @click="refreshOnlineWallpaperList" :disabled="onlineWallpaperLoading">
+                        {{ onlineWallpaperLoading ? '加载中...' : '刷新来源' }}
+                      </button>
+                    </div>
+                    <div v-if="onlineWallpaperError" class="online-wallpaper-error">{{ onlineWallpaperError }}</div>
                   </div>
                 </div>
                 
@@ -214,6 +271,69 @@
         </div>
       </div>
     </Transition>
+
+    <Transition name="drawer">
+      <div
+        v-if="showOnlineWallpaperDialog"
+        class="online-wallpaper-dialog-overlay"
+        @click="closeOnlineWallpaperDialog"
+      >
+        <div class="online-wallpaper-dialog" @click.stop>
+          <div class="online-wallpaper-dialog-header">
+            <div class="online-wallpaper-dialog-title">
+              <h3>在线壁纸</h3>
+              <span>{{ currentOnlineProviderLabel }}</span>
+            </div>
+            <button class="settings-drawer-close" @click="closeOnlineWallpaperDialog">
+              <X :size="18" />
+            </button>
+          </div>
+
+          <div class="online-wallpaper-dialog-toolbar">
+            <div class="provider-chip-list">
+              <button
+                v-for="provider in onlineWallpaperProviders"
+                :key="provider.id"
+                class="provider-chip"
+                :class="{ active: selectedOnlineProviderId === provider.id }"
+                @click="selectOnlineProvider(provider.id)"
+              >
+                {{ provider.label }}
+              </button>
+            </div>
+            <button class="settings-btn-secondary" @click="refreshOnlineWallpaperList(true)" :disabled="onlineWallpaperLoading">
+              {{ onlineWallpaperLoading ? '加载中...' : '刷新列表' }}
+            </button>
+          </div>
+
+          <div class="online-wallpaper-dialog-body">
+            <div v-if="onlineWallpaperError" class="online-wallpaper-error online-wallpaper-error--panel">
+              {{ onlineWallpaperError }}
+            </div>
+
+            <div class="online-wallpaper-grid online-wallpaper-grid--dialog">
+              <button
+                v-for="item in onlineWallpaperItems"
+                :key="item.id"
+                class="online-wallpaper-card"
+                :class="{ active: onlineWallpaper.itemId === item.id }"
+                @click="applyOnlineWallpaper(item)"
+              >
+                <span
+                  class="online-wallpaper-card-preview"
+                  :style="{ backgroundImage: `url(${item.previewUrl})` }"
+                ></span>
+                <span class="online-wallpaper-card-meta">
+                  <span class="online-wallpaper-card-title">{{ item.title }}</span>
+                  <span class="online-wallpaper-card-date">{{ item.date || item.attribution }}</span>
+                </span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -222,6 +342,12 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { Settings, X } from 'lucide-vue-next'
 import { useFavorites } from '../composables/useFavorites'
 import { useThemeStore } from '../stores/themeStore.js'
+import {
+  DEFAULT_WALLPAPER_PROVIDER_ID,
+  createDefaultHomeBackgroundSettings,
+  normalizeHomeBackgroundSettings,
+  normalizeOnlineWallpaperSettings
+} from './home/wallpaperProviders/registry.mjs'
 
 const props = defineProps({
   // 是否是新标签页模式（新标签页点击在当前标签打开，首页点击在新标签打开）
@@ -265,15 +391,25 @@ const getLocalCache = () => {
   try {
     const cached = localStorage.getItem('homePageBackgroundCache')
     if (cached) {
-      return JSON.parse(cached)
+      return normalizeHomeBackgroundSettings(JSON.parse(cached))
     }
   } catch (e) {}
-  return null
+  return createDefaultHomeBackgroundSettings()
 }
 const localCache = getLocalCache()
-const backgroundImage = ref(localCache?.image || '')
-const overlayOpacity = ref(localCache?.overlayOpacity ?? 30) // 遮罩浓度 0-100
-const blurAmount = ref(localCache?.blurAmount ?? 5) // 模糊度 0-20px
+const backgroundImage = ref(localCache.image || '')
+const backgroundMode = ref(localCache.mode || 'local')
+const localImagePath = ref(localCache.localImagePath || '')
+const onlineWallpaper = ref(normalizeOnlineWallpaperSettings(localCache.online || {}))
+const selectedOnlineProviderId = ref(onlineWallpaper.value.providerId || DEFAULT_WALLPAPER_PROVIDER_ID)
+const onlineWallpaperProviders = ref([])
+const onlineWallpaperItems = ref([])
+const onlineWallpaperLoading = ref(false)
+const onlineWallpaperError = ref('')
+const showOnlineWallpaperDialog = ref(false)
+const ONLINE_WALLPAPER_PAGE_SIZE = 8
+const overlayOpacity = ref(localCache.overlayOpacity ?? 30) // 遮罩浓度 0-100
+const blurAmount = ref(localCache.blurAmount ?? 5) // 模糊度 0-20px
 
 // 设置弹框
 const showSettingsDialog = ref(false)
@@ -332,6 +468,11 @@ const overlayStyle = computed(() => {
   }
 })
 
+const currentOnlineProviderLabel = computed(() => {
+  return onlineWallpaperProviders.value.find((item) => item.id === selectedOnlineProviderId.value)?.label
+    || '在线壁纸'
+})
+
 // 更新时钟
 const updateClock = () => {
   const now = new Date()
@@ -373,8 +514,10 @@ const selectBackgroundImage = async () => {
         if (window.electronAPI.readImageAsBase64) {
           const imageResult = await window.electronAPI.readImageAsBase64(imagePath)
           if (imageResult.success) {
+            backgroundMode.value = 'local'
+            localImagePath.value = imagePath
             backgroundImage.value = imageResult.dataUrl
-            saveSettings()
+            await saveSettings()
           } else {
             console.error('读取图片失败:', imageResult.error)
           }
@@ -389,22 +532,51 @@ const selectBackgroundImage = async () => {
 // 清除背景图片
 const clearBackgroundImage = () => {
   backgroundImage.value = ''
+  localImagePath.value = ''
+  onlineWallpaper.value = normalizeOnlineWallpaperSettings({
+    ...onlineWallpaper.value,
+    itemId: '',
+    title: '',
+    previewUrl: '',
+    remoteUrl: '',
+    cachedFilePath: '',
+    cachedDataUrl: ''
+  })
   saveSettings()
 }
 
-// 保存设置
-const saveSettings = async () => {
+const buildSettingsPayload = () => ({
+  mode: backgroundMode.value,
+  image: backgroundImage.value,
+  overlayOpacity: overlayOpacity.value,
+  blurAmount: blurAmount.value,
+  localImagePath: localImagePath.value,
+  online: normalizeOnlineWallpaperSettings(onlineWallpaper.value)
+})
+
+const applySettingsPayload = (payload) => {
+  const normalized = normalizeHomeBackgroundSettings(payload || {})
+  backgroundImage.value = normalized.image || ''
+  backgroundMode.value = normalized.mode
+  localImagePath.value = normalized.localImagePath || ''
+  onlineWallpaper.value = normalizeOnlineWallpaperSettings(normalized.online || {})
+  selectedOnlineProviderId.value = onlineWallpaper.value.providerId || DEFAULT_WALLPAPER_PROVIDER_ID
+  overlayOpacity.value = normalized.overlayOpacity
+  blurAmount.value = normalized.blurAmount
+  return normalized
+}
+
+const updateLocalBackgroundCache = (payload) => {
   try {
-    const settingsData = {
-      image: backgroundImage.value,
-      overlayOpacity: overlayOpacity.value,
-      blurAmount: blurAmount.value
-    }
-    
-    // 同步保存到 localStorage 用于快速加载
-    try {
-      localStorage.setItem('homePageBackgroundCache', JSON.stringify(settingsData))
-    } catch (e) {}
+    localStorage.setItem('homePageBackgroundCache', JSON.stringify(payload))
+  } catch (e) {}
+}
+
+// 保存设置
+const saveSettings = async (payload = buildSettingsPayload()) => {
+  try {
+    const settingsData = normalizeHomeBackgroundSettings(payload)
+    updateLocalBackgroundCache(settingsData)
     
     // 异步保存到 electron store
     if (window.electronAPI && window.electronAPI.saveConfig) {
@@ -425,7 +597,7 @@ const loadSettings = async () => {
     if (window.electronAPI && window.electronAPI.getConfig) {
       const result = await window.electronAPI.getConfig('homePageBackground')
       // getConfig 直接返回 { value: ... } 或者直接返回值
-      const config = result?.value || result
+      const config = normalizeHomeBackgroundSettings(result?.value || result || {})
 
       if (config) {
         let image = config.image || ''
@@ -439,11 +611,12 @@ const loadSettings = async () => {
             // 更新配置为新格式
             await window.electronAPI.saveConfig({
               key: 'homePageBackground',
-              value: {
+              value: normalizeHomeBackgroundSettings({
+                ...config,
                 image,
-                overlayOpacity: config.overlayOpacity ?? 30,
-                blurAmount: config.blurAmount ?? 5
-              }
+                mode: 'local',
+                localImagePath: filePath
+              })
             })
           } else {
             console.warn('加载背景图片失败，可能文件已被移动或删除:', imageResult.error)
@@ -451,25 +624,12 @@ const loadSettings = async () => {
           }
         }
 
-        // 只有当数据与缓存不同时才更新（避免闪烁）
-        if (image !== backgroundImage.value) {
-          backgroundImage.value = image
-        }
-        if (config.overlayOpacity !== undefined && config.overlayOpacity !== overlayOpacity.value) {
-          overlayOpacity.value = config.overlayOpacity
-        }
-        if (config.blurAmount !== undefined && config.blurAmount !== blurAmount.value) {
-          blurAmount.value = config.blurAmount
-        }
-        
-        // 更新 localStorage 缓存
-        try {
-          localStorage.setItem('homePageBackgroundCache', JSON.stringify({
-            image,
-            overlayOpacity: overlayOpacity.value,
-            blurAmount: blurAmount.value
-          }))
-        } catch (e) {}
+        applySettingsPayload({
+          ...config,
+          image
+        })
+        const settingsData = buildSettingsPayload()
+        updateLocalBackgroundCache(settingsData)
         
         console.log('✅ 背景设置已加载:', { hasImage: !!image, overlayOpacity: overlayOpacity.value, blurAmount: blurAmount.value })
       }
@@ -489,7 +649,170 @@ watch([showSettingsDialog, activeSettingsGroup], async ([visible, group]) => {
     await nextTick()
     refreshDiagnostics()
   }
+  if (visible && group === 'background' && backgroundMode.value === 'online' && !onlineWallpaperItems.value.length && !onlineWallpaperLoading.value) {
+    await loadOnlineWallpaperList()
+  }
 })
+
+const loadOnlineWallpaperProviders = async () => {
+  if (!window.electronAPI?.listOnlineWallpaperProviders) return
+  const result = await window.electronAPI.listOnlineWallpaperProviders()
+  onlineWallpaperProviders.value = Array.isArray(result?.providers) ? result.providers : []
+}
+
+const loadOnlineWallpaperList = async (providerId = selectedOnlineProviderId.value, resetLimit = false) => {
+  if (!window.electronAPI?.getOnlineWallpaperList || !providerId) return
+  onlineWallpaperLoading.value = true
+  onlineWallpaperError.value = ''
+  try {
+    const result = await window.electronAPI.getOnlineWallpaperList({
+      providerId,
+      options: {
+        market: onlineWallpaper.value.market,
+        offset: 0,
+        limit: ONLINE_WALLPAPER_PAGE_SIZE * 2
+      }
+    })
+    if (!result?.success) {
+      onlineWallpaperError.value = result?.error || '读取在线壁纸失败'
+      onlineWallpaperItems.value = []
+      return
+    }
+    onlineWallpaperItems.value = Array.isArray(result.items)
+      ? result.items.map((item) => ({
+        id: item.id || '',
+        title: item.title || '',
+        subtitle: item.subtitle || '',
+        date: item.date || '',
+        previewUrl: item.previewUrl || '',
+        downloadUrl: item.downloadUrl || '',
+        fallbackDownloadUrl: item.fallbackDownloadUrl || '',
+        attribution: item.attribution || '',
+        market: item.market || onlineWallpaper.value.market
+      }))
+      : []
+  } catch (error) {
+    onlineWallpaperError.value = error?.message || '读取在线壁纸失败'
+    onlineWallpaperItems.value = []
+  } finally {
+    onlineWallpaperLoading.value = false
+  }
+}
+
+const setBackgroundMode = async (mode) => {
+  backgroundMode.value = mode === 'online' ? 'online' : 'local'
+  if (backgroundMode.value === 'online') {
+    if (!onlineWallpaperProviders.value.length) {
+      await loadOnlineWallpaperProviders()
+    }
+    if (!onlineWallpaperItems.value.length) {
+      await loadOnlineWallpaperList()
+    }
+  }
+  await saveSettings()
+}
+
+const openOnlineWallpaperDialog = async () => {
+  showOnlineWallpaperDialog.value = true
+  if (!onlineWallpaperProviders.value.length) {
+    await loadOnlineWallpaperProviders()
+  }
+  await loadOnlineWallpaperList(selectedOnlineProviderId.value, true)
+}
+
+const closeOnlineWallpaperDialog = () => {
+  showOnlineWallpaperDialog.value = false
+}
+
+const selectOnlineProvider = async (providerId) => {
+  selectedOnlineProviderId.value = providerId
+  onlineWallpaper.value = normalizeOnlineWallpaperSettings({
+    ...onlineWallpaper.value,
+      providerId
+    })
+  await loadOnlineWallpaperList(providerId, true)
+  await saveSettings()
+}
+
+const applyOnlineWallpaper = async (item) => {
+  if (!item || !window.electronAPI?.downloadOnlineWallpaper) return
+  onlineWallpaperLoading.value = true
+  onlineWallpaperError.value = ''
+  try {
+    const payloadItem = {
+      id: item.id || '',
+      title: item.title || '',
+      subtitle: item.subtitle || '',
+      date: item.date || '',
+      previewUrl: item.previewUrl || '',
+      downloadUrl: item.downloadUrl || '',
+      fallbackDownloadUrl: item.fallbackDownloadUrl || '',
+      attribution: item.attribution || '',
+      market: item.market || onlineWallpaper.value.market
+    }
+    const result = await window.electronAPI.downloadOnlineWallpaper({
+      providerId: selectedOnlineProviderId.value,
+      item: payloadItem
+    })
+    if (!result?.success) {
+      onlineWallpaperError.value = result?.error || '下载在线壁纸失败'
+      return
+    }
+    backgroundMode.value = 'online'
+    backgroundImage.value = result.cachedDataUrl || backgroundImage.value
+    onlineWallpaper.value = normalizeOnlineWallpaperSettings({
+      ...onlineWallpaper.value,
+      providerId: selectedOnlineProviderId.value,
+      itemId: payloadItem.id,
+      title: payloadItem.title,
+      previewUrl: payloadItem.previewUrl,
+      remoteUrl: result.remoteUrl || payloadItem.downloadUrl,
+      cachedFilePath: result.cachedFilePath,
+      cachedDataUrl: result.cachedDataUrl || '',
+      market: payloadItem.market || onlineWallpaper.value.market
+    })
+    await saveSettings()
+    closeOnlineWallpaperDialog()
+  } catch (error) {
+    onlineWallpaperError.value = error?.message || '下载在线壁纸失败'
+  } finally {
+    onlineWallpaperLoading.value = false
+  }
+}
+
+const toggleAutoUpdateLatest = async (event) => {
+  onlineWallpaper.value = normalizeOnlineWallpaperSettings({
+    ...onlineWallpaper.value,
+    autoUpdateLatest: !!event?.target?.checked
+  })
+  await saveSettings()
+}
+
+const refreshOnlineWallpaperList = async () => {
+  await loadOnlineWallpaperList(selectedOnlineProviderId.value, true)
+}
+
+const refreshOnlineWallpaperIfNeeded = async (force = false) => {
+  if (!window.electronAPI?.refreshOnlineWallpaperIfNeeded) return
+  const settings = buildSettingsPayload()
+  if (settings.mode !== 'online') return
+  const result = await window.electronAPI.refreshOnlineWallpaperIfNeeded({
+    config: settings,
+    force
+  })
+  if (result?.success && result?.config) {
+    applySettingsPayload(result.config)
+    updateLocalBackgroundCache(buildSettingsPayload())
+    if (result.updated) {
+      await saveSettings(buildSettingsPayload())
+      await loadOnlineWallpaperList(selectedOnlineProviderId.value)
+    } else if (result.reason === 'already-latest') {
+      await saveSettings(buildSettingsPayload())
+    }
+  } else if (!result?.success && result?.error) {
+    onlineWallpaperError.value = result.error
+  }
+}
 
 // 收藏相关函数
 const hasValidIcon = (fav) => {
@@ -847,6 +1170,11 @@ onMounted(async () => {
     updateClock()
     clockInterval = setInterval(updateClock, 1000)
     await loadSettings()
+    await loadOnlineWallpaperProviders()
+    if (backgroundMode.value === 'online') {
+      await loadOnlineWallpaperList()
+      await refreshOnlineWallpaperIfNeeded(false)
+    }
     await loadFavorites()
     isInitialized.value = true
     console.log('🏠 HomePage 首次初始化完成')
@@ -1270,6 +1598,249 @@ onUnmounted(() => {
 .theme-option-appearance {
   font-size: 12px;
   color: var(--theme-sem-text-muted);
+}
+
+.source-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.source-toggle-btn {
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 80%, transparent);
+  color: var(--theme-sem-text-secondary);
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.source-toggle-btn:hover {
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
+}
+
+.source-toggle-btn.active {
+  background: color-mix(in srgb, var(--theme-comp-sidebar-item-active-bg) 82%, transparent);
+  border-color: var(--theme-comp-sidebar-item-active-border);
+  color: var(--theme-sem-text-primary);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
+}
+
+.online-wallpaper-summary {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 82%, transparent);
+  padding: 12px;
+}
+
+.online-wallpaper-summary-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.online-wallpaper-summary-label {
+  font-size: 12px;
+  color: var(--theme-sem-text-muted);
+}
+
+.online-wallpaper-summary-value {
+  font-size: 13px;
+  color: var(--theme-sem-text-primary);
+  font-weight: 600;
+}
+
+.provider-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.provider-chip {
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 80%, transparent);
+  color: var(--theme-sem-text-secondary);
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.provider-chip:hover {
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
+}
+
+.provider-chip.active {
+  background: color-mix(in srgb, var(--theme-comp-sidebar-item-active-bg) 82%, transparent);
+  border-color: var(--theme-comp-sidebar-item-active-border);
+  color: var(--theme-sem-text-primary);
+}
+
+.settings-item-content--stack {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.settings-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--theme-sem-text-secondary);
+  font-size: 13px;
+}
+
+.settings-switch input {
+  accent-color: var(--theme-sem-accent-primary);
+}
+
+.online-wallpaper-error {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--theme-sem-danger-bg) 78%, var(--theme-sem-text-primary) 22%);
+}
+
+.online-wallpaper-error--panel {
+  margin-bottom: 12px;
+}
+
+.online-wallpaper-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.online-wallpaper-grid--dialog {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.online-wallpaper-card {
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 12px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 84%, transparent);
+  color: var(--theme-sem-text-primary);
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.online-wallpaper-card:hover {
+  background: var(--theme-sem-hover);
+  border-color: var(--theme-sem-border-strong);
+  transform: translateY(-1px);
+}
+
+.online-wallpaper-card.active {
+  border-color: var(--theme-comp-sidebar-item-active-border);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
+}
+
+.online-wallpaper-card-preview {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.online-wallpaper-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+}
+
+.online-wallpaper-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-sem-text-primary);
+  line-height: 1.35;
+}
+
+.online-wallpaper-card-date {
+  font-size: 11px;
+  color: var(--theme-sem-text-muted);
+}
+
+.online-wallpaper-dialog-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 11000;
+  background: color-mix(in srgb, var(--theme-sem-bg-overlay) 70%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 40px;
+}
+
+.online-wallpaper-dialog {
+  width: min(1120px, calc(100vw - 120px));
+  max-height: min(720px, calc(100vh - 120px));
+  border-radius: 18px;
+  border: 1px solid var(--theme-sem-border-default);
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 94%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.online-wallpaper-dialog-header {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--theme-sem-border-default);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.online-wallpaper-dialog-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.online-wallpaper-dialog-title h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--theme-sem-text-primary);
+}
+
+.online-wallpaper-dialog-title span {
+  font-size: 12px;
+  color: var(--theme-sem-text-muted);
+}
+
+.online-wallpaper-dialog-toolbar {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--theme-sem-border-default);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.online-wallpaper-dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px;
+}
+
+.online-wallpaper-dialog-footer {
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--theme-sem-border-default);
+  display: flex;
+  justify-content: center;
 }
 
 .diagnostics-toolbar {

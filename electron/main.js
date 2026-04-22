@@ -13,6 +13,7 @@ const { registerRefreshHandlers } = require('./ipc/refresh')
 const { registerTerminalHandlers } = require('./ipc/terminal')
 const { registerConfigHandlers } = require('./ipc/config')
 const { registerFilesystemHandlers } = require('./ipc/filesystem')
+const { registerWallpaperHandlers, autoRefreshOnlineWallpaperOnStartup } = require('./ipc/wallpaper')
 const { registerAiSessionHandlers } = require('./ipc/ai-sessions')
 const { registerBrowserDataHandlers } = require('./ipc/browser-data')
 const { registerCommandHandlers } = require('./ipc/command')
@@ -2364,6 +2365,14 @@ registerFilesystemHandlers({
   safeError
 })
 
+registerWallpaperHandlers({
+  ipcMain,
+  app,
+  fetch,
+  safeLog,
+  safeError
+})
+
 registerAiSessionHandlers({
   ipcMain,
   safeError,
@@ -2483,6 +2492,13 @@ app.whenReady().then(async () => {
   safeLog('Electron app ready, creating window...')
   await session.defaultSession.setProxy({ mode: 'system' }).catch((error) => {
     safeError('[Proxy] failed to apply system proxy for default session:', error.message || error)
+  })
+  void autoRefreshOnlineWallpaperOnStartup({
+    app,
+    store,
+    fetch,
+    safeLog,
+    safeError
   })
   webTabManager = new WebTabManager({
     safeLog,

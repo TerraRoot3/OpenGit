@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveConfig: (data) => ipcRenderer.invoke('save-config', data),
   getConfig: (key) => ipcRenderer.invoke('get-config', key),
   getAllConfigs: () => ipcRenderer.invoke('get-all-configs'),
+  listOnlineWallpaperProviders: () => ipcRenderer.invoke('list-online-wallpaper-providers'),
+  getOnlineWallpaperList: (data) => ipcRenderer.invoke('get-online-wallpaper-list', data),
+  downloadOnlineWallpaper: (data) => ipcRenderer.invoke('download-online-wallpaper', data),
+  refreshOnlineWallpaperIfNeeded: (data) => ipcRenderer.invoke('refresh-online-wallpaper-if-needed', data),
   
   // GitLab API 操作
   gitlabTest: (data) => ipcRenderer.invoke('gitlab-test', data),
