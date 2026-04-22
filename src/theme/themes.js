@@ -16,9 +16,19 @@ export const THEME_DEFINITIONS = Object.freeze({
     label: 'Abyss Blue',
     appearance: 'dark'
   },
+  'frost-slate': {
+    id: 'frost-slate',
+    label: 'Frost Slate',
+    appearance: 'dark'
+  },
   'mist-paper': {
     id: 'mist-paper',
     label: 'Mist Paper',
+    appearance: 'light'
+  },
+  'aurora-paper': {
+    id: 'aurora-paper',
+    label: 'Aurora Paper',
     appearance: 'light'
   }
 })

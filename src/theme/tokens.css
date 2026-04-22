@@ -541,3 +541,229 @@ html[data-theme='mist-paper'] {
   --theme-comp-workspace-git-push-hover-bg: color-mix(in srgb, #cce6df 80%, white 20%);
   --theme-comp-workspace-git-disabled-opacity: 0.5;
 }
+
+html[data-theme='frost-slate'] {
+  --theme-sem-bg-app: #20262f;
+  --theme-sem-bg-workspace: #232a34;
+  --theme-sem-bg-project: #2a313c;
+  --theme-sem-bg-sidebar: #303844;
+  --theme-sem-bg-sidebar-soft: #374150;
+  --theme-sem-surface-1: #313947;
+  --theme-sem-surface-2: #394454;
+  --theme-sem-bg-dialog: color-mix(in srgb, #394352 88%, #90add6 12%);
+  --theme-sem-bg-menu: color-mix(in srgb, #36404f 90%, #86a6d3 10%);
+  --theme-sem-bg-tooltip: rgba(47, 57, 70, 0.985);
+  --theme-sem-bg-overlay: rgba(16, 20, 27, 0.52);
+
+  --theme-sem-text-primary: rgba(246, 249, 254, 0.94);
+  --theme-sem-text-secondary: rgba(224, 232, 242, 0.8);
+  --theme-sem-text-muted: rgba(192, 202, 216, 0.62);
+  --theme-sem-text-on-accent: rgba(248, 251, 255, 0.97);
+
+  --theme-sem-border-default: rgba(170, 187, 211, 0.11);
+  --theme-sem-border-strong: rgba(170, 187, 211, 0.17);
+
+  --theme-sem-hover: rgba(255, 255, 255, 0.098);
+  --theme-sem-selected-bg: color-mix(in srgb, #445166 72%, #8aa9d7 28%);
+  --theme-sem-selected-border: rgba(152, 177, 214, 0.2);
+
+  --theme-sem-accent-primary: #77a6ff;
+  --theme-sem-accent-primary-strong: #9ac1ff;
+  --theme-sem-accent-info: #9ebdf0;
+  --theme-sem-accent-warning: #e4c27a;
+  --theme-sem-accent-warning-strong: #ca9440;
+  --theme-sem-accent-success: #9fd6c8;
+  --theme-sem-accent-success-strong: #5aa89e;
+  --theme-sem-accent-danger: #e1a1aa;
+  --theme-sem-accent-danger-strong: #d06f7d;
+
+  --theme-sem-info-bg: rgba(119, 166, 255, 0.18);
+  --theme-sem-info-border: rgba(134, 174, 247, 0.28);
+  --theme-sem-warning-bg: rgba(202, 148, 64, 0.18);
+  --theme-sem-warning-border: rgba(202, 148, 64, 0.28);
+  --theme-sem-success-bg: rgba(90, 168, 158, 0.18);
+  --theme-sem-danger-bg: rgba(208, 111, 125, 0.2);
+
+  --theme-sem-file-added: #7fd0b1;
+  --theme-sem-file-modified: #e3c671;
+  --theme-sem-file-deleted: #ec8f98;
+  --theme-sem-file-renamed: #8fb6ec;
+  --theme-sem-file-conflict: #e7ac71;
+  --theme-sem-file-untracked: #c0c8d4;
+
+  --theme-comp-radius-control: var(--theme-base-radius-md);
+  --theme-comp-radius-panel: var(--theme-base-radius-lg);
+  --theme-comp-radius-selected: var(--theme-base-radius-md);
+
+  --theme-comp-sidebar-item-active-bg: color-mix(in srgb, #46546a 70%, #8eb0de 30%);
+  --theme-comp-sidebar-item-active-border: rgba(152, 177, 214, 0.18);
+  --theme-comp-tab-active-bg: color-mix(in srgb, #4a596f 76%, #9ebbf0 24%);
+  --theme-comp-tab-active-border: rgba(152, 177, 214, 0.2);
+  --theme-comp-tab-active-accent: #9ebdf0;
+  --theme-comp-child-header-bg: color-mix(in srgb, #3b4554 88%, #a0bde4 12%);
+  --theme-comp-action-pull-bg: color-mix(in srgb, var(--theme-sem-warning-bg) 80%, var(--theme-sem-bg-project) 20%);
+  --theme-comp-action-pull-border: rgba(228, 194, 122, 0.22);
+  --theme-comp-action-pull-text: var(--theme-sem-accent-warning);
+  --theme-comp-action-pull-hover-bg: color-mix(in srgb, var(--theme-comp-action-pull-bg) 84%, var(--theme-sem-accent-warning) 16%);
+  --theme-comp-action-push-bg: color-mix(in srgb, var(--theme-sem-info-bg) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-push-border: rgba(158, 189, 240, 0.22);
+  --theme-comp-action-push-text: var(--theme-sem-accent-info);
+  --theme-comp-action-push-hover-bg: color-mix(in srgb, var(--theme-comp-action-push-bg) 84%, var(--theme-sem-accent-info) 16%);
+  --theme-comp-action-mr-bg: color-mix(in srgb, rgba(155, 132, 224, 0.22) 86%, var(--theme-sem-bg-project) 14%);
+  --theme-comp-action-mr-border: rgba(196, 181, 253, 0.2);
+  --theme-comp-action-mr-text: #c7b7ff;
+  --theme-comp-action-mr-hover-bg: color-mix(in srgb, rgba(155, 132, 224, 0.32) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-gitlab-bg: color-mix(in srgb, rgba(228, 163, 86, 0.2) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-gitlab-border: rgba(245, 190, 120, 0.2);
+  --theme-comp-action-gitlab-text: #f0b46a;
+  --theme-comp-action-gitlab-hover-bg: color-mix(in srgb, rgba(228, 163, 86, 0.3) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-visit-bg: color-mix(in srgb, rgba(90, 168, 158, 0.18) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-visit-border: rgba(159, 214, 200, 0.2);
+  --theme-comp-action-visit-text: #9fd6c8;
+  --theme-comp-action-visit-hover-bg: color-mix(in srgb, rgba(90, 168, 158, 0.28) 82%, var(--theme-sem-bg-project) 18%);
+  --theme-comp-action-favorite-bg: color-mix(in srgb, rgba(244, 211, 125, 0.14) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-favorite-border: rgba(244, 211, 125, 0.18);
+  --theme-comp-action-favorite-text: #f2ca63;
+  --theme-comp-action-favorite-hover-bg: color-mix(in srgb, rgba(244, 211, 125, 0.24) 84%, var(--theme-sem-bg-project) 16%);
+  --theme-comp-action-favorite-active-bg: color-mix(in srgb, rgba(244, 211, 125, 0.34) 88%, var(--theme-sem-bg-project) 12%);
+  --theme-comp-action-favorite-active-text: #ffd55e;
+  --theme-comp-action-neutral-bg: color-mix(in srgb, var(--theme-sem-surface-2) 66%, var(--theme-sem-bg-project) 34%);
+  --theme-comp-action-neutral-border: var(--theme-sem-border-default);
+  --theme-comp-action-neutral-text: var(--theme-sem-text-primary);
+  --theme-comp-action-neutral-hover-bg: color-mix(in srgb, var(--theme-comp-action-neutral-bg) 84%, var(--theme-sem-hover) 16%);
+  --theme-comp-workspace-git-bg: color-mix(in srgb, var(--theme-sem-bg-project) 72%, var(--theme-sem-surface-2) 28%);
+  --theme-comp-workspace-git-input-bg: color-mix(in srgb, var(--theme-sem-surface-2) 80%, var(--theme-sem-bg-project) 20%);
+  --theme-comp-workspace-git-input-border: var(--theme-sem-border-strong);
+  --theme-comp-workspace-git-input-focus: var(--theme-sem-accent-primary);
+  --theme-comp-workspace-git-stash-bg: color-mix(in srgb, var(--theme-sem-info-bg) 72%, var(--theme-sem-surface-2) 28%);
+  --theme-comp-workspace-git-stash-border: rgba(158, 189, 240, 0.2);
+  --theme-comp-workspace-git-stash-text: var(--theme-sem-accent-info);
+  --theme-comp-workspace-git-stash-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-stash-bg) 84%, var(--theme-sem-accent-info) 16%);
+  --theme-comp-workspace-git-discard-bg: color-mix(in srgb, var(--theme-sem-danger-bg) 76%, var(--theme-sem-surface-2) 24%);
+  --theme-comp-workspace-git-discard-border: rgba(225, 161, 170, 0.22);
+  --theme-comp-workspace-git-discard-text: var(--theme-sem-accent-danger);
+  --theme-comp-workspace-git-discard-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-discard-bg) 84%, var(--theme-sem-accent-danger) 16%);
+  --theme-comp-workspace-git-commit-bg: #6f98eb;
+  --theme-comp-workspace-git-commit-border: transparent;
+  --theme-comp-workspace-git-commit-text: var(--theme-sem-text-on-accent);
+  --theme-comp-workspace-git-commit-hover-bg: #81a8f4;
+  --theme-comp-workspace-git-push-bg: color-mix(in srgb, var(--theme-sem-success-bg) 80%, var(--theme-sem-surface-2) 20%);
+  --theme-comp-workspace-git-push-border: rgba(159, 214, 200, 0.22);
+  --theme-comp-workspace-git-push-text: var(--theme-sem-accent-success);
+  --theme-comp-workspace-git-push-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-push-bg) 84%, var(--theme-sem-accent-success) 16%);
+  --theme-comp-workspace-git-disabled-opacity: 0.56;
+}
+
+html[data-theme='aurora-paper'] {
+  color-scheme: light;
+
+  --theme-sem-bg-app: #e9eef5;
+  --theme-sem-bg-workspace: #e2e8f1;
+  --theme-sem-bg-project: #eef3f9;
+  --theme-sem-bg-sidebar: #d7dfeb;
+  --theme-sem-bg-sidebar-soft: #cad4e2;
+  --theme-sem-surface-1: #d3dcea;
+  --theme-sem-surface-2: #c2cede;
+  --theme-sem-bg-dialog: color-mix(in srgb, white 68%, #cfd9e7 32%);
+  --theme-sem-bg-menu: color-mix(in srgb, white 70%, #c8d4e5 30%);
+  --theme-sem-bg-tooltip: rgba(244, 248, 253, 0.98);
+  --theme-sem-bg-overlay: rgba(106, 124, 152, 0.24);
+
+  --theme-sem-text-primary: rgba(30, 40, 58, 0.97);
+  --theme-sem-text-secondary: rgba(52, 66, 88, 0.9);
+  --theme-sem-text-muted: rgba(86, 101, 123, 0.74);
+  --theme-sem-text-on-accent: rgba(248, 250, 255, 0.97);
+
+  --theme-sem-border-default: rgba(94, 114, 146, 0.2);
+  --theme-sem-border-strong: rgba(94, 114, 146, 0.3);
+
+  --theme-sem-hover: rgba(104, 134, 189, 0.16);
+  --theme-sem-selected-bg: color-mix(in srgb, #d2def1 54%, #82afff 46%);
+  --theme-sem-selected-border: rgba(77, 114, 180, 0.32);
+
+  --theme-sem-accent-primary: #4f8cff;
+  --theme-sem-accent-primary-strong: #2d74ff;
+  --theme-sem-accent-info: #4f78b8;
+  --theme-sem-accent-warning: #b27c22;
+  --theme-sem-accent-warning-strong: #8d5f12;
+  --theme-sem-accent-success: #217f87;
+  --theme-sem-accent-success-strong: #13636a;
+  --theme-sem-accent-danger: #c45f7c;
+  --theme-sem-accent-danger-strong: #a64665;
+
+  --theme-sem-info-bg: rgba(79, 140, 255, 0.18);
+  --theme-sem-info-border: rgba(79, 140, 255, 0.28);
+  --theme-sem-warning-bg: rgba(234, 177, 56, 0.2);
+  --theme-sem-warning-border: rgba(180, 124, 34, 0.28);
+  --theme-sem-success-bg: rgba(33, 127, 135, 0.18);
+  --theme-sem-danger-bg: rgba(196, 95, 124, 0.18);
+
+  --theme-sem-file-added: #227f6a;
+  --theme-sem-file-modified: #ad7a1e;
+  --theme-sem-file-deleted: #c05a72;
+  --theme-sem-file-renamed: #436fb8;
+  --theme-sem-file-conflict: #c67f2b;
+  --theme-sem-file-untracked: #667385;
+
+  --theme-comp-radius-control: var(--theme-base-radius-md);
+  --theme-comp-radius-panel: var(--theme-base-radius-lg);
+  --theme-comp-radius-selected: var(--theme-base-radius-md);
+
+  --theme-comp-sidebar-item-active-bg: color-mix(in srgb, #d2dff3 52%, #73a4ff 48%);
+  --theme-comp-sidebar-item-active-border: rgba(77, 114, 180, 0.28);
+  --theme-comp-tab-active-bg: color-mix(in srgb, #edf3fb 48%, #74a6ff 52%);
+  --theme-comp-tab-active-border: rgba(77, 114, 180, 0.3);
+  --theme-comp-tab-active-accent: #2d74ff;
+  --theme-comp-child-header-bg: color-mix(in srgb, #ecf2fb 60%, #cfd9e9 40%);
+  --theme-comp-action-pull-bg: color-mix(in srgb, #f5e4c0 82%, white 18%);
+  --theme-comp-action-pull-border: rgba(178, 124, 34, 0.24);
+  --theme-comp-action-pull-text: #ad7518;
+  --theme-comp-action-pull-hover-bg: color-mix(in srgb, #f0d7a5 82%, white 18%);
+  --theme-comp-action-push-bg: color-mix(in srgb, #dbe8fb 80%, white 20%);
+  --theme-comp-action-push-border: rgba(79, 120, 184, 0.24);
+  --theme-comp-action-push-text: #476da7;
+  --theme-comp-action-push-hover-bg: color-mix(in srgb, #cfe0f8 80%, white 20%);
+  --theme-comp-action-mr-bg: color-mix(in srgb, #e7dcff 82%, white 18%);
+  --theme-comp-action-mr-border: rgba(145, 103, 214, 0.22);
+  --theme-comp-action-mr-text: #9e75e8;
+  --theme-comp-action-mr-hover-bg: color-mix(in srgb, #dbcaff 80%, white 20%);
+  --theme-comp-action-gitlab-bg: color-mix(in srgb, #f7dfc7 84%, white 16%);
+  --theme-comp-action-gitlab-border: rgba(221, 146, 67, 0.22);
+  --theme-comp-action-gitlab-text: #de9143;
+  --theme-comp-action-gitlab-hover-bg: color-mix(in srgb, #f1cfad 82%, white 18%);
+  --theme-comp-action-visit-bg: color-mix(in srgb, #d4f1ef 84%, white 16%);
+  --theme-comp-action-visit-border: rgba(33, 127, 135, 0.22);
+  --theme-comp-action-visit-text: #40b8bf;
+  --theme-comp-action-visit-hover-bg: color-mix(in srgb, #c2ece8 82%, white 18%);
+  --theme-comp-action-favorite-bg: color-mix(in srgb, #f7ecba 84%, white 16%);
+  --theme-comp-action-favorite-border: rgba(225, 184, 58, 0.24);
+  --theme-comp-action-favorite-text: #f0c832;
+  --theme-comp-action-favorite-hover-bg: color-mix(in srgb, #f4e29e 82%, white 18%);
+  --theme-comp-action-favorite-active-bg: color-mix(in srgb, #f4da73 74%, white 26%);
+  --theme-comp-action-favorite-active-text: #ce9d10;
+  --theme-comp-action-neutral-bg: color-mix(in srgb, #ecf2fa 72%, #d7e0ed 28%);
+  --theme-comp-action-neutral-border: rgba(94, 114, 146, 0.2);
+  --theme-comp-action-neutral-text: var(--theme-sem-text-primary);
+  --theme-comp-action-neutral-hover-bg: color-mix(in srgb, #e0eaf7 76%, #d2ddea 24%);
+  --theme-comp-workspace-git-bg: color-mix(in srgb, #edf3fa 70%, #d7e0ed 30%);
+  --theme-comp-workspace-git-input-bg: color-mix(in srgb, white 84%, #dbe4ef 16%);
+  --theme-comp-workspace-git-input-border: rgba(94, 114, 146, 0.24);
+  --theme-comp-workspace-git-input-focus: var(--theme-sem-accent-primary);
+  --theme-comp-workspace-git-stash-bg: color-mix(in srgb, #dfeafe 82%, white 18%);
+  --theme-comp-workspace-git-stash-border: rgba(79, 120, 184, 0.24);
+  --theme-comp-workspace-git-stash-text: #4c74b0;
+  --theme-comp-workspace-git-stash-hover-bg: color-mix(in srgb, #d2e1fb 80%, white 20%);
+  --theme-comp-workspace-git-discard-bg: color-mix(in srgb, #f6dde5 82%, white 18%);
+  --theme-comp-workspace-git-discard-border: rgba(196, 95, 124, 0.24);
+  --theme-comp-workspace-git-discard-text: #bf5d76;
+  --theme-comp-workspace-git-discard-hover-bg: color-mix(in srgb, #f1ced9 80%, white 20%);
+  --theme-comp-workspace-git-commit-bg: #4f8cff;
+  --theme-comp-workspace-git-commit-border: transparent;
+  --theme-comp-workspace-git-commit-text: #f8fbff;
+  --theme-comp-workspace-git-commit-hover-bg: #3c7fff;
+  --theme-comp-workspace-git-push-bg: color-mix(in srgb, #d7f0ef 84%, white 16%);
+  --theme-comp-workspace-git-push-border: rgba(33, 127, 135, 0.2);
+  --theme-comp-workspace-git-push-text: #237f87;
+  --theme-comp-workspace-git-push-hover-bg: color-mix(in srgb, #c8ebea 82%, white 18%);
+  --theme-comp-workspace-git-disabled-opacity: 0.52;
+}

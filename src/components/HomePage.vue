@@ -1578,8 +1578,16 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #0f141d 0%, #293548 52%, #4f78b8 100%);
 }
 
+.theme-swatch-frost-slate {
+  background: linear-gradient(135deg, #232a34 0%, #394454 52%, #77a6ff 100%);
+}
+
 .theme-swatch-mist-paper {
   background: linear-gradient(135deg, #f7f6f2 0%, #dfe6ef 52%, #416fcf 100%);
+}
+
+.theme-swatch-aurora-paper {
+  background: linear-gradient(135deg, #e9eef5 0%, #d7dfeb 52%, #4f8cff 100%);
 }
 
 .theme-option-meta {
