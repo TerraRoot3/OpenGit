@@ -56,6 +56,7 @@
     <ProjectDetail 
       v-else-if="routeType === 'clone-directory'"
       :path="routeProps?.path"
+      allow-directory-mode
       :is-favorite="favoriteProjectPaths.includes(routeProps?.path)"
       :is-active="isActive"
       @branch-changed="(payload) => emit('project-branch-changed', payload)"

@@ -379,6 +379,7 @@ import { useBrowserShortcuts } from '../../composables/useBrowserShortcuts.js'
 import { useBrowserNavigationState } from '../../composables/useBrowserNavigationState.js'
 import { useBrowserPersistence } from '../../composables/useBrowserPersistence.js'
 import { useBrowserTabs } from '../../composables/useBrowserTabs.js'
+import { updateBrowserDebugState } from '../../debug/runtimeDebug.js'
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -624,6 +625,24 @@ const tabOrder = ref({}) // 标签显示顺序 { tabId: orderIndex }
 const currentTab = computed(() => {
   return browserTabs.value.find(tab => tab.id === activeBrowserTabId.value)
 })
+
+const syncBrowserDebugState = () => {
+  const routeCounts = {}
+  let projectTabCount = 0
+  for (const tab of browserTabs.value) {
+    const routeType = tab?.routeType || 'unknown'
+    routeCounts[routeType] = (routeCounts[routeType] || 0) + 1
+    if (routeType === 'clone-directory' || routeType === 'single-project') {
+      projectTabCount += 1
+    }
+  }
+  updateBrowserDebugState({
+    totalTabs: browserTabs.value.length,
+    activeTabId: activeBrowserTabId.value,
+    routeCounts,
+    projectTabCount
+  })
+}
 
 const emitProjectContext = () => {
   const tab = currentTab.value
@@ -4168,7 +4187,27 @@ onUnmounted(() => {
   }
   
   saveBrowserTabs()
+  updateBrowserDebugState({
+    totalTabs: 0,
+    activeTabId: null,
+    routeCounts: {},
+    projectTabCount: 0
+  })
 })
+
+watch(
+  () => ({
+    activeTabId: activeBrowserTabId.value,
+    tabs: browserTabs.value.map((tab) => ({
+      id: tab.id,
+      routeType: tab.routeType || 'unknown'
+    }))
+  }),
+  () => {
+    syncBrowserDebugState()
+  },
+  { deep: true, immediate: true }
+)
 
 // 监听 URL 变化（从外部打开新 URL 时创建新的浏览器子标签页）
 watch(() => props.initialUrl, (newUrl, oldUrl) => {

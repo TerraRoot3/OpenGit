@@ -537,10 +537,11 @@ const handleOpenRepository = async (repo) => {
 }
 
 const handleOpenGroup = async (group) => {
-  selectedEntryPath.value = group?.path || ''
-  const owningRoot = sidebarStore.findOwningRoot(group?.path || '')
+  const targetPath = String(group?.path || '').trim()
+  selectedEntryPath.value = targetPath
+  const owningRoot = sidebarStore.findOwningRoot(targetPath)
   selectedRootPath.value = owningRoot?.path || ''
-  await openProjectPath(group?.path, 'single-project')
+  await openProjectPath(targetPath, 'clone-directory')
 }
 
 const handleAddRoot = async () => {

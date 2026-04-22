@@ -817,6 +817,29 @@ const SITE_PERMISSION_PARTITION = 'persist:main'
 const SITE_PERMISSION_REQUEST_TIMEOUT_MS = 30_000
 let nextPermissionRequestId = 0
 
+function getDebugMemoryStats() {
+  return {
+    webTabs: {
+      views: webTabManager?.views?.size || 0,
+      recoveryMeta: webTabManager?.recoveryMeta?.size || 0,
+      contentsToTab: webTabManager?.contentsToTab?.size || 0,
+      activeTabId: webTabManager?.activeTabId || '',
+      lifecycleTracked: webTabManager?.lifecycle?.getTrackedCount?.() || 0
+    },
+    permissions: {
+      pendingCallbacks: pendingPermissionCallbacks.size,
+      pendingTimeouts: pendingPermissionTimeouts.size
+    },
+    floatingMenus: {
+      resolvers: floatingMenuResolvers.size,
+      hasActiveUrlSuggestionWindow: Boolean(activeUrlSuggestionWindow && !activeUrlSuggestionWindow.isDestroyed())
+    },
+    downloads: {
+      history: downloadHistory.size
+    }
+  }
+}
+
 function createPermissionRequestId() {
   nextPermissionRequestId += 1
   return `site-permission-${Date.now()}-${nextPermissionRequestId}`
@@ -1724,6 +1747,10 @@ ipcMain.handle('browser-retry-download', async (event, { id } = {}) => {
 ipcMain.handle('browser-clear-download-history', async () => {
   downloadHistory.clear()
   return { success: true }
+})
+
+ipcMain.handle('debug-memory-stats', async () => {
+  return getDebugMemoryStats()
 })
 
 ipcMain.handle('browser-get-site-permissions', async (event, payload = {}) => {

@@ -242,6 +242,11 @@ import { isBufferViewportAtBottom } from './terminalViewportState.mjs'
 import { scheduleViewportRevealSync, cancelViewportRevealSync } from './terminalViewportSync.mjs'
 import TerminalSplitNode from './TerminalSplitNode.vue'
 import { useThemeStore } from '../../stores/themeStore.js'
+import {
+  releaseLiveTerminalPanel,
+  retainLiveTerminalPanel,
+  updateTerminalCacheDebug
+} from './terminalRuntimeDebug.mjs'
 import '@xterm/xterm/css/xterm.css'
 
 const emit = defineEmits(['close', 'pane-title'])
@@ -300,6 +305,17 @@ const panelInstanceKey = (() => {
   const randomPart = Math.random().toString(36).slice(2, 10)
   return `panel_${base}_${Date.now().toString(36)}_${randomPart}`
 })()
+
+const syncTerminalDebugState = () => {
+  let cachedTerminalCount = 0
+  for (const [, cached] of terminalCache) {
+    cachedTerminalCount += Array.isArray(cached?.terminals) ? cached.terminals.length : 0
+  }
+  updateTerminalCacheDebug({
+    entryCount: terminalCache.size,
+    terminalCount: cachedTerminalCount
+  })
+}
 
 const TERMINAL_SNAPSHOT_PREFIX = 'terminalSnapshot_v1_'
 const TERMINAL_SNAPSHOT_MAX_LINES = 1200
@@ -2169,6 +2185,7 @@ const saveCurrentState = (path) => {
   if (terminals.value.length === 0) {
     terminalCache.delete(cacheKey)
     clearPersistedSnapshot(cacheKey)
+    syncTerminalDebugState()
     return
   }
 
@@ -2181,6 +2198,7 @@ const saveCurrentState = (path) => {
     activeTermId: activeTermId.value
   }
   terminalCache.set(cacheKey, state)
+  syncTerminalDebugState()
   persistSnapshotForPath(cacheKey, state)
 }
 
@@ -2236,6 +2254,7 @@ const restorePersistedState = async (path) => {
   activeTermId.value = allTermIds.has(snapshot.activeTermId)
     ? snapshot.activeTermId
     : (findTabById(activeTabId.value)?.termIds?.[0] || terminals.value[0]?.termId || null)
+  syncTerminalDebugState()
   applyLayout(true)
   schedulePersistedSnapshot(cacheKey)
   return terminals.value.length > 0
@@ -2277,6 +2296,7 @@ const restoreState = async (path) => {
     activeTabId.value = tab.tabId
     if (!activeTermId.value) activeTermId.value = tab.termIds[0]
   }
+  syncTerminalDebugState()
   applyLayout(true)
   schedulePersistedSnapshot(cacheKey, cached)
   return true
@@ -2315,7 +2335,7 @@ const ipcHandler = {
       for (const t of cached.terminals) {
         if (t.ptyId === data.id) {
           t.viewportDirtyWhileHidden = true
-          t.xterm.write(data.data)
+          t._bufferedOutput = `${t._bufferedOutput || ''}${data.data || ''}`
           persistSnapshotForPath(cacheKey, cached)
           return
         }
@@ -2365,7 +2385,8 @@ const ipcHandler = {
       for (const t of cached.terminals) {
         if (t.ptyId === data.id) {
           t.connected = false
-          t.xterm.write('\r\n\x1b[33m终端已退出 (code: ' + data.exitCode + ')\x1b[0m\r\n')
+          t.viewportDirtyWhileHidden = true
+          t._bufferedOutput = `${t._bufferedOutput || ''}\r\n\x1b[33m终端已退出 (code: ${data.exitCode})\x1b[0m\r\n`
           persistSnapshotForPath(cacheKey, cached)
           return
         }
@@ -2506,6 +2527,8 @@ watch(
 )
 
 onMounted(() => {
+  retainLiveTerminalPanel()
+  syncTerminalDebugState()
   register(ipcHandler)
 
   const ro = new ResizeObserver(() => {
@@ -2567,7 +2590,9 @@ onUnmounted(() => {
     destroyTerminals(cached.terminals)
   }
   terminalCache.clear()
+  syncTerminalDebugState()
   unregister(ipcHandler)
+  releaseLiveTerminalPanel()
 })
 
 watch(

@@ -5,6 +5,13 @@
 const handlers = new Set()
 let initialized = false
 
+export function getTerminalRouterDebugStats() {
+  return {
+    handlerCount: handlers.size,
+    initialized
+  }
+}
+
 export function useTerminalRouter() {
   const register = (handler) => {
     handlers.add(handler)

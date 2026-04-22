@@ -79,7 +79,8 @@ function createWebTabLifecycleController({ freezeDelayMs = 60_000, discardDelayM
     activateTab,
     deactivateTab,
     advance,
-    getState
+    getState,
+    getTrackedCount: () => states.size
   }
 }
 

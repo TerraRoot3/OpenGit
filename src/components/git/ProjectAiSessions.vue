@@ -160,6 +160,8 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { sortMessagesNewestFirst } from './projectAiSessionMessages.mjs'
 
+const projectAiSessionCache = new Map()
+
 const props = defineProps({
   projectPath: {
     type: String,
@@ -186,6 +188,36 @@ const sessions = ref({
 })
 let silentReloadTimer = null
 let silentReloadAttempts = 0
+
+const syncSessionCache = () => {
+  const key = normalizePath(props.projectPath)
+  if (!key) return
+  projectAiSessionCache.set(key, {
+    sessions: {
+      claude: [...(sessions.value.claude || [])],
+      codex: [...(sessions.value.codex || [])]
+    },
+    selectedProvider: selectedProvider.value,
+    selectedSessionId: selectedSessionId.value,
+    cachedAt: Date.now()
+  })
+}
+
+const restoreSessionCache = () => {
+  const key = normalizePath(props.projectPath)
+  if (!key) return false
+  const cached = projectAiSessionCache.get(key)
+  if (!cached) return false
+  sessions.value = {
+    claude: [...(cached.sessions?.claude || [])],
+    codex: [...(cached.sessions?.codex || [])]
+  }
+  selectedProvider.value = cached.selectedProvider || 'codex'
+  selectedSessionId.value = cached.selectedSessionId || ''
+  syncSelectedProvider()
+  syncSelectedSession()
+  return true
+}
 
 const clearSilentReload = () => {
   if (silentReloadTimer == null || typeof window === 'undefined') return
@@ -342,6 +374,7 @@ const loadSessions = async ({ silent = false } = {}) => {
     }
     syncSelectedProvider()
     syncSelectedSession()
+    syncSessionCache()
     errorMessage.value = ''
 
     if (result.data?.hasPendingSummaryRefresh) {
@@ -369,6 +402,7 @@ const loadSessions = async ({ silent = false } = {}) => {
 const selectProvider = (provider) => {
   selectedProvider.value = provider
   syncSelectedSession()
+  syncSessionCache()
 }
 
 const openSummaryDialog = (session) => {
@@ -376,6 +410,7 @@ const openSummaryDialog = (session) => {
   detailError.value = ''
   dialogMessages.value = []
   selectedSessionId.value = session.sessionId
+  syncSessionCache()
   summaryDialogSession.value = session
   loadSessionDetail(session)
 }
@@ -389,6 +424,7 @@ const closeSummaryDialog = () => {
 
 const resumeSession = (session) => {
   selectedSessionId.value = session.sessionId
+  syncSessionCache()
   emit('resume-session', {
     ...session,
     command: getResumeCommand(session)
@@ -488,10 +524,12 @@ watch(() => props.projectPath, () => {
   clearSilentReload()
   silentReloadAttempts = 0
   closeSummaryDialog()
+  restoreSessionCache()
   loadSessions()
 }, { immediate: true })
 
 onUnmounted(() => {
+  syncSessionCache()
   clearSilentReload()
 })
 </script>

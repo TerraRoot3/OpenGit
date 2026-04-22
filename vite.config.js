@@ -7,7 +7,9 @@ import monacoEditorPlugin from 'vite-plugin-monaco-editor'
 export default defineConfig({
   base: './',  // 使用相对路径，适配 Electron
   plugins: [
-    monacoEditorPlugin({}),
+    monacoEditorPlugin({
+      languageWorkers: ['editorWorkerService', 'typescript', 'json', 'html', 'css']
+    }),
     vue({
       template: {
         compilerOptions: {

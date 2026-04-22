@@ -90,6 +90,13 @@
               >
                 主题设置
               </div>
+              <div
+                class="settings-sidebar-item"
+                :class="{ active: activeSettingsGroup === 'diagnostics' }"
+                @click="activeSettingsGroup = 'diagnostics'"
+              >
+                诊断
+              </div>
             </div>
             
             <!-- 右侧设置内容 -->
@@ -162,6 +169,46 @@
                   </div>
                 </div>
               </div>
+
+              <div v-else-if="activeSettingsGroup === 'diagnostics'" class="settings-panel">
+                <div class="diagnostics-toolbar">
+                  <button class="settings-btn-primary" :disabled="diagnosticsLoading" @click="refreshDiagnostics">
+                    {{ diagnosticsLoading ? '刷新中...' : '刷新' }}
+                  </button>
+                  <button class="settings-btn-secondary" :disabled="!diagnosticsSnapshot" @click="copyDiagnostics">
+                    复制诊断信息
+                  </button>
+                </div>
+
+                <div class="diagnostics-meta">
+                  <span>上次刷新: {{ diagnosticsLastUpdated || '未刷新' }}</span>
+                  <span v-if="diagnosticsError" class="diagnostics-error">{{ diagnosticsError }}</span>
+                </div>
+
+                <div v-if="diagnosticsSnapshot" class="diagnostics-section">
+                  <div class="diagnostics-section-title">主进程</div>
+                  <div class="diagnostics-grid">
+                    <div v-for="item in mainDiagnosticsItems" :key="item.key" class="diagnostics-card">
+                      <div class="diagnostics-card-label">{{ item.label }}</div>
+                      <div class="diagnostics-card-value">{{ item.value }}</div>
+                      <div class="diagnostics-card-desc">{{ item.description }}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="diagnosticsSnapshot" class="diagnostics-section">
+                  <div class="diagnostics-section-title">渲染层</div>
+                  <div class="diagnostics-grid">
+                    <div v-for="item in rendererDiagnosticsItems" :key="item.key" class="diagnostics-card">
+                      <div class="diagnostics-card-label">{{ item.label }}</div>
+                      <div class="diagnostics-card-value">{{ item.value }}</div>
+                      <div class="diagnostics-card-desc">{{ item.description }}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <pre v-if="diagnosticsSnapshot" class="diagnostics-json">{{ diagnosticsJson }}</pre>
+              </div>
             </div>
           </div>
         </div>
@@ -231,6 +278,10 @@ const blurAmount = ref(localCache?.blurAmount ?? 5) // 模糊度 0-20px
 // 设置弹框
 const showSettingsDialog = ref(false)
 const activeSettingsGroup = ref('background')
+const diagnosticsLoading = ref(false)
+const diagnosticsSnapshot = ref(null)
+const diagnosticsLastUpdated = ref('')
+const diagnosticsError = ref('')
 
 // 图标错误状态
 const iconErrors = ref({})
@@ -433,6 +484,13 @@ watch([overlayOpacity, blurAmount], () => {
   saveSettings()
 })
 
+watch([showSettingsDialog, activeSettingsGroup], async ([visible, group]) => {
+  if (visible && group === 'diagnostics' && !diagnosticsSnapshot.value && !diagnosticsLoading.value) {
+    await nextTick()
+    refreshDiagnostics()
+  }
+})
+
 // 收藏相关函数
 const hasValidIcon = (fav) => {
   const hasError = iconErrors.value && iconErrors.value[fav.id]
@@ -509,6 +567,251 @@ const shouldUseDarkFavoriteText = (fav) => {
 
   const normalizedColor = String(fav.customColor).trim().toLowerCase()
   return normalizedColor === '#ffffff' || normalizedColor === '#fff' || normalizedColor === 'white'
+}
+
+const formatBytes = (bytes) => {
+  const value = Number(bytes)
+  if (!Number.isFinite(value) || value <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let current = value
+  let unitIndex = 0
+  while (current >= 1024 && unitIndex < units.length - 1) {
+    current /= 1024
+    unitIndex += 1
+  }
+  const precision = current >= 100 || unitIndex === 0 ? 0 : 1
+  return `${current.toFixed(precision)} ${units[unitIndex]}`
+}
+
+const formatDiagnosticValue = (value, formatter = null) => {
+  if (formatter) return formatter(value)
+  if (value === '' || value === null || value === undefined) return '-'
+  if (typeof value === 'boolean') return value ? '是' : '否'
+  return String(value)
+}
+
+const diagnosticsJson = computed(() => {
+  if (!diagnosticsSnapshot.value) return ''
+  return JSON.stringify(diagnosticsSnapshot.value, null, 2)
+})
+
+const mainDiagnosticsItems = computed(() => {
+  const main = diagnosticsSnapshot.value?.main
+  if (!main) return []
+  return [
+    {
+      key: 'web-tabs-views',
+      label: 'Web tab views',
+      value: formatDiagnosticValue(main.webTabs?.views),
+      description: '主进程仍持有的 WebContentsView 数量'
+    },
+    {
+      key: 'web-tabs-recovery',
+      label: 'Recovery meta',
+      value: formatDiagnosticValue(main.webTabs?.recoveryMeta),
+      description: 'tab 恢复元数据数量，关页后应回落'
+    },
+    {
+      key: 'web-tabs-contents',
+      label: 'Contents map',
+      value: formatDiagnosticValue(main.webTabs?.contentsToTab),
+      description: 'webContents.id 到 tabId 的映射数量'
+    },
+    {
+      key: 'web-tabs-lifecycle',
+      label: 'Lifecycle tracked',
+      value: formatDiagnosticValue(main.webTabs?.lifecycleTracked),
+      description: '生命周期控制器正在跟踪的 tab 数'
+    },
+    {
+      key: 'permissions-callbacks',
+      label: 'Pending callbacks',
+      value: formatDiagnosticValue(main.permissions?.pendingCallbacks),
+      description: '待响应权限请求 callback 数量'
+    },
+    {
+      key: 'permissions-timeouts',
+      label: 'Pending timeouts',
+      value: formatDiagnosticValue(main.permissions?.pendingTimeouts),
+      description: '待清理权限请求 timeout 数量'
+    },
+    {
+      key: 'floating-menu-resolvers',
+      label: 'Floating resolvers',
+      value: formatDiagnosticValue(main.floatingMenus?.resolvers),
+      description: '原生浮层菜单 Promise resolver 数量'
+    },
+    {
+      key: 'downloads-history',
+      label: 'Download history',
+      value: formatDiagnosticValue(main.downloads?.history),
+      description: '下载历史条目数，属于持久保留'
+    }
+  ]
+})
+
+const rendererDiagnosticsItems = computed(() => {
+  const renderer = diagnosticsSnapshot.value?.renderer
+  const browser = renderer?.browser
+  const projectDetail = renderer?.projectDetail
+  const projectStore = renderer?.projectStore
+  const workspaceEditor = renderer?.workspaceEditor
+  const terminals = renderer?.providers?.terminals
+  const jsHeap = renderer?.jsHeap
+  return [
+    {
+      key: 'browser-total-tabs',
+      label: 'Browser tabs',
+      value: formatDiagnosticValue(browser?.totalTabs),
+      description: '当前 Vue 浏览器标签总数'
+    },
+    {
+      key: 'browser-project-tabs',
+      label: 'Project tabs',
+      value: formatDiagnosticValue(browser?.projectTabCount),
+      description: '其中属于仓库详情的标签页数量'
+    },
+    {
+      key: 'project-detail-instances',
+      label: 'ProjectDetail instances',
+      value: formatDiagnosticValue(projectDetail?.instances),
+      description: '当前挂载中的 ProjectDetail 实例数'
+    },
+    {
+      key: 'project-detail-inactive-heavy',
+      label: 'Inactive heavy pages',
+      value: formatDiagnosticValue(projectDetail?.inactiveHeavyInstances),
+      description: '后台项目页里仍挂着重子页的实例数'
+    },
+    {
+      key: 'workspace-mounted-count',
+      label: 'Workspace mounted',
+      value: formatDiagnosticValue(projectDetail?.workspaceMountedCount),
+      description: '已挂载工作区子页的项目页数量'
+    },
+    {
+      key: 'terminal-mounted-count',
+      label: 'Terminal mounted',
+      value: formatDiagnosticValue(projectDetail?.terminalMountedCount),
+      description: '已挂载终端子页的项目页数量'
+    },
+    {
+      key: 'ai-mounted-count',
+      label: 'AI sessions mounted',
+      value: formatDiagnosticValue(projectDetail?.aiSessionsMountedCount),
+      description: '已挂载 AI 会话子页的项目页数量'
+    },
+    {
+      key: 'project-store-details',
+      label: 'Project store details',
+      value: formatDiagnosticValue(projectStore?.projectDetails),
+      description: 'projectStore 中缓存的项目详情对象数'
+    },
+    {
+      key: 'project-store-branch-status',
+      label: 'Branch status cache',
+      value: formatDiagnosticValue(projectStore?.branchStatusCache),
+      description: 'projectStore 中分支状态缓存数'
+    },
+    {
+      key: 'workspace-editor-sessions',
+      label: 'Workspace editor sessions',
+      value: formatDiagnosticValue(workspaceEditor?.sessions),
+      description: '共享 Monaco session 数量，按项目路径分组'
+    },
+    {
+      key: 'workspace-editor-live',
+      label: 'Live Monaco editors',
+      value: formatDiagnosticValue(workspaceEditor?.liveEditors),
+      description: '当前仍存活的 Monaco editor 实例数'
+    },
+    {
+      key: 'workspace-editor-models',
+      label: 'Workspace models',
+      value: formatDiagnosticValue(workspaceEditor?.modelCount),
+      description: '共享缓存中的文本 model 数量'
+    },
+    {
+      key: 'terminal-router-handlers',
+      label: 'Terminal handlers',
+      value: formatDiagnosticValue(renderer?.terminalRouter?.handlerCount),
+      description: '终端路由全局 handler 数，关终端页后应尽量回落'
+    },
+    {
+      key: 'terminal-live-panels',
+      label: 'Live terminal panels',
+      value: formatDiagnosticValue(terminals?.livePanels),
+      description: '当前真正挂载的 TerminalPanel 实例数'
+    },
+    {
+      key: 'terminal-focus-sessions',
+      label: 'Liquid terminal sessions',
+      value: formatDiagnosticValue(terminals?.focusSessions),
+      description: '灵动终端中的 session 总数，可能大于终端页数量'
+    },
+    {
+      key: 'terminal-cache-entries',
+      label: 'Terminal cache entries',
+      value: formatDiagnosticValue(terminals?.cachedEntries),
+      description: '后台 terminalCache 条目数，切项目后会落到这里'
+    },
+    {
+      key: 'terminal-cache-terminals',
+      label: 'Cached terminals',
+      value: formatDiagnosticValue(terminals?.cachedTerminals),
+      description: 'terminalCache 里缓存的终端实例总数'
+    },
+    {
+      key: 'terminal-router-init',
+      label: 'Terminal router init',
+      value: formatDiagnosticValue(renderer?.terminalRouter?.initialized),
+      description: '全局终端 IPC 路由是否已初始化'
+    },
+    {
+      key: 'js-heap-used',
+      label: 'JS heap used',
+      value: formatDiagnosticValue(jsHeap?.usedJSHeapSize, formatBytes),
+      description: '当前渲染进程已使用的 JS 堆'
+    },
+    {
+      key: 'js-heap-total',
+      label: 'JS heap total',
+      value: formatDiagnosticValue(jsHeap?.totalJSHeapSize, formatBytes),
+      description: '当前渲染进程分配到的 JS 堆'
+    },
+    {
+      key: 'js-heap-limit',
+      label: 'JS heap limit',
+      value: formatDiagnosticValue(jsHeap?.jsHeapSizeLimit, formatBytes),
+      description: '渲染进程 JS 堆上限'
+    }
+  ]
+})
+
+const refreshDiagnostics = async () => {
+  diagnosticsLoading.value = true
+  diagnosticsError.value = ''
+  try {
+    if (!window.__openGitDebug?.getMemoryStats) {
+      throw new Error('诊断接口未初始化')
+    }
+    diagnosticsSnapshot.value = await window.__openGitDebug.getMemoryStats()
+    diagnosticsLastUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  } catch (error) {
+    diagnosticsError.value = error?.message || '刷新失败'
+  } finally {
+    diagnosticsLoading.value = false
+  }
+}
+
+const copyDiagnostics = async () => {
+  if (!diagnosticsJson.value) return
+  diagnosticsError.value = ''
+  try {
+    await navigator.clipboard.writeText(diagnosticsJson.value)
+  } catch (error) {
+    diagnosticsError.value = '复制失败'
+  }
 }
 
 const handleNavigate = (url) => {
@@ -967,6 +1270,82 @@ onUnmounted(() => {
 .theme-option-appearance {
   font-size: 12px;
   color: var(--theme-sem-text-muted);
+}
+
+.diagnostics-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.diagnostics-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--theme-sem-text-muted);
+}
+
+.diagnostics-error {
+  color: color-mix(in srgb, var(--theme-sem-danger-bg) 78%, var(--theme-sem-text-primary) 22%);
+}
+
+.diagnostics-section {
+  margin-bottom: 18px;
+}
+
+.diagnostics-section-title {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-sem-text-primary);
+}
+
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.diagnostics-card {
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 82%, transparent);
+  padding: 12px;
+}
+
+.diagnostics-card-label {
+  font-size: 12px;
+  color: var(--theme-sem-text-muted);
+  margin-bottom: 6px;
+}
+
+.diagnostics-card-value {
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--theme-sem-text-primary);
+  margin-bottom: 6px;
+}
+
+.diagnostics-card-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--theme-sem-text-secondary);
+}
+
+.diagnostics-json {
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--theme-sem-border-default);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 90%, transparent);
+  color: var(--theme-sem-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* 抽屉动画 */

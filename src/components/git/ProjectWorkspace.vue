@@ -54,6 +54,7 @@
                   @click.stop
                 >
                   <button
+                    v-if="!props.directoryMode"
                     type="button"
                     class="tree-filter-menu__item"
                     :class="{ active: treeFilterMode === 'modified' }"
@@ -216,7 +217,7 @@
             <div class="context-menu-divider"></div>
             <div class="context-menu-item delete" @click="deleteContextNode">删除</div>
           </div>
-          <div v-if="isModifiedFilterMode" class="workspace-git-actions">
+          <div v-if="isModifiedFilterMode && !props.directoryMode" class="workspace-git-actions">
             <div class="workspace-git-actions__top">
               <button
                 type="button"
@@ -355,12 +356,14 @@ import {
 } from 'lucide-vue-next'
 import OperationDialog from '../dialog/OperationDialog.vue'
 import { useConfirm } from '../../composables/useConfirm'
+import { clearWorkspaceEditorSession } from './workspaceEditorSession.mjs'
 const WorkspaceTextEditor = defineAsyncComponent(() => import('./WorkspaceTextEditor.vue'))
 
 const props = defineProps({
   projectPath: { type: String, required: true },
   isActive: { type: Boolean, default: true },
-  gitSignature: { type: String, default: '' }
+  gitSignature: { type: String, default: '' },
+  directoryMode: { type: Boolean, default: false }
 })
 const emit = defineEmits(['status-changed', 'pending-count-changed'])
 
@@ -432,7 +435,10 @@ const systemFileManagerLabel = computed(() => {
   return '文件管理器'
 })
 
-const currentFilterLabel = computed(() => (treeFilterMode.value === 'modified' ? '修改文件' : '所有文件'))
+const currentFilterLabel = computed(() => {
+  if (props.directoryMode) return '所有文件'
+  return treeFilterMode.value === 'modified' ? '修改文件' : '所有文件'
+})
 
 function treeWidthStorageKey () {
   const p = props.projectPath || ''
@@ -905,7 +911,7 @@ const visibleTreeNodes = computed(() => {
   return output
 })
 
-const isModifiedFilterMode = computed(() => treeFilterMode.value === 'modified')
+const isModifiedFilterMode = computed(() => !props.directoryMode && treeFilterMode.value === 'modified')
 
 const modifiedTreeData = computed(() => {
   const root = {
@@ -2559,6 +2565,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   saveWorkspaceState()
   document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
+  clearWorkspaceEditorSession(props.projectPath)
 })
 
 watch(
@@ -2609,7 +2616,24 @@ watch(
 watch(
   () => modifiedFileEntries.value.length,
   (count) => {
+    if (props.directoryMode) {
+      emit('pending-count-changed', 0)
+      return
+    }
     emit('pending-count-changed', count)
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.directoryMode,
+  (enabled) => {
+    if (enabled) {
+      treeFilterMode.value = 'all'
+      selectedModifiedPaths.value = []
+    } else if (treeFilterMode.value !== 'modified' && modifiedFileEntries.value.length > 0) {
+      treeFilterMode.value = 'modified'
+    }
   },
   { immediate: true }
 )

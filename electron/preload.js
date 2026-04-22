@@ -309,6 +309,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   browserOpenDownloadFolder: (data) => ipcRenderer.invoke('browser-open-download-folder', data),
   browserRetryDownload: (data) => ipcRenderer.invoke('browser-retry-download', data),
   browserClearDownloadHistory: () => ipcRenderer.invoke('browser-clear-download-history'),
+  debugMemoryStats: () => ipcRenderer.invoke('debug-memory-stats'),
   browserGetSitePermissions: (data) => ipcRenderer.invoke('browser-get-site-permissions', data),
   browserResetSitePermission: (data) => ipcRenderer.invoke('browser-reset-site-permission', data),
   browserResetAllSitePermissions: (data) => ipcRenderer.invoke('browser-reset-all-site-permissions', data),

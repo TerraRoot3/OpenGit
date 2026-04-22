@@ -11,8 +11,14 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import * as monaco from 'monaco-editor'
+import monaco from './monacoSetup.mjs'
 import { useThemeStore } from '../../stores/themeStore.js'
+import {
+  WORKSPACE_EDITOR_RELEASE_DELAY_MS,
+  getWorkspaceEditorSession,
+  releaseLiveWorkspaceEditor,
+  retainLiveWorkspaceEditor
+} from './workspaceEditorSession.mjs'
 
 const props = defineProps({
   projectPath: { type: String, required: true },
@@ -29,12 +35,10 @@ const currentChangeLine = ref(null)
 let editor = null
 let layoutObserver = null
 let gitDiffDecorationIds = []
-/** @type {Map<string, import('monaco-editor').editor.ITextModel>} */
-const pathToModel = new Map()
-/** @type {Map<string, import('monaco-editor').editor.ICodeEditorViewState | null>} */
-const pathToViewState = new Map()
 let currentModelPath = ''
+let releaseEditorTimer = null
 const themeStore = useThemeStore()
+const workspaceSession = computed(() => getWorkspaceEditorSession(props.projectPath))
 
 const DEFAULT_WORKSPACE_EDITOR_BACKGROUND = '#161b22'
 
@@ -202,14 +206,22 @@ function clearGitDiffDecorations () {
   currentChangeLine.value = null
 }
 
+function getSessionModels () {
+  return workspaceSession.value.pathToModel
+}
+
+function getSessionViewStates () {
+  return workspaceSession.value.pathToViewState
+}
+
 function saveCurrentViewState() {
   if (!editor || !currentModelPath) return
-  pathToViewState.set(currentModelPath, editor.saveViewState())
+  getSessionViewStates().set(currentModelPath, editor.saveViewState())
 }
 
 function restoreViewState(filePath) {
   if (!editor || !filePath) return
-  const state = pathToViewState.get(filePath)
+  const state = getSessionViewStates().get(filePath)
   if (state) {
     editor.restoreViewState(state)
   }
@@ -401,6 +413,8 @@ const currentChangeIndexLabel = computed(() => {
 })
 
 function disposeStaleModels () {
+  const pathToModel = getSessionModels()
+  const pathToViewState = getSessionViewStates()
   const activePaths = new Set(
     props.tabs
       .filter((tab) => tab?.kind === 'text' && tab?.path)
@@ -427,6 +441,8 @@ async function syncEditorContent () {
 
   const uri = uriForPath(tab.path)
   const lang = languageForPath(tab.path)
+  const pathToModel = getSessionModels()
+  const pathToViewState = getSessionViewStates()
   let model = pathToModel.get(tab.path) || monaco.editor.getModel(uri)
 
   if (model) {
@@ -448,16 +464,37 @@ async function syncEditorContent () {
   await loadFileDiffMetadata(tab.path, model)
 }
 
-function disposeAllModels () {
-  pathToViewState.clear()
-  for (const model of pathToModel.values()) {
-    model.dispose()
-  }
-  pathToModel.clear()
+function clearReleaseEditorTimer () {
+  if (releaseEditorTimer == null || typeof window === 'undefined') return
+  window.clearTimeout(releaseEditorTimer)
+  releaseEditorTimer = null
 }
 
-onMounted(async () => {
-  if (!editorContainerRef.value) return
+function destroyEditorInstance () {
+  clearReleaseEditorTimer()
+  saveCurrentViewState()
+  layoutObserver?.disconnect()
+  layoutObserver = null
+  if (editor) {
+    clearGitDiffDecorations()
+    editor.dispose()
+    editor = null
+    releaseLiveWorkspaceEditor()
+  }
+}
+
+function scheduleEditorRelease () {
+  if (typeof window === 'undefined' || !editor || releaseEditorTimer != null) return
+  releaseEditorTimer = window.setTimeout(() => {
+    releaseEditorTimer = null
+    destroyEditorInstance()
+  }, WORKSPACE_EDITOR_RELEASE_DELAY_MS)
+}
+
+async function createEditorInstance () {
+  clearReleaseEditorTimer()
+  if (editor || !editorContainerRef.value) return
+
   applyWorkspaceEditorTheme()
   editor = monaco.editor.create(editorContainerRef.value, {
     readOnly: true,
@@ -471,6 +508,7 @@ onMounted(async () => {
     wordWrap: 'on',
     glyphMargin: true
   })
+  retainLiveWorkspaceEditor()
 
   editor.onDidScrollChange(() => {
     saveCurrentViewState()
@@ -487,17 +525,18 @@ onMounted(async () => {
 
   await nextTick()
   await syncEditorContent()
+}
+
+onMounted(async () => {
+  if (!editorContainerRef.value) return
+  if (props.isActive) {
+    await createEditorInstance()
+  }
 })
 
 onBeforeUnmount(() => {
-  layoutObserver?.disconnect()
-  layoutObserver = null
-  disposeAllModels()
-  if (editor) {
-    clearGitDiffDecorations()
-    editor.dispose()
-    editor = null
-  }
+  destroyEditorInstance()
+  disposeStaleModels()
 })
 
 watch(
@@ -513,6 +552,9 @@ watch(
 watch(
   () => [props.activeTab?.path || '', props.activeTab?.content || '', props.isActive],
   async () => {
+    if (!editor && props.isActive) {
+      await createEditorInstance()
+    }
     if (!editor) return
     await syncEditorContent()
     if (props.isActive) {
@@ -526,7 +568,7 @@ watch(
   () => props.modifiedFileEntries,
   async () => {
     if (!editor || !props.activeTab?.path) return
-    const model = pathToModel.get(props.activeTab.path) || monaco.editor.getModel(uriForPath(props.activeTab.path))
+    const model = getSessionModels().get(props.activeTab.path) || monaco.editor.getModel(uriForPath(props.activeTab.path))
     await loadFileDiffMetadata(props.activeTab.path, model)
   },
   { deep: true }
@@ -537,6 +579,21 @@ watch(
   () => {
     disposeStaleModels()
   }
+)
+
+watch(
+  () => props.isActive,
+  async (active) => {
+    if (active) {
+      await createEditorInstance()
+      await syncEditorContent()
+      await nextTick()
+      editor?.layout()
+      return
+    }
+    scheduleEditorRelease()
+  },
+  { immediate: false }
 )
 </script>
 

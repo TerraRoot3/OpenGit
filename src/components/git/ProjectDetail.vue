@@ -7,7 +7,11 @@
         <div class="project-info">
           <h1 :title="projectInfo.path">
             {{ projectInfo.name }}
-            <span class="current-branch-inline" :class="{ 'detached-head': currentBranch.includes('HEAD detached') }">
+            <span
+              v-if="showGitHeaderInfo"
+              class="current-branch-inline"
+              :class="{ 'detached-head': currentBranch.includes('HEAD detached') }"
+            >
               <GitBranch v-if="!currentBranch.includes('HEAD detached')" :size="16" />
               <Tag v-else :size="16" />
               {{ currentBranch }}
@@ -36,6 +40,7 @@
           </h1>
         </div>
         <div class="header-actions">
+            <template v-if="showGitFeatureUi">
             <button class="pull-single-btn" @click="pullProject" :title="pullTitle">
               <GitPullRequest :size="14" /> 拉取
             </button>
@@ -45,9 +50,10 @@
             <button class="mr-single-btn" @click="openMRDialog" title="创建 Merge Request">
               <GitMerge :size="14" /> MR
             </button>
-            <button class="gitlab-open-btn" @click="openWithGitLab" title="打开 GitLab">
+          <button class="gitlab-open-btn" @click="openWithGitLab" title="打开 GitLab">
             <ExternalLink :size="14" /> GitLab
           </button>
+          </template>
           <button class="finder-open-btn" @click="openInFinder" :title="`在${systemFileManagerLabel}中打开`">
             <FolderOpen :size="14" /> {{ systemFileManagerLabel }}
           </button>
@@ -124,6 +130,7 @@
               title="工作区"
               data-rail-tip="工作区"
               :class="{ active: currentView === 'workspace' }"
+              v-if="showWorkspaceView"
               @click="selectWorkspace"
             >
               <FolderTree :size="16" />
@@ -141,6 +148,7 @@
               class="file-status-button rail-tip-target"
               title="流水线"
               data-rail-tip="流水线"
+              v-if="showGitFeatureUi"
               :class="{ active: currentView === 'pipeline' }"
               @click="selectPipeline"
             >
@@ -160,6 +168,7 @@
               class="file-status-button rail-tip-target"
               title="提交历史"
               data-rail-tip="提交历史"
+              v-if="showGitFeatureUi"
               :class="{ active: currentView === 'commit-history' }"
               @click="selectCommitHistory"
             >
@@ -172,6 +181,7 @@
               class="file-status-button rail-tip-target"
               title="暂存列表"
               data-rail-tip="暂存列表"
+              v-if="showGitFeatureUi"
               :class="{ active: currentView === 'stash-list' }"
               @click="selectStashList"
             >
@@ -180,7 +190,7 @@
             </div>
 
             <!-- 本地分支 -->
-            <div class="branch-section">
+            <div v-if="showGitFeatureUi" class="branch-section">
               <div
                 class="branch-section-header rail-tip-target"
                 title="本地分支"
@@ -214,7 +224,7 @@
             </div>
 
             <!-- 远程分支 -->
-            <div class="branch-section">
+            <div v-if="showGitFeatureUi" class="branch-section">
               <div
                 class="branch-section-header rail-tip-target"
                 title="远程分支"
@@ -251,7 +261,7 @@
             </div>
 
             <!-- 标签 -->
-            <div class="branch-section">
+            <div v-if="showGitFeatureUi" class="branch-section">
               <div
                 class="branch-section-header rail-tip-target"
                 title="标签"
@@ -298,11 +308,12 @@
           <div class="right-panel">
             <!-- 工作区 -->
             <ProjectWorkspace
-              v-if="workspaceMounted"
+              v-if="workspaceMounted && showWorkspaceView"
               v-show="currentView === 'workspace'"
               :project-path="path"
               :is-active="isActive && currentView === 'workspace'"
               :git-signature="projectGitMonitorSnapshot?.signature || ''"
+              :directory-mode="isDirectoryMode"
               @status-changed="handleFileStatusChanged"
               @pending-count-changed="handlePendingCountChanged"
             />
@@ -315,14 +326,14 @@
             />
 
             <ProjectPipeline
-              v-if="currentView === 'pipeline'"
+              v-if="currentView === 'pipeline' && showGitFeatureUi"
               :project-path="path"
               :is-active="isActive && currentView === 'pipeline'"
             />
 
             <!-- 提交历史 -->
             <ProjectCommitHistory
-              v-if="currentView === 'commit-history'"
+              v-if="currentView === 'commit-history' && showGitFeatureUi"
               :project-path="path"
               :current-branch="currentBranch"
               :all-branches="allBranches"
@@ -334,7 +345,7 @@
 
             <!-- 暂存列表 -->
             <ProjectStashList
-              v-if="currentView === 'stash-list'"
+              v-if="currentView === 'stash-list' && showGitFeatureUi"
               :project-path="path"
               :execute-command="executeCommand"
               ref="stashListRef"
@@ -586,6 +597,7 @@ import {
   getProjectDetail,
   getBranchStatus as getStoreBranchStatus
 } from '../../stores/projectStore'
+import { removeProjectDetailDebugEntry, updateProjectDetailDebugEntry } from '../../debug/runtimeDebug.js'
 
 const ProjectWorkspace = defineAsyncComponent(() => import('./ProjectWorkspace.vue'))
 
@@ -642,8 +654,14 @@ const props = defineProps({
   isFavorite: {
     type: Boolean,
     default: false
+  },
+  allowDirectoryMode: {
+    type: Boolean,
+    default: false
   }
 })
+
+const projectDetailDebugId = Symbol('project-detail-debug')
 
 const platform = window.electronAPI?.platform || 'darwin'
 const systemFileManagerLabel = computed(() => {
@@ -1000,6 +1018,17 @@ const refreshSuccess = ref(false)
 let aiSessionsPreloadHandle = null
 let workspacePreloadHandle = null
 
+const syncProjectDetailDebugState = () => {
+  updateProjectDetailDebugEntry(projectDetailDebugId, {
+    path: props.path,
+    isActive: props.isActive,
+    currentView: currentView.value,
+    workspaceMounted: workspaceMounted.value,
+    aiSessionsMounted: aiSessionsMounted.value,
+    terminalMounted: terminalMounted.value
+  })
+}
+
 const clearAiSessionsPreload = () => {
   if (aiSessionsPreloadHandle == null || typeof window === 'undefined') return
 
@@ -1025,21 +1054,7 @@ const clearWorkspacePreload = () => {
 }
 
 const scheduleAiSessionsPreload = () => {
-  if (aiSessionsMounted.value || !props.isActive || typeof window === 'undefined') return
-
   clearAiSessionsPreload()
-
-  const mountAiSessions = () => {
-    aiSessionsPreloadHandle = null
-    aiSessionsMounted.value = true
-  }
-
-  if (typeof window.requestIdleCallback === 'function') {
-    aiSessionsPreloadHandle = window.requestIdleCallback(mountAiSessions, { timeout: 600 })
-    return
-  }
-
-  aiSessionsPreloadHandle = window.setTimeout(mountAiSessions, 0)
 }
 
 const scheduleWorkspacePreload = () => {
@@ -1133,6 +1148,17 @@ const mrBranchOptions = computed(() => {
   const remote = remoteBranches.value.map(b => b.replace('origin/', ''))
   return [...new Set([...branches, ...remote])]
 })
+
+const isDirectoryMode = computed(() => props.allowDirectoryMode && isGitRepository.value === false)
+const showGitFeatureUi = computed(() => !isDirectoryMode.value)
+const showGitHeaderInfo = computed(() => !isDirectoryMode.value && !!currentBranch.value)
+const showWorkspaceView = computed(() => true)
+
+const normalizeViewForCurrentMode = (view) => {
+  if (!isDirectoryMode.value) return view
+  if (view === 'ai-sessions' || view === 'workspace') return view
+  return 'terminal'
+}
 
 const tagsViewState = computed(() => resolveTagsViewState({
   tagsLoading: tagsLoading.value,
@@ -2980,7 +3006,17 @@ watch(() => props.path, async (newPath, oldPath) => {
     detectGitRepository(newPath).then((isGit) => {
       if (props.path !== newPath) return
       if (!isGit) {
-        debugLog('ℹ️ [ProjectDetailNew] 当前路径不是 Git 仓库，跳过自动刷新')
+        if (props.allowDirectoryMode) {
+          loadProjectInfo({
+            forceRefreshRemoteBranches: false,
+            forceRefreshTags: false,
+            refreshBranchStatus: false
+          })
+          currentView.value = normalizeViewForCurrentMode(currentView.value)
+          terminalMounted.value = currentView.value === 'terminal'
+          aiSessionsMounted.value = currentView.value === 'ai-sessions'
+          workspaceMounted.value = false
+        }
         return
       }
 
@@ -3023,14 +3059,25 @@ watch(() => props.path, async (newPath, oldPath) => {
 }, { immediate: true })
 
 watch(currentView, (view) => {
+  if (isDirectoryMode.value) {
+    const normalizedView = normalizeViewForCurrentMode(view)
+    if (normalizedView !== view) {
+      currentView.value = normalizedView
+      return
+    }
+  }
   if (view === 'terminal' && props.isActive) {
     terminalMounted.value = true
   }
   if (view === 'ai-sessions') {
     aiSessionsMounted.value = true
+  } else {
+    aiSessionsMounted.value = false
   }
   if (view === 'workspace') {
     workspaceMounted.value = true
+  } else if (isDirectoryMode.value) {
+    workspaceMounted.value = false
   }
 }, { immediate: true })
 
@@ -3044,9 +3091,14 @@ watch(() => props.isActive, (active) => {
   if (active && currentView.value === 'workspace') {
     workspaceMounted.value = true
   }
+  if (!active) {
+    aiSessionsMounted.value = false
+    clearAiSessionsPreload()
+  }
   if (active) {
-    scheduleAiSessionsPreload()
-    scheduleWorkspacePreload()
+    if (!isDirectoryMode.value) {
+      scheduleWorkspacePreload()
+    }
   }
   if (active && props.path && isGitRepository.value !== false) {
     refreshPipelineSummary({ silent: true })
@@ -3054,6 +3106,21 @@ watch(() => props.isActive, (active) => {
     clearPipelineSummaryTimer()
   }
 })
+
+watch(
+  () => ({
+    path: props.path,
+    isActive: props.isActive,
+    currentView: currentView.value,
+    workspaceMounted: workspaceMounted.value,
+    aiSessionsMounted: aiSessionsMounted.value,
+    terminalMounted: terminalMounted.value
+  }),
+  () => {
+    syncProjectDetailDebugState()
+  },
+  { deep: true, immediate: true }
+)
 
 watch(shouldPollProjectGitMonitor, (shouldRun) => {
   if (shouldRun) {
@@ -3122,6 +3189,7 @@ const flushBranchesPanelWidthBeforeLeave = () => {
 }
 
 onMounted(async () => {
+  syncProjectDetailDebugState()
   if (props.path) {
     await loadBranchesPanelWidth(props.path)
   }
@@ -3150,6 +3218,7 @@ onUnmounted(() => {
   if (window.electronAPI?.removeWindowFocusListener) {
     window.electronAPI.removeWindowFocusListener(handleWindowFocus)
   }
+  removeProjectDetailDebugEntry(projectDetailDebugId)
 })
 
 // 监听标签激活状态变化，切换到当前标签时刷新
