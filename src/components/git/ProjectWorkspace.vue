@@ -2313,6 +2313,10 @@ async function executeWorkspaceCommand(command) {
   })
 }
 
+function getWorkspaceCommandFailure(result, fallback = '操作失败') {
+  return result?.error || result?.stderr || result?.output || result?.stdout || fallback
+}
+
 async function refreshRemoteBranchStatus() {
   if (!props.projectPath || !window.electronAPI?.refreshRemote) return null
   try {
@@ -2386,7 +2390,7 @@ async function discardModifiedFiles() {
       operationOutput.value += `删除 ${untrackedFiles.length} 个未跟踪文件...\n`
       const result = await executeWorkspaceCommand(`rm -f ${untrackedFiles.map(quoteShellPath).join(' ')}`)
       if (!result?.success) {
-        throw new Error(result?.error || result?.output || '删除未跟踪文件失败')
+        throw new Error(getWorkspaceCommandFailure(result, '删除未跟踪文件失败'))
       }
     }
 
@@ -2394,12 +2398,12 @@ async function discardModifiedFiles() {
       operationOutput.value += `取消暂存 ${stagedFiles.length} 个文件...\n`
       const resetResult = await executeWorkspaceCommand(buildSafeGitCommand('git reset HEAD', stagedFiles))
       if (!resetResult?.success && !String(resetResult?.output || '').includes('Unstaged')) {
-        throw new Error(resetResult?.error || resetResult?.output || '取消暂存失败')
+        throw new Error(getWorkspaceCommandFailure(resetResult, '取消暂存失败'))
       }
       operationOutput.value += `还原 ${stagedFiles.length} 个暂存文件...\n`
       const checkoutResult = await executeWorkspaceCommand(buildSafeGitCommand('git checkout', stagedFiles))
       if (!checkoutResult?.success) {
-        throw new Error(checkoutResult?.error || checkoutResult?.output || '还原暂存文件失败')
+        throw new Error(getWorkspaceCommandFailure(checkoutResult, '还原暂存文件失败'))
       }
     }
 
@@ -2407,7 +2411,7 @@ async function discardModifiedFiles() {
       operationOutput.value += `还原 ${modifiedFiles.length} 个修改文件...\n`
       const result = await executeWorkspaceCommand(buildSafeGitCommand('git checkout', modifiedFiles))
       if (!result?.success) {
-        throw new Error(result?.error || result?.output || '还原文件失败')
+        throw new Error(getWorkspaceCommandFailure(result, '还原文件失败'))
       }
     }
 
@@ -2438,7 +2442,7 @@ async function stashModifiedFiles() {
       operationOutput.value += '检测到未跟踪文件，先加入暂存区...\n'
       const addResult = await executeWorkspaceCommand(buildSafeGitCommand('git add', safeRelativePaths))
       if (!addResult?.success) {
-        throw new Error(addResult?.error || addResult?.output || '添加文件失败')
+        throw new Error(getWorkspaceCommandFailure(addResult, '添加文件失败'))
       }
       stashCommand = `git stash push --staged -m "${escapeForBashCommand(stashMessage)}"`
     } else {
@@ -2448,7 +2452,7 @@ async function stashModifiedFiles() {
     operationOutput.value += `暂存 ${safeRelativePaths.length} 个文件...\n`
     const stashResult = await executeWorkspaceCommand(stashCommand)
     if (!stashResult?.success) {
-      throw new Error(stashResult?.error || stashResult?.output || '暂存失败')
+      throw new Error(getWorkspaceCommandFailure(stashResult, '暂存失败'))
     }
     operationOutput.value += `${stashResult.output || ''}\n\n✅ 暂存完成`
     await refreshAfterGitAction()
@@ -2470,12 +2474,12 @@ async function commitModifiedFiles() {
     operationOutput.value += `暂存 ${safeRelativePaths.length} 个文件...\n`
     const addResult = await executeWorkspaceCommand(buildSafeGitCommand('git add', safeRelativePaths))
     if (!addResult?.success) {
-      throw new Error(addResult?.error || addResult?.output || '暂存文件失败')
+      throw new Error(getWorkspaceCommandFailure(addResult, '暂存文件失败'))
     }
     operationOutput.value += '创建提交...\n'
     const commitResult = await executeWorkspaceCommand(`git commit -m "${escapeForBashCommand(commitMessage.value.trim())}"`)
     if (!commitResult?.success) {
-      throw new Error(commitResult?.error || commitResult?.output || '提交失败')
+      throw new Error(getWorkspaceCommandFailure(commitResult, '提交失败'))
     }
     operationOutput.value += `${commitResult.output || ''}\n\n✅ 提交完成`
     await refreshAfterGitAction({ clearCommit: true, eventPayload: { type: 'commit' } })
@@ -2497,40 +2501,43 @@ async function commitAndPushModifiedFiles() {
     operationOutput.value += '检查远程状态...\n'
     await executeWorkspaceCommand('git fetch')
     const statusResult = await executeWorkspaceCommand('git status -uno')
-    const statusOutput = String(statusResult?.output || '')
+    const statusOutput = String(statusResult?.output || statusResult?.stdout || statusResult?.stderr || '')
     if (statusOutput.includes('Your branch is behind') || statusOutput.includes('have diverged')) {
       operationOutput.value += '检测到远程有更新，先拉取...\n'
       const pullResult = await executeWorkspaceCommand('git pull --no-rebase')
-      if (!pullResult?.success && /CONFLICT|冲突/.test(`${pullResult?.output || ''}${pullResult?.error || ''}`)) {
+      if (!pullResult?.success && /CONFLICT|冲突/.test(`${pullResult?.output || ''}${pullResult?.stderr || ''}${pullResult?.error || ''}`)) {
         throw new Error('拉取远程更新时发生冲突，请先解决冲突')
+      }
+      if (!pullResult?.success) {
+        throw new Error(getWorkspaceCommandFailure(pullResult, '拉取远程更新失败'))
       }
     }
 
     operationOutput.value += `暂存 ${safeRelativePaths.length} 个文件...\n`
     const addResult = await executeWorkspaceCommand(buildSafeGitCommand('git add', safeRelativePaths))
     if (!addResult?.success) {
-      throw new Error(addResult?.error || addResult?.output || '暂存文件失败')
+      throw new Error(getWorkspaceCommandFailure(addResult, '暂存文件失败'))
     }
 
     const commitResult = await executeWorkspaceCommand(`git commit -m "${escapeForBashCommand(commitMessage.value.trim())}"`)
     if (!commitResult?.success) {
-      throw new Error(commitResult?.error || commitResult?.output || '提交失败')
+      throw new Error(getWorkspaceCommandFailure(commitResult, '提交失败'))
     }
     operationOutput.value += `${commitResult.output || ''}\n`
 
     const remoteResult = await executeWorkspaceCommand('git remote -v')
-    if (remoteResult?.success && String(remoteResult.output || '').trim()) {
+    if (remoteResult?.success && String(remoteResult.output || remoteResult.stdout || '').trim()) {
       operationOutput.value += '推送到远程仓库...\n'
       const pushResult = await executeWorkspaceCommand('git push')
       const refreshedBranchStatus = await refreshRemoteBranchStatus()
       const pushVerified = refreshedBranchStatus?.localAhead === 0
       if (!pushResult?.success && !pushVerified) {
-        throw new Error(pushResult?.error || pushResult?.stderr || pushResult?.output || '推送失败')
+        throw new Error(getWorkspaceCommandFailure(pushResult, '推送失败'))
       }
       if (!pushResult?.success && pushVerified) {
         operationOutput.value += '推送命令返回异常，但远程状态已校验为成功。\n'
       }
-      operationOutput.value += `${pushResult.output || pushResult?.stderr || ''}\n`
+      operationOutput.value += `${pushResult.output || pushResult.stdout || pushResult?.stderr || ''}\n`
       operationOutput.value += '\n✅ 提交并推送完成'
       await refreshAfterGitAction({
         clearCommit: true,
@@ -3178,7 +3185,7 @@ watch(
   display: grid;
   grid-template-rows: auto auto auto;
   gap: 8px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-surface-1) 12%);
+  background: var(--theme-comp-workspace-git-bg);
   border-top: 1px solid var(--theme-sem-border-default);
 }
 
@@ -3194,9 +3201,9 @@ watch(
   max-height: 88px;
   resize: vertical;
   padding: 8px 10px;
-  border: 1px solid var(--theme-sem-border-strong);
+  border: 1px solid var(--theme-comp-workspace-git-input-border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
+  background: var(--theme-comp-workspace-git-input-bg);
   color: var(--theme-sem-text-primary);
   font-size: 12px;
   line-height: 1.5;
@@ -3204,7 +3211,7 @@ watch(
 }
 
 .workspace-git-actions__message:focus {
-  border-color: var(--theme-sem-accent-primary);
+  border-color: var(--theme-comp-workspace-git-input-focus);
 }
 
 .workspace-git-actions__message::placeholder {
@@ -3213,41 +3220,57 @@ watch(
 
 .workspace-git-actions__btn {
   height: 30px;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s ease, filter 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .workspace-git-actions__btn:disabled {
-  opacity: 0.62;
+  opacity: var(--theme-comp-workspace-git-disabled-opacity);
   cursor: default;
 }
 
 .workspace-git-actions__btn--stash {
-  background: color-mix(in srgb, var(--theme-sem-accent-primary) 22%, white 78%);
-  color: var(--theme-sem-accent-primary);
+  background: var(--theme-comp-workspace-git-stash-bg);
+  border-color: var(--theme-comp-workspace-git-stash-border);
+  color: var(--theme-comp-workspace-git-stash-text);
 }
 
 .workspace-git-actions__btn--discard {
-  background: color-mix(in srgb, var(--theme-sem-danger-bg) 72%, white 28%);
-  color: var(--theme-sem-accent-danger-strong);
+  background: var(--theme-comp-workspace-git-discard-bg);
+  border-color: var(--theme-comp-workspace-git-discard-border);
+  color: var(--theme-comp-workspace-git-discard-text);
 }
 
 .workspace-git-actions__btn--commit {
-  background: var(--theme-sem-accent-primary);
-  color: var(--theme-sem-text-on-accent);
+  background: var(--theme-comp-workspace-git-commit-bg);
+  border-color: var(--theme-comp-workspace-git-commit-border);
+  color: var(--theme-comp-workspace-git-commit-text);
 }
 
 .workspace-git-actions__btn--push {
-  background: color-mix(in srgb, var(--theme-sem-success-bg) 76%, white 24%);
-  color: var(--theme-sem-accent-success-strong);
+  background: var(--theme-comp-workspace-git-push-bg);
+  border-color: var(--theme-comp-workspace-git-push-border);
+  color: var(--theme-comp-workspace-git-push-text);
 }
 
-.workspace-git-actions__btn:not(:disabled):hover {
-  filter: brightness(1.08);
+.workspace-git-actions__btn--stash:not(:disabled):hover {
+  background: var(--theme-comp-workspace-git-stash-hover-bg);
+}
+
+.workspace-git-actions__btn--discard:not(:disabled):hover {
+  background: var(--theme-comp-workspace-git-discard-hover-bg);
+}
+
+.workspace-git-actions__btn--commit:not(:disabled):hover {
+  background: var(--theme-comp-workspace-git-commit-hover-bg);
+}
+
+.workspace-git-actions__btn--push:not(:disabled):hover {
+  background: var(--theme-comp-workspace-git-push-hover-bg);
 }
 
 .context-menu {

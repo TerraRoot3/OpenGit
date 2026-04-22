@@ -1252,6 +1252,10 @@ const emitPendingStatusChanged = (projectPath, hasPending = hasPendingFiles.valu
   })
 }
 
+const getGitCommandFailure = (result, fallback = '操作失败') => {
+  return result?.error || result?.stderr || result?.output || result?.stdout || fallback
+}
+
 const syncHasPendingFiles = (nextValue, { emitWhenChanged = true } = {}) => {
   const normalized = Boolean(nextValue)
   const changed = hasPendingFiles.value !== normalized
@@ -2139,7 +2143,7 @@ const switchBranch = async (branchName) => {
       queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
-      operationOutput.value += '\n\n❌ 分支切换失败: ' + (result.error || '')
+      operationOutput.value += '\n\n❌ 分支切换失败: ' + getGitCommandFailure(result, '分支切换失败')
     }
   } catch (error) {
     finishOperation()
@@ -2170,7 +2174,7 @@ const switchToRemoteBranch = async (branchName) => {
       queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
-      operationOutput.value += '\n\n❌ 远程分支切换失败: ' + (result.error || '')
+      operationOutput.value += '\n\n❌ 远程分支切换失败: ' + getGitCommandFailure(result, '远程分支切换失败')
     }
   } catch (error) {
     finishOperation()
@@ -2236,7 +2240,7 @@ const pullProject = async () => {
       showOperationDialog.value = false
     } else {
       // 分析错误类型给出更友好的提示
-      const errorMsg = result.error || result.output || ''
+      const errorMsg = getGitCommandFailure(result, '')
       if (errorMsg.includes('no tracking information') || errorMsg.includes('no upstream')) {
         operationOutput.value += '\n\n❌ 拉取失败: 当前分支没有关联远程分支\n'
         operationOutput.value += `尝试运行: git push -u origin ${currentBranch.value}`
@@ -2284,7 +2288,7 @@ const pushProject = async () => {
     } else {
       finishOperation()
       // 分析错误类型给出更友好的提示
-      const errorMsg = result.error || result.output || ''
+      const errorMsg = getGitCommandFailure(result, '')
       if (errorMsg.includes('rejected') && (errorMsg.includes('non-fast-forward') || errorMsg.includes('fetch first'))) {
         operationOutput.value += '\n\n❌ 推送失败: 远程有新的提交\n'
         operationOutput.value += '请先拉取远程更新后再推送。'
@@ -2397,7 +2401,7 @@ const createBranch = async () => {
       queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
-      operationOutput.value += '\n\n❌ 分支创建失败: ' + (result.error || '')
+      operationOutput.value += '\n\n❌ 分支创建失败: ' + getGitCommandFailure(result, '分支创建失败')
     }
   } catch (error) {
     finishOperation()
@@ -2567,7 +2571,7 @@ const confirmMergeBranch = async () => {
       queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
-      operationOutput.value += '\n\n❌ 分支合并失败: ' + (result.error || '')
+      operationOutput.value += '\n\n❌ 分支合并失败: ' + getGitCommandFailure(result, '分支合并失败')
     }
   } catch (error) {
     finishOperation()
@@ -2593,7 +2597,7 @@ const checkoutTag = async (tag) => {
       queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
-      operationOutput.value += '\n\n❌ 检出标签失败'
+      operationOutput.value += '\n\n❌ 检出标签失败: ' + getGitCommandFailure(result, '检出标签失败')
     }
   } catch (error) {
     finishOperation()
@@ -2660,7 +2664,7 @@ const pushTagAction = async () => {
       scheduleTriggeredPipelineRefresh()
     } else {
       finishOperation()
-      operationOutput.value += '\n\n❌ 推送标签失败'
+      operationOutput.value += '\n\n❌ 推送标签失败: ' + getGitCommandFailure(result, '推送标签失败')
     }
   } catch (error) {
     finishOperation()
@@ -2738,7 +2742,7 @@ const confirmCreateTag = async () => {
       }
     } else {
       finishOperation()
-      operationOutput.value += '\n\n❌ 创建标签失败'
+      operationOutput.value += '\n\n❌ 创建标签失败: ' + getGitCommandFailure(result, '创建标签失败')
     }
   } catch (error) {
     finishOperation()

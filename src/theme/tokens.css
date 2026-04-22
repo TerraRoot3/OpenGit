@@ -175,6 +175,27 @@ html[data-theme='slate-dual'] {
   --theme-comp-action-neutral-border: var(--theme-sem-border-default);
   --theme-comp-action-neutral-text: var(--theme-sem-text-primary);
   --theme-comp-action-neutral-hover-bg: color-mix(in srgb, var(--theme-comp-action-neutral-bg) 84%, var(--theme-sem-hover) 16%);
+  --theme-comp-workspace-git-bg: color-mix(in srgb, var(--theme-sem-bg-project) 76%, var(--theme-sem-surface-2) 24%);
+  --theme-comp-workspace-git-input-bg: color-mix(in srgb, var(--theme-sem-surface-2) 78%, var(--theme-sem-bg-project) 22%);
+  --theme-comp-workspace-git-input-border: var(--theme-sem-border-strong);
+  --theme-comp-workspace-git-input-focus: var(--theme-sem-accent-primary);
+  --theme-comp-workspace-git-stash-bg: color-mix(in srgb, var(--theme-sem-info-bg) 68%, var(--theme-sem-surface-2) 32%);
+  --theme-comp-workspace-git-stash-border: color-mix(in srgb, var(--theme-sem-accent-info) 26%, var(--theme-sem-border-default) 74%);
+  --theme-comp-workspace-git-stash-text: var(--theme-sem-accent-info);
+  --theme-comp-workspace-git-stash-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-stash-bg) 84%, var(--theme-sem-accent-info) 16%);
+  --theme-comp-workspace-git-discard-bg: color-mix(in srgb, var(--theme-sem-danger-bg) 74%, var(--theme-sem-surface-2) 26%);
+  --theme-comp-workspace-git-discard-border: color-mix(in srgb, var(--theme-sem-accent-danger) 24%, var(--theme-sem-border-default) 76%);
+  --theme-comp-workspace-git-discard-text: var(--theme-sem-accent-danger);
+  --theme-comp-workspace-git-discard-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-discard-bg) 84%, var(--theme-sem-accent-danger) 16%);
+  --theme-comp-workspace-git-commit-bg: color-mix(in srgb, var(--theme-sem-accent-primary) 88%, black 12%);
+  --theme-comp-workspace-git-commit-border: transparent;
+  --theme-comp-workspace-git-commit-text: var(--theme-sem-text-on-accent);
+  --theme-comp-workspace-git-commit-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-commit-bg) 86%, white 14%);
+  --theme-comp-workspace-git-push-bg: color-mix(in srgb, var(--theme-sem-success-bg) 78%, var(--theme-sem-surface-2) 22%);
+  --theme-comp-workspace-git-push-border: color-mix(in srgb, var(--theme-sem-accent-success) 24%, var(--theme-sem-border-default) 76%);
+  --theme-comp-workspace-git-push-text: var(--theme-sem-accent-success);
+  --theme-comp-workspace-git-push-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-push-bg) 84%, var(--theme-sem-accent-success) 16%);
+  --theme-comp-workspace-git-disabled-opacity: 0.58;
 }
 
 html[data-theme='graphite-moss'] {
@@ -268,6 +289,27 @@ html[data-theme='graphite-moss'] {
   --theme-comp-action-neutral-border: var(--theme-sem-border-default);
   --theme-comp-action-neutral-text: var(--theme-sem-text-primary);
   --theme-comp-action-neutral-hover-bg: color-mix(in srgb, var(--theme-comp-action-neutral-bg) 84%, var(--theme-sem-hover) 16%);
+  --theme-comp-workspace-git-bg: color-mix(in srgb, var(--theme-sem-bg-project) 74%, var(--theme-sem-surface-2) 26%);
+  --theme-comp-workspace-git-input-bg: color-mix(in srgb, var(--theme-sem-surface-2) 76%, var(--theme-sem-bg-project) 24%);
+  --theme-comp-workspace-git-input-border: var(--theme-sem-border-strong);
+  --theme-comp-workspace-git-input-focus: var(--theme-sem-accent-primary);
+  --theme-comp-workspace-git-stash-bg: color-mix(in srgb, var(--theme-sem-info-bg) 70%, var(--theme-sem-surface-2) 30%);
+  --theme-comp-workspace-git-stash-border: rgba(159, 216, 207, 0.2);
+  --theme-comp-workspace-git-stash-text: var(--theme-sem-accent-info);
+  --theme-comp-workspace-git-stash-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-stash-bg) 84%, var(--theme-sem-accent-info) 16%);
+  --theme-comp-workspace-git-discard-bg: color-mix(in srgb, var(--theme-sem-danger-bg) 74%, var(--theme-sem-surface-2) 26%);
+  --theme-comp-workspace-git-discard-border: rgba(216, 160, 148, 0.22);
+  --theme-comp-workspace-git-discard-text: var(--theme-sem-accent-danger);
+  --theme-comp-workspace-git-discard-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-discard-bg) 84%, var(--theme-sem-accent-danger) 16%);
+  --theme-comp-workspace-git-commit-bg: color-mix(in srgb, var(--theme-sem-accent-primary) 86%, black 14%);
+  --theme-comp-workspace-git-commit-border: transparent;
+  --theme-comp-workspace-git-commit-text: var(--theme-sem-text-on-accent);
+  --theme-comp-workspace-git-commit-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-commit-bg) 86%, white 14%);
+  --theme-comp-workspace-git-push-bg: color-mix(in srgb, var(--theme-sem-success-bg) 78%, var(--theme-sem-surface-2) 22%);
+  --theme-comp-workspace-git-push-border: rgba(151, 199, 160, 0.22);
+  --theme-comp-workspace-git-push-text: var(--theme-sem-accent-success);
+  --theme-comp-workspace-git-push-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-push-bg) 84%, var(--theme-sem-accent-success) 16%);
+  --theme-comp-workspace-git-disabled-opacity: 0.58;
 }
 
 html[data-theme='abyss-blue'] {
@@ -361,6 +403,27 @@ html[data-theme='abyss-blue'] {
   --theme-comp-action-neutral-border: var(--theme-sem-border-default);
   --theme-comp-action-neutral-text: var(--theme-sem-text-primary);
   --theme-comp-action-neutral-hover-bg: color-mix(in srgb, var(--theme-comp-action-neutral-bg) 84%, var(--theme-sem-hover) 16%);
+  --theme-comp-workspace-git-bg: color-mix(in srgb, var(--theme-sem-bg-project) 74%, var(--theme-sem-surface-2) 26%);
+  --theme-comp-workspace-git-input-bg: color-mix(in srgb, var(--theme-sem-surface-2) 78%, var(--theme-sem-bg-project) 22%);
+  --theme-comp-workspace-git-input-border: var(--theme-sem-border-strong);
+  --theme-comp-workspace-git-input-focus: var(--theme-sem-accent-primary);
+  --theme-comp-workspace-git-stash-bg: color-mix(in srgb, var(--theme-sem-info-bg) 70%, var(--theme-sem-surface-2) 30%);
+  --theme-comp-workspace-git-stash-border: rgba(158, 196, 240, 0.2);
+  --theme-comp-workspace-git-stash-text: var(--theme-sem-accent-info);
+  --theme-comp-workspace-git-stash-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-stash-bg) 84%, var(--theme-sem-accent-info) 16%);
+  --theme-comp-workspace-git-discard-bg: color-mix(in srgb, var(--theme-sem-danger-bg) 74%, var(--theme-sem-surface-2) 26%);
+  --theme-comp-workspace-git-discard-border: rgba(232, 160, 164, 0.22);
+  --theme-comp-workspace-git-discard-text: var(--theme-sem-accent-danger);
+  --theme-comp-workspace-git-discard-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-discard-bg) 84%, var(--theme-sem-accent-danger) 16%);
+  --theme-comp-workspace-git-commit-bg: color-mix(in srgb, var(--theme-sem-accent-primary) 86%, black 14%);
+  --theme-comp-workspace-git-commit-border: transparent;
+  --theme-comp-workspace-git-commit-text: var(--theme-sem-text-on-accent);
+  --theme-comp-workspace-git-commit-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-commit-bg) 86%, white 14%);
+  --theme-comp-workspace-git-push-bg: color-mix(in srgb, var(--theme-sem-success-bg) 78%, var(--theme-sem-surface-2) 22%);
+  --theme-comp-workspace-git-push-border: rgba(159, 216, 207, 0.22);
+  --theme-comp-workspace-git-push-text: var(--theme-sem-accent-success);
+  --theme-comp-workspace-git-push-hover-bg: color-mix(in srgb, var(--theme-comp-workspace-git-push-bg) 84%, var(--theme-sem-accent-success) 16%);
+  --theme-comp-workspace-git-disabled-opacity: 0.58;
 }
 
 html[data-theme='mist-paper'] {
@@ -456,4 +519,25 @@ html[data-theme='mist-paper'] {
   --theme-comp-action-neutral-border: rgba(104, 122, 148, 0.18);
   --theme-comp-action-neutral-text: var(--theme-sem-text-primary);
   --theme-comp-action-neutral-hover-bg: color-mix(in srgb, #e4ebf5 78%, #d2dbe8 22%);
+  --theme-comp-workspace-git-bg: color-mix(in srgb, #eef3f8 72%, #d9e1ec 28%);
+  --theme-comp-workspace-git-input-bg: color-mix(in srgb, white 82%, #dde5ef 18%);
+  --theme-comp-workspace-git-input-border: rgba(104, 122, 148, 0.22);
+  --theme-comp-workspace-git-input-focus: var(--theme-sem-accent-primary);
+  --theme-comp-workspace-git-stash-bg: color-mix(in srgb, #dce9f6 80%, white 20%);
+  --theme-comp-workspace-git-stash-border: rgba(95, 125, 168, 0.22);
+  --theme-comp-workspace-git-stash-text: #5675a0;
+  --theme-comp-workspace-git-stash-hover-bg: color-mix(in srgb, #cfdef1 80%, white 20%);
+  --theme-comp-workspace-git-discard-bg: color-mix(in srgb, #f4dde1 82%, white 18%);
+  --theme-comp-workspace-git-discard-border: rgba(191, 110, 120, 0.22);
+  --theme-comp-workspace-git-discard-text: #b55f6a;
+  --theme-comp-workspace-git-discard-hover-bg: color-mix(in srgb, #efcfd5 80%, white 20%);
+  --theme-comp-workspace-git-commit-bg: #6e86bf;
+  --theme-comp-workspace-git-commit-border: transparent;
+  --theme-comp-workspace-git-commit-text: #f8fbff;
+  --theme-comp-workspace-git-commit-hover-bg: #617ab6;
+  --theme-comp-workspace-git-push-bg: color-mix(in srgb, #d8ece7 82%, white 18%);
+  --theme-comp-workspace-git-push-border: rgba(47, 125, 110, 0.2);
+  --theme-comp-workspace-git-push-text: #2f7d6e;
+  --theme-comp-workspace-git-push-hover-bg: color-mix(in srgb, #cce6df 80%, white 20%);
+  --theme-comp-workspace-git-disabled-opacity: 0.5;
 }
