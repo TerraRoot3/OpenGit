@@ -1025,7 +1025,7 @@ const clearWorkspacePreload = () => {
 }
 
 const scheduleAiSessionsPreload = () => {
-  if (aiSessionsMounted.value || typeof window === 'undefined') return
+  if (aiSessionsMounted.value || !props.isActive || typeof window === 'undefined') return
 
   clearAiSessionsPreload()
 
@@ -1043,7 +1043,7 @@ const scheduleAiSessionsPreload = () => {
 }
 
 const scheduleWorkspacePreload = () => {
-  if (workspaceMounted.value || typeof window === 'undefined') return
+  if (workspaceMounted.value || !props.isActive || typeof window === 'undefined') return
 
   clearWorkspacePreload()
 
@@ -2924,13 +2924,13 @@ watch(() => props.path, async (newPath, oldPath) => {
     activePipelineSummary.value = null
     // 恢复该项目保存的视图状态和展开状态（electron-store）
     currentView.value = await getSavedCurrentView(newPath)
-    if (currentView.value === 'terminal') {
+    if (props.isActive && currentView.value === 'terminal') {
       terminalMounted.value = true
     }
-    if (currentView.value === 'ai-sessions') {
+    if (props.isActive && currentView.value === 'ai-sessions') {
       aiSessionsMounted.value = true
     }
-    if (currentView.value === 'workspace') {
+    if (props.isActive && currentView.value === 'workspace') {
       workspaceMounted.value = true
     }
     await restoreExpandState(newPath)
@@ -2992,8 +2992,10 @@ watch(() => props.path, async (newPath, oldPath) => {
       })
     })
 
-    scheduleAiSessionsPreload()
-    scheduleWorkspacePreload()
+    if (props.isActive) {
+      scheduleAiSessionsPreload()
+      scheduleWorkspacePreload()
+    }
     if (shouldPollProjectGitMonitor.value && isGitRepository.value !== false) {
       startProjectGitMonitor()
     }
@@ -3035,6 +3037,16 @@ watch(currentView, (view) => {
 watch(() => props.isActive, (active) => {
   if (active && currentView.value === 'terminal') {
     terminalMounted.value = true
+  }
+  if (active && currentView.value === 'ai-sessions') {
+    aiSessionsMounted.value = true
+  }
+  if (active && currentView.value === 'workspace') {
+    workspaceMounted.value = true
+  }
+  if (active) {
+    scheduleAiSessionsPreload()
+    scheduleWorkspacePreload()
   }
   if (active && props.path && isGitRepository.value !== false) {
     refreshPipelineSummary({ silent: true })

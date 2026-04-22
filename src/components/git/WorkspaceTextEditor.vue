@@ -12,6 +12,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as monaco from 'monaco-editor'
+import { useThemeStore } from '../../stores/themeStore.js'
 
 const props = defineProps({
   projectPath: { type: String, required: true },
@@ -27,13 +28,13 @@ const currentChangeLine = ref(null)
 
 let editor = null
 let layoutObserver = null
-let themeObserver = null
 let gitDiffDecorationIds = []
 /** @type {Map<string, import('monaco-editor').editor.ITextModel>} */
 const pathToModel = new Map()
 /** @type {Map<string, import('monaco-editor').editor.ICodeEditorViewState | null>} */
 const pathToViewState = new Map()
 let currentModelPath = ''
+const themeStore = useThemeStore()
 
 const DEFAULT_WORKSPACE_EDITOR_BACKGROUND = '#161b22'
 
@@ -484,17 +485,6 @@ onMounted(async () => {
   })
   layoutObserver.observe(editorContainerRef.value)
 
-  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    themeObserver = new MutationObserver(() => {
-      applyWorkspaceEditorTheme()
-      editor?.layout()
-    })
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme']
-    })
-  }
-
   await nextTick()
   await syncEditorContent()
 })
@@ -502,8 +492,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   layoutObserver?.disconnect()
   layoutObserver = null
-  themeObserver?.disconnect()
-  themeObserver = null
   disposeAllModels()
   if (editor) {
     clearGitDiffDecorations()
@@ -511,6 +499,16 @@ onBeforeUnmount(() => {
     editor = null
   }
 })
+
+watch(
+  () => themeStore.currentTheme.value,
+  async () => {
+    if (!editor) return
+    applyWorkspaceEditorTheme()
+    await nextTick()
+    editor?.layout()
+  }
+)
 
 watch(
   () => [props.activeTab?.path || '', props.activeTab?.content || '', props.isActive],

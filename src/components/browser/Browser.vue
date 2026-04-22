@@ -60,7 +60,6 @@
             <Cloud v-else-if="tab.routeType === 'remote-repo'" :size="14" />
             <Folder v-else-if="tab.routeType === 'clone-directory'" :size="14" />
             <GitBranch v-else-if="tab.routeType === 'single-project'" :size="14" />
-            <FolderGit2 v-else-if="tab.routeType === 'saved-projects'" :size="14" />
             <History v-else-if="tab.routeType === 'browsing-history'" :size="14" />
             <HardDrive v-else-if="tab.routeType === 'backup-manager'" :size="14" />
             <Puzzle v-else-if="tab.routeType === 'extension-manager'" :size="14" />
@@ -107,10 +106,6 @@
             <div class="menu-item" @click="openRemoteRepo">
               <Cloud :size="16" />
               <span>远端仓库</span>
-            </div>
-            <div class="menu-item" @click="openSavedProjects">
-              <FolderGit2 :size="16" />
-              <span>仓库管理</span>
             </div>
             <div class="menu-item" @click="openFavoritesManager">
               <Bookmark :size="16" />
@@ -404,8 +399,7 @@ import {
   Download,
   Puzzle,
   Terminal,
-  GitBranch,
-  FolderGit2
+  GitBranch
 } from 'lucide-vue-next'
 import HistoryManager from './HistoryManager.vue'
 import BackupManager from '../BackupManager.vue'
@@ -502,7 +496,7 @@ const routeConfig = {
   // 克隆目录路由（多个仓库）
   'clone-directory': {
     pattern: /^git:clone:(.+)$/,
-    component: 'GitProject',
+    component: 'ProjectDetail',
     title: (url) => {
       const path = url.replace('git:clone:', '')
       const pathParts = path.split('/')
@@ -530,15 +524,6 @@ const routeConfig = {
       const path = url.replace('git:project:', '')
       return { path }
     }
-  },
-  // 仓库管理路由
-  'saved-projects': {
-    pattern: /^git:saved$|^about:saved$/,
-    component: 'SavedProjects',
-    title: '仓库管理',
-    icon: 'FolderGit2',
-    showWebview: false,
-    defaultUrl: 'git:saved'
   },
   // 独立终端路由
   'standalone-terminal': {
@@ -1339,9 +1324,6 @@ const handleNativeMenuAction = (action) => {
     case 'remote-repo':
       openRemoteRepo()
       break
-    case 'saved-projects':
-      openSavedProjects()
-      break
     case 'favorites-manager':
       openFavoritesManager()
       break
@@ -1441,28 +1423,6 @@ const openRemoteRepo = () => {
     switchBrowserTab(tab.id)
     currentUrl.value = 'git:remote'
     urlInput.value = 'git:remote'
-  }
-}
-
-// 打开仓库管理
-const openSavedProjects = () => {
-  console.log('📁 打开仓库管理')
-  showMenu.value = false
-  // 检查是否已经有仓库管理标签页
-  const existingTab = browserTabs.value.find(tab => tab.routeType === 'saved-projects')
-  if (existingTab) {
-    console.log('📁 找到已存在的仓库管理标签页:', existingTab.id)
-    switchBrowserTab(existingTab.id)
-    currentUrl.value = 'git:saved'
-    urlInput.value = 'git:saved'
-  } else {
-    console.log('📁 创建新的仓库管理标签页')
-    const tab = createBrowserTab('git:saved', '仓库管理')
-    tab.type = 'saved-projects'
-    console.log('📁 创建的标签页:', tab)
-    switchBrowserTab(tab.id)
-    currentUrl.value = 'git:saved'
-    urlInput.value = 'git:saved'
   }
 }
 
@@ -2384,8 +2344,7 @@ const handleUrlInputEnter = async () => {
   // 新标签页或功能性页面：在当前标签内加载网页
   if (routeType === 'new-tab' || routeType === 'favorites-manager' ||
       routeType === 'password-manager' || routeType === 'remote-repo' ||
-      routeType === 'clone-directory' || routeType === 'single-project' ||
-      routeType === 'saved-projects') {
+      routeType === 'clone-directory' || routeType === 'single-project') {
     console.log('📄 在当前标签内加载:', normalizedInputUrl, 'routeType:', routeType)
     await navigateToUrl(normalizedInputUrl, { forceCurrentTab: true })
     return
@@ -2588,7 +2547,7 @@ const goHome = async () => {
 }
 
 // 处理 GitProject 组件的 navigate 事件
-// handleGitProjectNavigate 现在直接调用统一的 navigateToUrl，但强制在新标签页打开
+// 兼容旧目录容器页的 navigate 事件
 const handleGitProjectNavigate = async (type, title, props) => {
   console.log('🔄 Browser: handleGitProjectNavigate 被调用:', { type, title, props })
   

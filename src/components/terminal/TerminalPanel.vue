@@ -241,6 +241,7 @@ import {
 import { isBufferViewportAtBottom } from './terminalViewportState.mjs'
 import { scheduleViewportRevealSync, cancelViewportRevealSync } from './terminalViewportSync.mjs'
 import TerminalSplitNode from './TerminalSplitNode.vue'
+import { useThemeStore } from '../../stores/themeStore.js'
 import '@xterm/xterm/css/xterm.css'
 
 const emit = defineEmits(['close', 'pane-title'])
@@ -274,7 +275,7 @@ const activeTabId = ref(null)
 const terminals = ref([])
 const activeTermId = ref(null)
 const terminalCache = new Map()
-let terminalThemeObserver = null
+const themeStore = useThemeStore()
 const paneElements = new Map()
 const showCwdMenu = ref(false)
 const cwdMenuRef = ref(null)
@@ -2522,13 +2523,6 @@ onMounted(() => {
   document.addEventListener('keydown', handleTerminalKeydown, true)
   window.addEventListener('dragover', handleGlobalDragOver, true)
   window.addEventListener('drop', handleGlobalDrop, true)
-  terminalThemeObserver = new MutationObserver(() => {
-    refreshAllTerminalThemes()
-  })
-  terminalThemeObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-theme']
-  })
 })
 
 onUnmounted(() => {
@@ -2551,8 +2545,6 @@ onUnmounted(() => {
     clearTimeout(singlePanePtyResizeTimer)
     singlePanePtyResizeTimer = null
   }
-  terminalThemeObserver?.disconnect()
-  terminalThemeObserver = null
   clearDeferredSinglePanePtyResize()
   lastSinglePanePtyResizeAt = 0
   document.removeEventListener('click', handleDocumentClick)
@@ -2568,6 +2560,13 @@ onUnmounted(() => {
   terminalCache.clear()
   unregister(ipcHandler)
 })
+
+watch(
+  () => themeStore.currentTheme.value,
+  () => {
+    refreshAllTerminalThemes()
+  }
+)
 
 defineExpose({
   clearTerminal,

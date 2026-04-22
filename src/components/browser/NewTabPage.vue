@@ -52,12 +52,16 @@
       v-else-if="routeType === 'remote-repo'"
     />
     
-    <!-- 克隆目录（多个仓库） -->
-    <GitProject 
+    <!-- 目录入口兼容：直接按项目详情打开 -->
+    <ProjectDetail 
       v-else-if="routeType === 'clone-directory'"
       :path="routeProps?.path"
+      :is-favorite="favoriteProjectPaths.includes(routeProps?.path)"
       :is-active="isActive"
-      @navigate="handleNavigate"
+      @branch-changed="(payload) => emit('project-branch-changed', payload)"
+      @status-updated="(payload) => emit('project-status-updated', payload)"
+      @pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
+      @toggle-favorite="(payload) => emit('toggle-project-favorite', payload)"
     />
     
     <!-- 单个 Git 仓库 -->
@@ -70,11 +74,6 @@
       @status-updated="(payload) => emit('project-status-updated', payload)"
       @pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
       @toggle-favorite="(payload) => emit('toggle-project-favorite', payload)"
-    />
-    
-    <!-- 已保存的仓库 -->
-    <ProjectManager 
-      v-else-if="routeType === 'saved-projects'"
     />
     
     <!-- 历史记录 -->
@@ -119,9 +118,7 @@ import WebView from '../webview/WebView.vue'
 import FavoritesManager from './FavoritesManager.vue'
 import PasswordManager from './PasswordManager.vue'
 import RemoteRepo from '../git/RemoteRepo.vue'
-import GitProject from '../git/GitProject.vue'
 import ProjectDetail from '../git/ProjectDetail.vue'
-import ProjectManager from '../git/ProjectManager.vue'
 import HistoryManager from './HistoryManager.vue'
 import BackupManager from '../BackupManager.vue'
 import ExtensionManager from '../ExtensionManager.vue'

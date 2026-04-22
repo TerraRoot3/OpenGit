@@ -1811,7 +1811,6 @@ ipcMain.handle('browser-show-native-menu', async (event) => {
     let selectedAction = null
     const menu = Menu.buildFromTemplate([
       { label: '远端仓库', click: () => { selectedAction = 'remote-repo' } },
-      { label: '仓库管理', click: () => { selectedAction = 'saved-projects' } },
       { label: '收藏管理', click: () => { selectedAction = 'favorites-manager' } },
       { label: '历史记录', click: () => { selectedAction = 'browsing-history' } },
       { label: '密码管理', click: () => { selectedAction = 'password-manager' } },
@@ -1953,7 +1952,6 @@ ipcMain.handle('browser-show-floating-menu', async (event, payload = {}) => {
 <body>
   <div class="menu">
     <div class="item" data-action="remote-repo"><span class="icon">☁</span><span>远端仓库</span></div>
-    <div class="item" data-action="saved-projects"><span class="icon">▦</span><span>仓库管理</span></div>
     <div class="item" data-action="favorites-manager"><span class="icon">☆</span><span>收藏管理</span></div>
     <div class="item" data-action="browsing-history"><span class="icon">◷</span><span>历史记录</span></div>
     <div class="item" data-action="password-manager"><span class="icon">⌘</span><span>密码管理</span></div>
