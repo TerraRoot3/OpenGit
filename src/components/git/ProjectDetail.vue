@@ -50,8 +50,8 @@
             <button class="mr-single-btn" @click="openMRDialog" title="创建 Merge Request">
               <GitMerge :size="14" /> MR
             </button>
-          <button class="gitlab-open-btn" @click="openWithGitLab" title="打开 GitLab">
-            <ExternalLink :size="14" /> GitLab
+          <button class="gitlab-open-btn" @click="openWithGitRemote" :title="`打开 ${gitRemoteProviderLabel}`">
+            <ExternalLink :size="14" /> {{ gitRemoteProviderLabel }}
           </button>
           </template>
           <button class="finder-open-btn" @click="openInFinder" :title="`在${systemFileManagerLabel}中打开`">
@@ -1204,7 +1204,7 @@ const pipelineStatusClass = computed(() => `pipeline-status-${activePipelineSumm
 const pipelineStatusText = computed(() => {
   const pipeline = activePipelineSummary.value
   if (!pipeline) return ''
-  const refText = pipeline.isTag ? `标签 ${pipeline.ref}` : `分支 ${pipeline.ref}`
+  const refText = pipeline.ref ? (pipeline.isTag ? `标签 ${pipeline.ref}` : `分支 ${pipeline.ref}`) : (pipeline.name || '最近运行')
   if (pipeline.status === 'success') return `刚刚成功 · ${refText}`
   if (pipeline.status === 'failed') return `执行失败 · ${refText}`
   if (pipeline.status === 'canceled') return `已取消 · ${refText}`
@@ -1214,7 +1214,7 @@ const pipelineStatusText = computed(() => {
 const pipelineStatusTitle = computed(() => {
   const pipeline = activePipelineSummary.value
   if (!pipeline) return ''
-  return `当前运行中的 GitLab Pipeline：${pipelineStatusText.value}`
+  return `当前运行中的 ${(pipeline.providerLabel || '流水线')}：${pipelineStatusText.value}`
 })
 
 const showWorkspaceNavDot = computed(() =>
@@ -1267,8 +1267,59 @@ const syncHasPendingFiles = (nextValue, { emitWhenChanged = true } = {}) => {
 }
 
 const getPipelineInlineRef = (pipeline) => {
-  if (!pipeline?.ref) return ''
+  if (!pipeline?.ref) return pipeline?.name || ''
   return pipeline.isTag ? `标签 ${pipeline.ref}` : pipeline.ref
+}
+
+const parseRemoteWebUrl = (remoteUrl = '') => {
+  const normalized = String(remoteUrl || '').trim()
+  if (!normalized) return { webUrl: '', providerLabel: '仓库' }
+
+  let webUrl = normalized
+  if (normalized.startsWith('git@')) {
+    const match = normalized.match(/^git@([^:]+):(.+?)(?:\.git)?$/)
+    if (match) {
+      webUrl = `https://${match[1]}/${match[2]}`
+    }
+  } else {
+    webUrl = normalized.replace(/\.git$/, '')
+  }
+
+  const lower = webUrl.toLowerCase()
+  let providerLabel = '仓库'
+  if (lower.includes('github.com')) providerLabel = 'GitHub'
+  else if (lower.includes('gitlab')) providerLabel = 'GitLab'
+  else if (lower.includes('gitee.com')) providerLabel = 'Gitee'
+
+  return {
+    webUrl,
+    providerLabel
+  }
+}
+
+const gitRemoteProviderLabelState = ref('仓库')
+const gitRemoteProviderLabel = computed(() => {
+  const pipelineProvider = activePipelineSummary.value?.providerLabel
+  if (pipelineProvider) return pipelineProvider
+  return gitRemoteProviderLabelState.value
+})
+
+const refreshGitRemoteProviderLabel = async () => {
+  if (!props.path || !showGitFeatureUi.value) {
+    gitRemoteProviderLabelState.value = '仓库'
+    return
+  }
+  try {
+    const result = await executeCommand(`cd "${props.path}" && git remote get-url origin`)
+    if (!result.success || !result.output?.trim()) {
+      gitRemoteProviderLabelState.value = '仓库'
+      return
+    }
+    const { providerLabel } = parseRemoteWebUrl(result.output.trim())
+    gitRemoteProviderLabelState.value = providerLabel || '仓库'
+  } catch {
+    gitRemoteProviderLabelState.value = '仓库'
+  }
 }
 
 const clearPipelineSummaryTimer = () => {
@@ -1347,7 +1398,7 @@ const schedulePipelineSummaryRefresh = () => {
 }
 
 const refreshPipelineSummary = async ({ silent = false } = {}) => {
-  if (!props.path || isGitRepository.value === false || !window.electronAPI?.gitlabProjectPipelines) {
+  if (!props.path || isGitRepository.value === false || !window.electronAPI?.projectPipelines) {
     activePipelineSummary.value = null
     return
   }
@@ -1356,14 +1407,14 @@ const refreshPipelineSummary = async ({ silent = false } = {}) => {
   pipelineSummaryInFlight = true
 
   try {
-    const result = await window.electronAPI.gitlabProjectPipelines({
+    const result = await window.electronAPI.projectPipelines({
       projectPath: props.path,
       limit: 8
     })
 
     if (!result?.success) {
       if (!silent) {
-        debugLog('ℹ️ [ProjectDetailNew] GitLab Pipeline 摘要不可用:', result?.message)
+        debugLog('ℹ️ [ProjectDetailNew] 流水线摘要不可用:', result?.message)
       }
       activePipelineSummary.value = null
       pipelineSummaryHoldUntil = 0
@@ -1397,7 +1448,7 @@ const refreshPipelineSummary = async ({ silent = false } = {}) => {
     }
   } catch (error) {
     if (!silent) {
-      debugLog('ℹ️ [ProjectDetailNew] 刷新 GitLab Pipeline 摘要失败:', error.message)
+      debugLog('ℹ️ [ProjectDetailNew] 刷新流水线摘要失败:', error.message)
     }
     if (!(isTerminalPipelineStatus(activePipelineSummary.value?.status) && pipelineSummaryHoldUntil > Date.now())) {
       activePipelineSummary.value = null
@@ -2835,30 +2886,25 @@ const confirmCreateMR = async () => {
 }
 
 // ==================== 外部应用 ====================
-const openWithGitLab = async () => {
+const openWithGitRemote = async () => {
   if (!props.path) return
   try {
     const result = await executeCommand(`cd "${props.path}" && git remote get-url origin`)
     if (!result.success || !result.output?.trim()) {
       throw new Error('无法获取 Git remote URL')
     }
-    
-    let gitlabUrl = result.output.trim()
-    if (gitlabUrl.startsWith('git@')) {
-      const match = gitlabUrl.match(/git@(.+?):(.+?)\.git$/)
-      if (match) {
-        gitlabUrl = `https://${match[1]}/${match[2]}`
-      }
-    } else {
-      gitlabUrl = gitlabUrl.replace(/\.git$/, '')
+
+    const { webUrl, providerLabel } = parseRemoteWebUrl(result.output.trim())
+    if (!webUrl) {
+      throw new Error('无法解析 Git remote URL')
     }
-    
-    debugLog('🔗 [ProjectDetailNew] 打开 GitLab:', gitlabUrl)
+
+    debugLog(`🔗 [ProjectDetailNew] 打开 ${providerLabel}:`, webUrl)
     if (window.electronAPI?.openUrlInNewTab) {
-      window.electronAPI.openUrlInNewTab(gitlabUrl)
+      window.electronAPI.openUrlInNewTab(webUrl)
     }
   } catch (error) {
-    console.error('打开 GitLab 失败:', error)
+    console.error('打开仓库页面失败:', error)
   }
 }
 
@@ -2965,6 +3011,7 @@ watch(() => props.path, async (newPath, oldPath) => {
     }
     await restoreExpandState(newPath)
     await loadBranchesPanelWidth(newPath)
+    await refreshGitRemoteProviderLabel()
 
     // 切换项目时先清空所有数据，防止显示旧项目的数据
     branchStatus.value = null
@@ -3196,6 +3243,7 @@ onMounted(async () => {
   syncProjectDetailDebugState()
   if (props.path) {
     await loadBranchesPanelWidth(props.path)
+    await refreshGitRemoteProviderLabel()
   }
   // 监听窗口焦点事件
   window.addEventListener('focus', handleWindowFocus)

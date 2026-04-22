@@ -59,7 +59,7 @@
               v-if="!loading && activePipelines.length === 0 && recentPipelines.length === 0"
               class="pipeline-tip"
             >
-              当前项目暂无可展示的 GitLab Pipeline
+              当前项目暂无可展示的流水线
             </div>
           </template>
         </div>
@@ -76,7 +76,7 @@
             class="open-web-btn"
             @click="openPipelineWebUrl(selectedPipeline.webUrl)"
           >
-            打开 GitLab
+            打开 {{ selectedPipeline?.providerLabel || pipelineProviderLabel }}
           </button>
         </div>
 
@@ -161,10 +161,18 @@ const activePipelines = ref([])
 const recentPipelines = ref([])
 const selectedPipelineId = ref(null)
 const pipelineDetail = ref(null)
+const pipelineProvider = ref('')
 const isDocumentVisible = ref(typeof document === 'undefined' ? true : document.visibilityState === 'visible')
 let pollTimer = null
 
 const totalPipelineCount = computed(() => activePipelines.value.length + recentPipelines.value.length)
+const pipelineProviderLabel = computed(() => {
+  if (pipelineDetail.value?.providerLabel) return pipelineDetail.value.providerLabel
+  if (selectedPipeline.value?.providerLabel) return selectedPipeline.value.providerLabel
+  if (pipelineProvider.value === 'github') return 'GitHub'
+  if (pipelineProvider.value === 'gitlab') return 'GitLab'
+  return '流水线'
+})
 const selectedPipeline = computed(() => {
   const pipeline = activePipelines.value.find(item => item.id === selectedPipelineId.value)
     || recentPipelines.value.find(item => item.id === selectedPipelineId.value)
@@ -208,6 +216,7 @@ const statusTextClass = (status) => `status-text-${status || 'unknown'}`
 
 const getPipelineDisplayRef = (pipeline) => {
   if (!pipeline) return '-'
+  if (!pipeline.ref) return pipeline.name || `运行 #${pipeline.iid || pipeline.id}`
   return pipeline.isTag ? `标签 · ${pipeline.ref}` : `分支 · ${pipeline.ref}`
 }
 
@@ -269,7 +278,7 @@ const loadPipelineDetail = async (pipelineId = selectedPipelineId.value, { silen
   detailError.value = ''
 
   try {
-    const result = await window.electronAPI.gitlabPipelineDetail({
+    const result = await window.electronAPI.pipelineDetail({
       projectPath: props.projectPath,
       pipelineId
     })
@@ -292,15 +301,16 @@ const loadPipelines = async ({ silent = false } = {}) => {
   if (!silent) errorMessage.value = ''
 
   try {
-    const result = await window.electronAPI.gitlabProjectPipelines({
+    const result = await window.electronAPI.projectPipelines({
       projectPath: props.projectPath,
       limit: 12
     })
 
     if (!result?.success) {
-      throw new Error(result?.message || '读取 GitLab Pipeline 失败')
+      throw new Error(result?.message || '读取流水线失败')
     }
 
+    pipelineProvider.value = result.data?.provider || ''
     activePipelines.value = result.data?.activePipelines || []
     recentPipelines.value = result.data?.recentPipelines || []
 
@@ -318,7 +328,8 @@ const loadPipelines = async ({ silent = false } = {}) => {
       detailError.value = ''
     }
   } catch (error) {
-    errorMessage.value = error.message || '读取 GitLab Pipeline 失败'
+    errorMessage.value = error.message || '读取流水线失败'
+    pipelineProvider.value = ''
     activePipelines.value = []
     recentPipelines.value = []
     pipelineDetail.value = null
@@ -340,6 +351,7 @@ const handleVisibilityChange = () => {
 watch(() => props.projectPath, () => {
   selectedPipelineId.value = null
   pipelineDetail.value = null
+  pipelineProvider.value = ''
   loadPipelines()
 }, { immediate: true })
 

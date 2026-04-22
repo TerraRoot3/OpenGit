@@ -38,6 +38,41 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
     return null
   }
 
+  const parseGithubRemote = (remoteUrl = '') => {
+    const normalized = typeof remoteUrl === 'string' ? remoteUrl.trim() : ''
+    if (!normalized) return null
+
+    let match = normalized.match(/^git@github\.com:(.+?)(?:\.git)?$/)
+    if (match) {
+      const repoPath = match[1].replace(/\.git$/, '')
+      const [owner, repo] = repoPath.split('/')
+      if (owner && repo) {
+        return {
+          baseUrl: 'https://github.com',
+          repoPath,
+          owner,
+          repo
+        }
+      }
+    }
+
+    match = normalized.match(/^https:\/\/github\.com\/(.+?)(?:\.git)?$/)
+    if (match) {
+      const repoPath = match[1].replace(/\.git$/, '')
+      const [owner, repo] = repoPath.split('/')
+      if (owner && repo) {
+        return {
+          baseUrl: 'https://github.com',
+          repoPath,
+          owner,
+          repo
+        }
+      }
+    }
+
+    return null
+  }
+
   const findMatchingGitlabConfig = ({ baseUrl = '', repoPath = '' } = {}) => {
     if (!baseUrl) return null
     const projectConfigKey = `gitlab-config-${repoPath.replace(/[^a-zA-Z0-9]/g, '_')}`
@@ -53,6 +88,16 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
 
     const gitlabHistory = store.get('gitlabHistory', [])
     return gitlabHistory.find(config => config?.url === baseUrl && config?.token) || null
+  }
+
+  const findMatchingGithubConfig = () => {
+    const currentGitlabConfig = store.get('gitlab-config', null)
+    if (currentGitlabConfig?.platform === 'github' && currentGitlabConfig?.token) {
+      return currentGitlabConfig
+    }
+
+    const gitlabHistory = store.get('gitlabHistory', [])
+    return gitlabHistory.find(config => config?.platform === 'github' && config?.token) || null
   }
 
   const resolveGitlabRepoContext = async (repoPath) => {
@@ -98,6 +143,47 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
     }
   }
 
+  const resolveGithubRepoContext = async (repoPath) => {
+    if (!repoPath) {
+      return { success: false, message: '缺少项目路径' }
+    }
+
+    const remoteResult = await executeGitCommand(['git', 'remote', 'get-url', 'origin'], repoPath)
+    if (!remoteResult.success || !remoteResult.stdout?.trim()) {
+      return { success: false, message: '未检测到 origin remote' }
+    }
+
+    const parsedRemote = parseGithubRemote(remoteResult.stdout.trim())
+    if (!parsedRemote?.owner || !parsedRemote?.repo) {
+      return { success: false, message: '无法解析 GitHub remote' }
+    }
+
+    const matchedConfig = findMatchingGithubConfig()
+
+    return {
+      success: true,
+      baseUrl: parsedRemote.baseUrl,
+      repoPath,
+      remoteUrl: remoteResult.stdout.trim(),
+      projectPath: parsedRemote.repoPath,
+      owner: parsedRemote.owner,
+      repo: parsedRemote.repo,
+      token: matchedConfig?.token || ''
+    }
+  }
+
+  const buildGithubHeaders = (token = '') => {
+    const headers = {
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'OpenGit/1.0'
+    }
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+    return headers
+  }
+
   const formatPipeline = (pipeline = {}) => ({
     id: pipeline.id,
     iid: pipeline.iid,
@@ -112,7 +198,9 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
     finishedAt: pipeline.finished_at || '',
     name: pipeline.name || '',
     isTag: Boolean(pipeline.tag),
-    coverage: pipeline.coverage ?? null
+    coverage: pipeline.coverage ?? null,
+    provider: pipeline.provider || 'gitlab',
+    providerLabel: pipeline.providerLabel || 'GitLab'
   })
 
   const formatJob = (job = {}) => ({
@@ -128,7 +216,65 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
     queuedDuration: typeof job.queued_duration === 'number' ? job.queued_duration : null,
     webUrl: job.web_url || '',
     user: job.user?.name || '',
-    runner: job.runner?.description || ''
+    runner: job.runner?.description || '',
+    provider: job.provider || 'gitlab'
+  })
+
+  const normalizeGithubStatus = ({ status = '', conclusion = '' } = {}) => {
+    const normalizedStatus = String(status || '').toLowerCase()
+    const normalizedConclusion = String(conclusion || '').toLowerCase()
+
+    if (['queued', 'requested', 'waiting', 'pending'].includes(normalizedStatus)) return 'pending'
+    if (normalizedStatus === 'in_progress') return 'running'
+    if (normalizedStatus !== 'completed') return normalizedStatus || 'unknown'
+
+    if (normalizedConclusion === 'success') return 'success'
+    if (['failure', 'timed_out', 'startup_failure'].includes(normalizedConclusion)) return 'failed'
+    if (normalizedConclusion === 'cancelled') return 'canceled'
+    if (['skipped', 'neutral', 'action_required', 'stale'].includes(normalizedConclusion)) return 'skipped'
+    return normalizedConclusion || 'unknown'
+  }
+
+  const formatGithubRun = (run = {}) => ({
+    id: run.id,
+    iid: run.run_number,
+    status: normalizeGithubStatus({ status: run.status, conclusion: run.conclusion }),
+    ref: run.head_branch || '',
+    sha: run.head_sha || '',
+    source: run.event || '',
+    webUrl: run.html_url || '',
+    createdAt: run.created_at || '',
+    updatedAt: run.updated_at || '',
+    startedAt: run.run_started_at || run.created_at || '',
+    finishedAt: run.status === 'completed' ? (run.updated_at || '') : '',
+    name: run.name || run.display_title || '',
+    isTag: false,
+    coverage: null,
+    provider: 'github',
+    providerLabel: 'GitHub',
+    workflowName: run.name || '',
+    displayTitle: run.display_title || '',
+    nativeStatus: run.status || '',
+    nativeConclusion: run.conclusion || ''
+  })
+
+  const formatGithubJob = (job = {}) => ({
+    id: job.id,
+    name: job.name || '',
+    stage: 'jobs',
+    status: normalizeGithubStatus({ status: job.status, conclusion: job.conclusion }),
+    allowFailure: false,
+    createdAt: job.started_at || '',
+    startedAt: job.started_at || '',
+    finishedAt: job.completed_at || '',
+    duration: (job.started_at && job.completed_at)
+      ? Math.max(0, (new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000)
+      : null,
+    queuedDuration: null,
+    webUrl: job.html_url || '',
+    user: '',
+    runner: job.runner_name || '',
+    provider: 'github'
   })
 
   const groupJobsByStage = (jobs = []) => {
@@ -519,6 +665,236 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
       return {
         success: false,
         message: `获取 GitLab pipeline 详情失败: ${error.message}`
+      }
+    }
+  })
+
+  ipcMain.handle('project-pipelines', async (event, { projectPath, limit = 12 } = {}) => {
+    try {
+      const gitlabContext = await resolveGitlabRepoContext(projectPath)
+      if (gitlabContext.success) {
+        const pipelinesUrl = `${gitlabContext.baseUrl}/api/v4/projects/${gitlabContext.projectId}/pipelines?per_page=${Math.max(1, Math.min(limit, 30))}&order_by=updated_at&sort=desc`
+        const response = await fetch(pipelinesUrl, {
+          headers: {
+            'Authorization': `Bearer ${gitlabContext.token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'OpenGit/1.0'
+          }
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          safeError('❌ 获取 GitLab pipelines 失败:', response.status, errorText)
+          return {
+            success: false,
+            message: `获取 GitLab pipelines 失败: ${response.status} ${response.statusText}`
+          }
+        }
+
+        const pipelines = (await response.json()).map(formatPipeline)
+        const activePipelines = pipelines.filter(pipeline => ACTIVE_PIPELINE_STATUSES.has(pipeline.status))
+        const recentPipelines = pipelines.filter(pipeline => !ACTIVE_PIPELINE_STATUSES.has(pipeline.status))
+
+        return {
+          success: true,
+          data: {
+            provider: 'gitlab',
+            providerLabel: 'GitLab',
+            context: {
+              baseUrl: gitlabContext.baseUrl,
+              projectPath: gitlabContext.projectPath,
+              projectId: gitlabContext.projectId
+            },
+            activePipelines,
+            recentPipelines,
+            currentRunning: activePipelines[0] || null
+          }
+        }
+      }
+
+      const githubContext = await resolveGithubRepoContext(projectPath)
+      if (githubContext.success) {
+        const runsUrl = `${GITHUB_API_URL}/repos/${githubContext.owner}/${githubContext.repo}/actions/runs?per_page=${Math.max(1, Math.min(limit, 30))}`
+        const response = await fetch(runsUrl, {
+          headers: buildGithubHeaders(githubContext.token)
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          safeError('❌ 获取 GitHub Actions runs 失败:', response.status, errorText)
+          if (response.status === 403 || response.status === 404) {
+            return {
+              success: false,
+              message: githubContext.token
+                ? `获取 GitHub Actions 失败: ${response.status} ${response.statusText}`
+                : '当前 GitHub 仓库的 Actions 需要配置 GitHub Token 或仓库未启用 Actions'
+            }
+          }
+          return {
+            success: false,
+            message: `获取 GitHub Actions 失败: ${response.status} ${response.statusText}`
+          }
+        }
+
+        const payload = await response.json()
+        const pipelines = Array.isArray(payload?.workflow_runs) ? payload.workflow_runs.map(formatGithubRun) : []
+        const activePipelines = pipelines.filter(pipeline => ACTIVE_PIPELINE_STATUSES.has(pipeline.status))
+        const recentPipelines = pipelines.filter(pipeline => !ACTIVE_PIPELINE_STATUSES.has(pipeline.status))
+
+        return {
+          success: true,
+          data: {
+            provider: 'github',
+            providerLabel: 'GitHub',
+            context: {
+              baseUrl: githubContext.baseUrl,
+              projectPath: githubContext.projectPath,
+              owner: githubContext.owner,
+              repo: githubContext.repo
+            },
+            activePipelines,
+            recentPipelines,
+            currentRunning: activePipelines[0] || null
+          }
+        }
+      }
+
+      return {
+        success: false,
+        message: '当前仓库暂不支持流水线'
+      }
+    } catch (error) {
+      safeError('❌ 获取统一流水线列表异常:', error)
+      return {
+        success: false,
+        message: `获取流水线失败: ${error.message}`
+      }
+    }
+  })
+
+  ipcMain.handle('pipeline-detail', async (event, { projectPath, pipelineId } = {}) => {
+    try {
+      if (!pipelineId) {
+        return { success: false, message: '缺少 pipelineId' }
+      }
+
+      const gitlabContext = await resolveGitlabRepoContext(projectPath)
+      if (gitlabContext.success) {
+        const detailUrl = `${gitlabContext.baseUrl}/api/v4/projects/${gitlabContext.projectId}/pipelines/${pipelineId}`
+        const jobsUrl = `${gitlabContext.baseUrl}/api/v4/projects/${gitlabContext.projectId}/pipelines/${pipelineId}/jobs?per_page=100&include_retried=true`
+        const [detailResponse, jobsResponse] = await Promise.all([
+          fetch(detailUrl, {
+            headers: {
+              'Authorization': `Bearer ${gitlabContext.token}`,
+              'Content-Type': 'application/json',
+              'User-Agent': 'OpenGit/1.0'
+            }
+          }),
+          fetch(jobsUrl, {
+            headers: {
+              'Authorization': `Bearer ${gitlabContext.token}`,
+              'Content-Type': 'application/json',
+              'User-Agent': 'OpenGit/1.0'
+            }
+          })
+        ])
+
+        if (!detailResponse.ok) {
+          const errorText = await detailResponse.text()
+          safeError('❌ 获取 GitLab pipeline 详情失败:', detailResponse.status, errorText)
+          return {
+            success: false,
+            message: `获取 GitLab pipeline 详情失败: ${detailResponse.status} ${detailResponse.statusText}`
+          }
+        }
+
+        if (!jobsResponse.ok) {
+          const errorText = await jobsResponse.text()
+          safeError('❌ 获取 GitLab pipeline jobs 失败:', jobsResponse.status, errorText)
+          return {
+            success: false,
+            message: `获取 GitLab pipeline jobs 失败: ${jobsResponse.status} ${jobsResponse.statusText}`
+          }
+        }
+
+        const pipeline = formatPipeline(await detailResponse.json())
+        const jobs = (await jobsResponse.json()).map(formatJob)
+
+        return {
+          success: true,
+          data: {
+            provider: 'gitlab',
+            providerLabel: 'GitLab',
+            context: {
+              baseUrl: gitlabContext.baseUrl,
+              projectPath: gitlabContext.projectPath,
+              projectId: gitlabContext.projectId
+            },
+            pipeline,
+            jobs,
+            stages: groupJobsByStage(jobs)
+          }
+        }
+      }
+
+      const githubContext = await resolveGithubRepoContext(projectPath)
+      if (githubContext.success) {
+        const detailUrl = `${GITHUB_API_URL}/repos/${githubContext.owner}/${githubContext.repo}/actions/runs/${pipelineId}`
+        const jobsUrl = `${GITHUB_API_URL}/repos/${githubContext.owner}/${githubContext.repo}/actions/runs/${pipelineId}/jobs?per_page=100`
+        const [detailResponse, jobsResponse] = await Promise.all([
+          fetch(detailUrl, { headers: buildGithubHeaders(githubContext.token) }),
+          fetch(jobsUrl, { headers: buildGithubHeaders(githubContext.token) })
+        ])
+
+        if (!detailResponse.ok) {
+          const errorText = await detailResponse.text()
+          safeError('❌ 获取 GitHub Actions run 详情失败:', detailResponse.status, errorText)
+          return {
+            success: false,
+            message: `获取 GitHub Actions 详情失败: ${detailResponse.status} ${detailResponse.statusText}`
+          }
+        }
+
+        if (!jobsResponse.ok) {
+          const errorText = await jobsResponse.text()
+          safeError('❌ 获取 GitHub Actions jobs 失败:', jobsResponse.status, errorText)
+          return {
+            success: false,
+            message: `获取 GitHub Actions jobs 失败: ${jobsResponse.status} ${jobsResponse.statusText}`
+          }
+        }
+
+        const pipeline = formatGithubRun(await detailResponse.json())
+        const jobsPayload = await jobsResponse.json()
+        const jobs = Array.isArray(jobsPayload?.jobs) ? jobsPayload.jobs.map(formatGithubJob) : []
+
+        return {
+          success: true,
+          data: {
+            provider: 'github',
+            providerLabel: 'GitHub',
+            context: {
+              baseUrl: githubContext.baseUrl,
+              projectPath: githubContext.projectPath,
+              owner: githubContext.owner,
+              repo: githubContext.repo
+            },
+            pipeline,
+            jobs,
+            stages: groupJobsByStage(jobs)
+          }
+        }
+      }
+
+      return {
+        success: false,
+        message: '当前仓库暂不支持流水线'
+      }
+    } catch (error) {
+      safeError('❌ 获取统一流水线详情异常:', error)
+      return {
+        success: false,
+        message: `获取流水线详情失败: ${error.message}`
       }
     }
   })

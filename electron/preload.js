@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitlabSearchProjects: (data) => ipcRenderer.invoke('gitlab-search-projects', data),
   gitlabProjectPipelines: (data) => ipcRenderer.invoke('gitlab-project-pipelines', data),
   gitlabPipelineDetail: (data) => ipcRenderer.invoke('gitlab-pipeline-detail', data),
+  projectPipelines: (data) => ipcRenderer.invoke('project-pipelines', data),
+  pipelineDetail: (data) => ipcRenderer.invoke('pipeline-detail', data),
   
   // GitHub API 操作
   githubTest: (data) => ipcRenderer.invoke('github-test', data),
