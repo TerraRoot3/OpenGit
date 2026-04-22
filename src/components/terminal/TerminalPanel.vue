@@ -2596,7 +2596,7 @@ onUnmounted(() => {
 })
 
 watch(
-  () => themeStore.currentTheme.value,
+  () => themeStore.resolvedTheme.value,
   () => {
     refreshAllTerminalThemes()
   }

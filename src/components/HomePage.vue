@@ -363,9 +363,17 @@ const emit = defineEmits(['navigate', 'navigate-current'])
 const { favorites, loadFavorites } = useFavorites()
 const themeStore = useThemeStore()
 const currentTheme = computed(() => themeStore.currentTheme.value)
-const themeOptions = computed(() => Object.values(themeStore.themeDefinitions))
+const resolvedTheme = computed(() => themeStore.resolvedTheme.value)
+const themeOptions = computed(() => [
+  {
+    id: themeStore.systemTheme,
+    label: '跟随系统',
+    appearance: 'system'
+  },
+  ...Object.values(themeStore.themeDefinitions)
+])
 const isLightTheme = computed(() => {
-  return themeStore.themeDefinitions[currentTheme.value]?.appearance === 'light'
+  return themeStore.themeDefinitions[resolvedTheme.value]?.appearance === 'light'
 })
 
 // 按排序显示的收藏列表
@@ -1152,6 +1160,9 @@ const handleThemeChange = (themeId) => {
 }
 
 const themeAppearanceLabel = (appearance) => {
+  if (appearance === 'system') {
+    return `系统主题 · ${themeStore.themeDefinitions[resolvedTheme.value]?.label || '自动'}`
+  }
   if (appearance === 'dark') return '深色主题'
   if (appearance === 'light') return '浅色主题'
   return '主题'
@@ -1568,6 +1579,10 @@ onUnmounted(() => {
 
 .theme-swatch-slate-dual {
   background: linear-gradient(135deg, #14171c 0%, #242931 52%, #4f8cff 100%);
+}
+
+.theme-swatch-system {
+  background: linear-gradient(135deg, #242931 0%, #4f8cff 48%, #edf3fb 100%);
 }
 
 .theme-swatch-graphite-moss {

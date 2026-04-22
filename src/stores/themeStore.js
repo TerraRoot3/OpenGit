@@ -1,20 +1,43 @@
 import { ref } from 'vue'
-import { DEFAULT_THEME, SUPPORTED_THEMES, THEME_DEFINITIONS } from '../theme/themes.js'
+import {
+  DEFAULT_THEME,
+  SUPPORTED_THEMES,
+  THEME_DEFINITIONS,
+  SYSTEM_THEME,
+  SYSTEM_DARK_THEME,
+  SYSTEM_LIGHT_THEME
+} from '../theme/themes.js'
 
 const THEME_KEY = 'opengit-theme'
 const SUPPORTED_THEME_SET = new Set(SUPPORTED_THEMES)
 
 const currentTheme = ref(DEFAULT_THEME)
+const resolvedTheme = ref(DEFAULT_THEME)
 let hydratePromise = null
+let mediaQueryList = null
+let mediaQueryListener = null
+
+const resolveSystemTheme = () => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return SYSTEM_DARK_THEME
+  }
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? SYSTEM_DARK_THEME : SYSTEM_LIGHT_THEME
+}
+
+const resolveTheme = (themeName) => {
+  if (themeName === SYSTEM_THEME) return resolveSystemTheme()
+  return SUPPORTED_THEME_SET.has(themeName) ? themeName : DEFAULT_THEME
+}
 
 const applyTheme = (themeName) => {
   if (typeof document === 'undefined') return
-  const nextTheme = SUPPORTED_THEME_SET.has(themeName) ? themeName : DEFAULT_THEME
+  const nextTheme = resolveTheme(themeName)
   document.documentElement.setAttribute('data-theme', nextTheme)
+  resolvedTheme.value = nextTheme
 }
 
 const normalizeTheme = (themeName) => (
-  SUPPORTED_THEME_SET.has(themeName) ? themeName : DEFAULT_THEME
+  themeName === SYSTEM_THEME || SUPPORTED_THEME_SET.has(themeName) ? themeName : DEFAULT_THEME
 )
 
 const readLocalTheme = () => {
@@ -25,6 +48,20 @@ const readLocalTheme = () => {
 const writeLocalTheme = (themeName) => {
   if (typeof window === 'undefined' || !window.localStorage) return
   window.localStorage.setItem(THEME_KEY, themeName)
+}
+
+const attachSystemThemeListener = () => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function' || mediaQueryListener) return
+  mediaQueryList = window.matchMedia('(prefers-color-scheme: dark)')
+  mediaQueryListener = () => {
+    if (currentTheme.value !== SYSTEM_THEME) return
+    applyTheme(SYSTEM_THEME)
+  }
+  if (typeof mediaQueryList.addEventListener === 'function') {
+    mediaQueryList.addEventListener('change', mediaQueryListener)
+  } else if (typeof mediaQueryList.addListener === 'function') {
+    mediaQueryList.addListener(mediaQueryListener)
+  }
 }
 
 export function useThemeStore() {
@@ -49,6 +86,7 @@ export function useThemeStore() {
 
   const hydrate = async () => {
     applyTheme(currentTheme.value)
+    attachSystemThemeListener()
 
     if (hydratePromise) {
       return hydratePromise
@@ -83,9 +121,11 @@ export function useThemeStore() {
 
   return {
     currentTheme,
+    resolvedTheme,
     setTheme,
     hydrate,
     supportedThemes: SUPPORTED_THEMES,
-    themeDefinitions: THEME_DEFINITIONS
+    themeDefinitions: THEME_DEFINITIONS,
+    systemTheme: SYSTEM_THEME
   }
 }

@@ -1,4 +1,7 @@
 export const DEFAULT_THEME = 'slate-dual'
+export const SYSTEM_THEME = 'system'
+export const SYSTEM_DARK_THEME = 'slate-dual'
+export const SYSTEM_LIGHT_THEME = 'cobalt-mist'
 
 export const THEME_DEFINITIONS = Object.freeze({
   'slate-dual': {

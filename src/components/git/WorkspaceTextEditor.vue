@@ -540,7 +540,7 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  () => themeStore.currentTheme.value,
+  () => themeStore.resolvedTheme.value,
   async () => {
     if (!editor) return
     applyWorkspaceEditorTheme()
