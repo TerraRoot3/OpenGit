@@ -2128,6 +2128,12 @@ const schedulePersistedSnapshot = (path = props.defaultCwd, state = null) => {
   }, 500)
 }
 
+const shouldBufferTerminalOutput = () => {
+  if (!props.isActive) return true
+  if (props.singlePaneChrome && props.suspendSinglePaneOutput) return true
+  return false
+}
+
 const flushBufferedTerminalOutput = (term) => {
   if (!term?.xterm || !term._bufferedOutput) return
   const buffered = term._bufferedOutput
@@ -2138,7 +2144,7 @@ const flushBufferedTerminalOutput = (term) => {
 
 const writeTerminalOutput = (term, chunk) => {
   if (!term?.xterm || !chunk) return
-  if (props.singlePaneChrome && props.suspendSinglePaneOutput) {
+  if (shouldBufferTerminalOutput()) {
     term._bufferedOutput = `${term._bufferedOutput || ''}${chunk}`
     term.viewportDirtyWhileHidden = true
     return
@@ -2406,6 +2412,9 @@ let resizeTimer = null
 let resizeRafId = null
 watch(() => [props.isActive, props.focusPaneFocused], ([active, paneFocused]) => {
   if (active && paneFocused && terminals.value.length > 0) {
+    for (const term of terminals.value) {
+      flushBufferedTerminalOutput(term)
+    }
     if (props.singlePaneChrome) {
       clearDeferredSinglePanePtyResize()
       return
