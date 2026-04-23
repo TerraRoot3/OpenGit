@@ -1508,8 +1508,8 @@ const detectGitRepository = async (targetPath = props.path) => {
   }
 
   try {
-    const result = await executeCommand(`cd "${targetPath}" && git rev-parse --is-inside-work-tree 2>/dev/null`)
-    const isGit = Boolean(result?.success && result?.output?.trim() === 'true')
+    const result = await window.electronAPI?.detectGitRepository?.({ path: targetPath })
+    const isGit = Boolean(result?.success && result?.isGitRepo)
     if (props.path === targetPath) {
       isGitRepository.value = isGit
     }
@@ -3020,6 +3020,10 @@ watch(() => props.path, async (newPath, oldPath) => {
     refreshing.value = false
     refreshSuccess.value = false
     statusLoading.value = false
+    projectInfo.value = {
+      path: newPath,
+      name: newPath.split('/').filter(Boolean).pop() || newPath
+    }
 
     // 再从 store 读取缓存数据立即显示
     const cachedDetail = getProjectDetail(newPath)
@@ -3059,7 +3063,7 @@ watch(() => props.path, async (newPath, oldPath) => {
           currentView.value = normalizeViewForCurrentMode(currentView.value)
           terminalMounted.value = currentView.value === 'terminal'
           aiSessionsMounted.value = currentView.value === 'ai-sessions'
-          workspaceMounted.value = false
+          workspaceMounted.value = currentView.value === 'workspace'
         }
         return
       }

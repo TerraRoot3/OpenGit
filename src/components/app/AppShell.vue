@@ -22,8 +22,11 @@
         :collapsed="sidebarCollapsed"
         :selected-root-path="selectedRootPath"
         :selected-entry-path="selectedEntryPath"
+        :current-refresh-root-path="currentRefreshRootPath"
         :can-refresh-current-root="Boolean(currentRefreshRootPath)"
         :is-current-root-refreshing="isCurrentRootRefreshing"
+        :result-message="sidebarResultMessage"
+        :result-type="sidebarResultType"
         @add-root="handleAddRoot"
         @open-group="handleOpenGroup"
         @open-repository="handleOpenRepository"
@@ -80,6 +83,9 @@ const REPOSITORY_WARMUP_CONCURRENCY = 4
 const isWindowActive = ref(true)
 const favoriteProjectPaths = ref([])
 let postMountWarmupHandle = null
+const sidebarResultMessage = ref('')
+const sidebarResultType = ref('success')
+let sidebarResultTimer = null
 
 const sidebarWidth = computed(() => sidebarStore.sidebarWidth.value)
 const sidebarCollapsed = computed(() => sidebarStore.sidebarCollapsed.value)
@@ -271,20 +277,40 @@ const hydrateRepositoryStatusCache = async () => {
 
 const refreshRoot = async (rootPath) => {
   const path = String(rootPath || '').trim()
-  if (!path || !window.electronAPI?.getScanRootRepositories) return
+  if (!path || !window.electronAPI?.getScanRootRepositories) {
+    return { success: false, message: '目录路径无效' }
+  }
 
   sidebarStore.markRootScanning(path, true)
   try {
     const result = await window.electronAPI.getScanRootRepositories({ path })
     if (result?.success) {
       sidebarStore.setScanResult(path, result)
+      return { success: true, result }
     } else {
       sidebarStore.markRootScanning(path, false)
+      return { success: false, message: result?.message || '扫描目录失败' }
     }
   } catch (error) {
     console.error('扫描目录失败:', error)
     sidebarStore.markRootScanning(path, false)
+    return { success: false, message: error?.message || '扫描目录失败' }
   }
+}
+
+const showSidebarResult = (message, type = 'success') => {
+  const text = String(message || '').trim()
+  if (!text) return
+  sidebarResultMessage.value = text
+  sidebarResultType.value = type
+  if (sidebarResultTimer) {
+    clearTimeout(sidebarResultTimer)
+  }
+  sidebarResultTimer = setTimeout(() => {
+    sidebarResultMessage.value = ''
+    sidebarResultType.value = 'success'
+    sidebarResultTimer = null
+  }, 2400)
 }
 
 const scanRootRepositories = async (rootPath) => {
@@ -669,8 +695,13 @@ const handleAddRoot = async () => {
 const handleRefreshCurrentRoot = async () => {
   const rootPath = currentRefreshRootPath.value
   if (!rootPath || isCurrentRootRefreshing.value) return
-  await refreshRoot(rootPath)
+  const refreshResult = await refreshRoot(rootPath)
   await warmRepositoryStatusCache()
+  if (refreshResult?.success) {
+    showSidebarResult('已刷新目录', 'success')
+  } else {
+    showSidebarResult(refreshResult?.message || '刷新目录失败', 'error')
+  }
 }
 
 const handleToggleProjectFavorite = async (payload = {}) => {
@@ -842,6 +873,10 @@ const startResize = (event) => {
 }
 
 onBeforeUnmount(() => {
+  if (sidebarResultTimer != null) {
+    window.clearTimeout(sidebarResultTimer)
+    sidebarResultTimer = null
+  }
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
   if (postMountWarmupHandle != null && typeof window !== 'undefined') {

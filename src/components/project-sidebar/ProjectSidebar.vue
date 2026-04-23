@@ -41,6 +41,9 @@
     </div>
 
     <div class="project-sidebar-body">
+      <div v-if="resultMessage" class="result-toast" :class="resultType">
+        {{ resultMessage }}
+      </div>
       <div v-if="filteredGroups.length === 0" class="empty-state">
         <FolderSearch :size="18" />
         <span>{{ hasRepositories ? '没有匹配的仓库' : '先添加一个目录开始扫描' }}</span>
@@ -62,6 +65,7 @@
                 <div class="root-name">
                   <Folder :size="14" />
                   <span>{{ group.name }}</span>
+                  <RefreshCw v-if="isRefreshingGroup(group)" :size="12" class="root-loading-indicator spinning" />
                   <Star
                     v-if="isFavorited(group.path)"
                     :size="12"
@@ -198,6 +202,10 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  currentRefreshRootPath: {
+    type: String,
+    default: ''
+  },
   canRefreshCurrentRoot: {
     type: Boolean,
     default: false
@@ -205,6 +213,14 @@ const props = defineProps({
   isCurrentRootRefreshing: {
     type: Boolean,
     default: false
+  },
+  resultMessage: {
+    type: String,
+    default: ''
+  },
+  resultType: {
+    type: String,
+    default: 'success'
   },
   selectedEntryPath: {
     type: String,
@@ -265,6 +281,10 @@ const isExpanded = (path) => {
 const isFavorited = (path) => {
   const normalizedPath = String(path || '').trim()
   return normalizedPath ? props.favoritePaths.includes(normalizedPath) : false
+}
+
+const isRefreshingGroup = (group) => {
+  return props.isCurrentRootRefreshing && String(props.currentRefreshRootPath || '').trim() === String(group?.path || '').trim()
 }
 
 const closeContextMenu = () => {
@@ -495,6 +515,27 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
+.result-toast {
+  margin: 0 4px 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid transparent;
+}
+
+.result-toast.success {
+  background: color-mix(in srgb, var(--theme-sem-accent-success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-success) 22%, transparent);
+  color: var(--theme-sem-accent-success);
+}
+
+.result-toast.error {
+  background: color-mix(in srgb, var(--theme-sem-accent-danger-strong) 12%, transparent);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-danger-strong) 22%, transparent);
+  color: var(--theme-sem-accent-danger-strong);
+}
+
 .root-section {
   margin-bottom: 8px;
   min-width: 0;
@@ -657,6 +698,11 @@ onBeforeUnmount(() => {
 
 .root-name {
   align-items: center;
+}
+
+.root-loading-indicator {
+  color: var(--theme-sem-accent-primary);
+  flex: 0 0 auto;
 }
 
 .favorite-indicator {

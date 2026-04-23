@@ -254,6 +254,25 @@ function registerProjectHandlers({
       return { success: false, message: `获取失败: ${error.message}`, root: null, children: [] }
     }
   })
+
+  ipcMain.handle('detect-git-repository', async (event, data) => {
+    try {
+      const targetPath = path.resolve(String(data?.path || ''))
+      if (!targetPath || !fs.existsSync(targetPath)) {
+        return { success: true, isGitRepo: false }
+      }
+
+      const gitPath = path.join(targetPath, '.git')
+      try {
+        const stat = await fsp.stat(gitPath)
+        return { success: true, isGitRepo: stat.isDirectory() || stat.isFile() }
+      } catch {
+        return { success: true, isGitRepo: false }
+      }
+    } catch (error) {
+      return { success: false, isGitRepo: false, message: error.message }
+    }
+  })
 }
 
 module.exports = {
