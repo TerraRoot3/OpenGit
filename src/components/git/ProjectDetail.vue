@@ -30,7 +30,12 @@
                 <Activity :size="12" />
                 {{ pipelineStatusText }}
               </button>
-              <span v-if="hasPendingFiles" class="pending-indicator" title="有待定文件">
+              <span
+                v-if="hasPendingFiles"
+                class="pending-indicator"
+                :class="{ 'pending-indicator--conflict': hasConflictFiles }"
+                title="有待定文件"
+              >
                 <svg width="12" height="12" viewBox="0 0 1024 1024" fill="currentColor">
                   <path d="M526.41 117.029v58.514a7.314 7.314 0 0 1-7.315 7.314H219.429a36.571 36.571 0 0 0-35.987 29.989l-0.585 6.583V804.57a36.571 36.571 0 0 0 29.989 35.987l6.583 0.585H804.57a36.571 36.571 0 0 0 35.987-29.989l0.585-6.583v-317.44a7.314 7.314 0 0 1 7.314-7.314h58.514a7.314 7.314 0 0 1 7.315 7.314v317.44a109.714 109.714 0 0 1-99.182 109.203l-10.533 0.512H219.43a109.714 109.714 0 0 1-109.203-99.182l-0.512-10.533V219.43a109.714 109.714 0 0 1 99.182-109.203l10.533-0.512h299.666a7.314 7.314 0 0 1 7.314 7.315z m307.345 31.817l41.4 41.399a7.314 7.314 0 0 1 0 10.313L419.985 655.726a7.314 7.314 0 0 1-10.313 0l-41.399-41.4a7.314 7.314 0 0 1 0-10.312l455.168-455.168a7.314 7.314 0 0 1 10.313 0z"></path>
                 </svg>
@@ -126,8 +131,18 @@
             >
               <FolderTree :size="16" />
               <span class="branches-nav-label">工作区</span>
-              <span v-if="showWorkspaceNavDot" class="nav-status-dot" title="工作区有变更" />
-              <span v-if="hasPendingFiles" class="pending-icon" title="有待定文件">
+              <span
+                v-if="showWorkspaceNavDot"
+                class="nav-status-dot"
+                :class="{ 'nav-status-dot--conflict': hasConflictFiles }"
+                title="工作区有变更"
+              />
+              <span
+                v-if="hasPendingFiles"
+                class="pending-icon"
+                :class="{ 'pending-icon--conflict': hasConflictFiles }"
+                title="有待定文件"
+              >
                 <svg width="12" height="12" viewBox="0 0 1024 1024" fill="currentColor">
                   <path d="M526.41 117.029v58.514a7.314 7.314 0 0 1-7.315 7.314H219.429a36.571 36.571 0 0 0-35.987 29.989l-0.585 6.583V804.57a36.571 36.571 0 0 0 29.989 35.987l6.583 0.585H804.57a36.571 36.571 0 0 0 35.987-29.989l0.585-6.583v-317.44a7.314 7.314 0 0 1 7.314-7.314h58.514a7.314 7.314 0 0 1 7.315 7.314v317.44a109.714 109.714 0 0 1-99.182 109.203l-10.533 0.512H219.43a109.714 109.714 0 0 1-109.203-99.182l-0.512-10.533V219.43a109.714 109.714 0 0 1 99.182-109.203l10.533-0.512h299.666a7.314 7.314 0 0 1 7.314 7.315z m307.345 31.817l41.4 41.399a7.314 7.314 0 0 1 0 10.313L419.985 655.726a7.314 7.314 0 0 1-10.313 0l-41.399-41.4a7.314 7.314 0 0 1 0-10.312l455.168-455.168a7.314 7.314 0 0 1 10.313 0z"></path>
                 </svg>
@@ -841,23 +856,31 @@ const saveExpandState = () => {
   })().catch(() => {})
 }
 
-const restoreExpandState = async (path) => {
+const getSavedExpandState = async (path) => {
   try {
     const state = await getConfigObject(getExpandStateKey(path))
     if (state && typeof state === 'object') {
-      showLocalBranches.value = state.localBranches ?? true
-      showRemoteBranches.value = state.remoteBranches ?? false
-      showTags.value = state.tags ?? false
-    } else {
-      showLocalBranches.value = true
-      showRemoteBranches.value = false
-      showTags.value = false
+      return {
+        localBranches: state.localBranches ?? true,
+        remoteBranches: state.remoteBranches ?? false,
+        tags: state.tags ?? false
+      }
     }
   } catch (e) {
-    showLocalBranches.value = true
-    showRemoteBranches.value = false
-    showTags.value = false
+    // ignore
   }
+  return {
+    localBranches: true,
+    remoteBranches: false,
+    tags: false
+  }
+}
+
+const restoreExpandState = async (path) => {
+  const state = await getSavedExpandState(path)
+  showLocalBranches.value = state.localBranches
+  showRemoteBranches.value = state.remoteBranches
+  showTags.value = state.tags
 }
 
 const currentView = ref('ai-sessions')
@@ -885,22 +908,47 @@ async function loadBranchesPanelLastExpanded (path) {
   }
 }
 
-async function loadBranchesPanelWidth (path) {
+async function getSavedBranchesPanelWidthState (path) {
   if (!path) {
-    branchesPanelWidthPx.value = BRANCHES_PANEL_DEFAULT
-    return
-  }
-  await loadBranchesPanelLastExpanded(path)
-  const n = await getConfigNumber(getBranchesPanelWidthKey(path))
-  if (n !== null && n >= BRANCHES_PANEL_RAIL_MIN && n <= BRANCHES_PANEL_MAX) {
-    const w = Math.round(n)
-    branchesPanelWidthPx.value = w
-    if (w > BRANCHES_PANEL_ICON_RAIL_BREAKPOINT) {
-      branchesPanelLastExpandedWidth.value = w
+    return {
+      width: BRANCHES_PANEL_DEFAULT,
+      lastExpandedWidth: BRANCHES_PANEL_DEFAULT
     }
-  } else {
-    branchesPanelWidthPx.value = BRANCHES_PANEL_DEFAULT
   }
+
+  let lastExpandedWidth = BRANCHES_PANEL_DEFAULT
+  const savedLastExpanded = await getConfigNumber(getBranchesPanelLastExpandedKey(path))
+  if (
+    savedLastExpanded !== null &&
+    savedLastExpanded >= BRANCHES_PANEL_READABLE_MIN &&
+    savedLastExpanded <= BRANCHES_PANEL_MAX
+  ) {
+    lastExpandedWidth = Math.round(savedLastExpanded)
+  }
+
+  let width = BRANCHES_PANEL_DEFAULT
+  const savedWidth = await getConfigNumber(getBranchesPanelWidthKey(path))
+  if (
+    savedWidth !== null &&
+    savedWidth >= BRANCHES_PANEL_RAIL_MIN &&
+    savedWidth <= BRANCHES_PANEL_MAX
+  ) {
+    width = Math.round(savedWidth)
+    if (width > BRANCHES_PANEL_ICON_RAIL_BREAKPOINT) {
+      lastExpandedWidth = width
+    }
+  }
+
+  return {
+    width,
+    lastExpandedWidth
+  }
+}
+
+async function loadBranchesPanelWidth (path) {
+  const state = await getSavedBranchesPanelWidthState(path)
+  branchesPanelWidthPx.value = state.width
+  branchesPanelLastExpandedWidth.value = state.lastExpandedWidth
 }
 
 async function persistBranchesPanelWidth () {
@@ -1219,6 +1267,10 @@ const showWorkspaceNavDot = computed(() =>
   isBranchesPanelIconRail.value && hasPendingFiles.value
 )
 
+const hasConflictFiles = computed(() =>
+  (projectGitMonitorSnapshot.value?.conflictedCount || 0) > 0
+)
+
 const showPipelineNavDot = computed(() =>
   isBranchesPanelIconRail.value && !!activePipelineSummary.value
 )
@@ -1252,6 +1304,12 @@ const emitPendingStatusChanged = (projectPath, hasPending = hasPendingFiles.valu
 
 const getGitCommandFailure = (result, fallback = '操作失败') => {
   return result?.error || result?.stderr || result?.output || result?.stdout || fallback
+}
+
+const isGitConflictMessage = (message) => {
+  const text = String(message || '')
+  if (!text) return false
+  return /CONFLICT|冲突|unmerged|fix conflicts|could not apply|merge conflict/i.test(text)
 }
 
 const syncHasPendingFiles = (nextValue, { emitWhenChanged = true } = {}) => {
@@ -2296,8 +2354,8 @@ const pullProject = async () => {
       } else if (errorMsg.includes('local changes')) {
         operationOutput.value += '\n\n❌ 拉取失败: 存在未提交的本地更改\n'
         operationOutput.value += '请先提交或暂存本地更改后再拉取。'
-      } else if (errorMsg.includes('CONFLICT') || errorMsg.includes('conflict')) {
-        operationOutput.value += '\n\n⚠️ 拉取时发生冲突\n'
+      } else if (isGitConflictMessage(errorMsg)) {
+        operationOutput.value += '\n\n❌ 检测到冲突，请先解决冲突\n'
         operationOutput.value += '请在「工作区」中解决冲突。'
       } else {
         operationOutput.value += '\n\n❌ 拉取失败: ' + errorMsg
@@ -2624,7 +2682,14 @@ const confirmMergeBranch = async () => {
       queueProjectRefresh({ reloadBranches: true, reloadFileStatus: true, reloadCommitHistory: true })
     } else {
       finishOperation()
-      operationOutput.value += '\n\n❌ 分支合并失败: ' + getGitCommandFailure(result, '分支合并失败')
+      const errorMsg = getGitCommandFailure(result, '分支合并失败')
+      if (isGitConflictMessage(errorMsg)) {
+        operationOutput.value += '\n\n❌ 检测到冲突，请先解决冲突\n'
+        operationOutput.value += '请在「工作区」中解决冲突后再继续合并。\n'
+        operationOutput.value += errorMsg
+      } else {
+        operationOutput.value += '\n\n❌ 分支合并失败: ' + errorMsg
+      }
     }
   } catch (error) {
     finishOperation()
@@ -2986,13 +3051,41 @@ watch(() => props.path, async (newPath, oldPath) => {
   stopProjectGitMonitor()
   resetProjectGitMonitorState()
   if (newPath) {
-    terminalModeApplyGlobally.value = await getSavedTerminalModeScope()
-    terminalMode.value = await getSavedTerminalMode(newPath)
-    terminalScrollback.value = await getSavedTerminalScrollback()
-    isGitRepository.value = null
+    isGitRepository.value = props.allowDirectoryMode ? false : null
     activePipelineSummary.value = null
+    projectInfo.value = {
+      path: newPath,
+      name: newPath.split('/').filter(Boolean).pop() || newPath
+    }
+
+    const [
+      nextTerminalModeScope,
+      nextTerminalMode,
+      nextTerminalScrollback,
+      nextCurrentView,
+      nextExpandState,
+      nextBranchesPanelWidthState
+    ] = await Promise.all([
+      getSavedTerminalModeScope(),
+      getSavedTerminalMode(newPath),
+      getSavedTerminalScrollback(),
+      getSavedCurrentView(newPath),
+      getSavedExpandState(newPath),
+      getSavedBranchesPanelWidthState(newPath)
+    ])
+
+    if (props.path !== newPath) return
+
+    terminalModeApplyGlobally.value = nextTerminalModeScope
+    terminalMode.value = nextTerminalMode
+    terminalScrollback.value = nextTerminalScrollback
+    showLocalBranches.value = nextExpandState.localBranches
+    showRemoteBranches.value = nextExpandState.remoteBranches
+    showTags.value = nextExpandState.tags
+    branchesPanelWidthPx.value = nextBranchesPanelWidthState.width
+    branchesPanelLastExpandedWidth.value = nextBranchesPanelWidthState.lastExpandedWidth
     // 恢复该项目保存的视图状态和展开状态（electron-store）
-    currentView.value = await getSavedCurrentView(newPath)
+    currentView.value = nextCurrentView
     if (props.isActive && currentView.value === 'terminal') {
       terminalMounted.value = true
     }
@@ -3002,9 +3095,7 @@ watch(() => props.path, async (newPath, oldPath) => {
     if (props.isActive && currentView.value === 'workspace') {
       workspaceMounted.value = true
     }
-    await restoreExpandState(newPath)
-    await loadBranchesPanelWidth(newPath)
-    await refreshGitRemoteProviderLabel()
+    void refreshGitRemoteProviderLabel()
 
     // 切换项目时先清空所有数据，防止显示旧项目的数据
     branchStatus.value = null
@@ -3020,11 +3111,6 @@ watch(() => props.path, async (newPath, oldPath) => {
     refreshing.value = false
     refreshSuccess.value = false
     statusLoading.value = false
-    projectInfo.value = {
-      path: newPath,
-      name: newPath.split('/').filter(Boolean).pop() || newPath
-    }
-
     // 再从 store 读取缓存数据立即显示
     const cachedDetail = getProjectDetail(newPath)
     if (cachedDetail) {
@@ -3050,11 +3136,20 @@ watch(() => props.path, async (newPath, oldPath) => {
       debugLog('📦 [ProjectDetailNew] 从 store 读取缓存数据:', newPath)
     }
     
-    // 选中项目时清理分支状态缓存，确保分支名和 ahead/behind 都按当前仓库状态重算
-    detectGitRepository(newPath).then((isGit) => {
-      if (props.path !== newPath) return
-      if (!isGit) {
-        if (props.allowDirectoryMode) {
+    // 普通仓库入口直接按 Git 仓库打开；只有目录入口才需要做 Git 识别
+    if (!props.allowDirectoryMode) {
+      isGitRepository.value = true
+      loadProjectInfo({ refreshBranchStatus: false })
+      refreshPipelineSummary({ silent: true })
+      clearProjectBranchStatusCache(newPath).finally(() => {
+        if (props.path === newPath && isGitRepository.value !== false) {
+          loadBranchStatus()
+        }
+      })
+    } else {
+      detectGitRepository(newPath).then((isGit) => {
+        if (props.path !== newPath) return
+        if (!isGit) {
           loadProjectInfo({
             forceRefreshRemoteBranches: false,
             forceRefreshTags: false,
@@ -3064,17 +3159,19 @@ watch(() => props.path, async (newPath, oldPath) => {
           terminalMounted.value = currentView.value === 'terminal'
           aiSessionsMounted.value = currentView.value === 'ai-sessions'
           workspaceMounted.value = currentView.value === 'workspace'
+          return
         }
-        return
-      }
 
-      clearProjectBranchStatusCache(newPath).finally(() => {
-        if (props.path === newPath && isGitRepository.value !== false) {
-          loadProjectInfo()
-          refreshPipelineSummary({ silent: true })
-        }
+        loadProjectInfo({ refreshBranchStatus: false })
+        refreshPipelineSummary({ silent: true })
+
+        clearProjectBranchStatusCache(newPath).finally(() => {
+          if (props.path === newPath && isGitRepository.value !== false) {
+            loadBranchStatus()
+          }
+        })
       })
-    })
+    }
 
     if (props.isActive) {
       scheduleAiSessionsPreload()
@@ -3978,6 +4075,10 @@ defineExpose({
   margin-left: 6px;
 }
 
+.pending-indicator--conflict {
+  color: var(--theme-sem-file-conflict);
+}
+
 .pending-icon {
   display: inline-flex;
   align-items: center;
@@ -3988,6 +4089,10 @@ defineExpose({
   margin-left: auto;
 }
 
+.pending-icon--conflict {
+  color: var(--theme-sem-file-conflict);
+}
+
 .nav-status-dot {
   width: 7px;
   height: 7px;
@@ -3996,6 +4101,11 @@ defineExpose({
   box-shadow: 0 0 0 2px rgba(20, 23, 28, 0.9);
   flex-shrink: 0;
   margin-left: auto;
+}
+
+.nav-status-dot--conflict {
+  background: var(--theme-sem-file-conflict);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-file-conflict) 18%, transparent);
 }
 
 .header-branch-status {

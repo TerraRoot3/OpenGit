@@ -122,7 +122,7 @@
                     <component :is="getModifiedEntryIconComponent(entry)" :size="15" class="workspace-tree-row__icon" :class="getModifiedEntryIconClass(entry)" />
                     <span class="workspace-modified-row__name" :title="entry.relativePath">{{ basename(entry.relativePath) }}</span>
                     <span class="workspace-modified-row__path" :title="entry.relativePath">{{ entry.relativePath }}</span>
-                    <span class="workspace-tree-row__status" :title="`Git 状态 ${entry.status}`">{{ entry.status }}</span>
+                    <span class="workspace-tree-row__status" :title="`Git 状态 ${getModifiedEntryStatusLabel(entry)}`">{{ getModifiedEntryStatusLabel(entry) }}</span>
                   </button>
                 </div>
               </template>
@@ -194,8 +194,8 @@
                     @blur="handleRenameBlur"
                   />
                   <span v-else class="workspace-tree-row__name" :title="item.node.label">{{ item.node.label }}</span>
-                  <span v-if="!isRenamingNode(item.node) && getNodeStatus(item.node)" class="workspace-tree-row__status" :title="`Git 状态 ${getNodeStatus(item.node)}`">
-                    {{ getNodeStatus(item.node) }}
+                  <span v-if="!isRenamingNode(item.node) && getNodeStatus(item.node)" class="workspace-tree-row__status" :title="`Git 状态 ${getNodeStatusLabel(item.node)}`">
+                    {{ getNodeStatusLabel(item.node) }}
                   </span>
                 </button>
               </template>
@@ -1958,6 +1958,14 @@ function getNodeStatus (node) {
   return gitStatusByPath.value[normalizePath(node?.key)] || ''
 }
 
+function getWorkspaceStatusLabel(status) {
+  return status === 'U' ? '冲突' : status
+}
+
+function getNodeStatusLabel(node) {
+  return getWorkspaceStatusLabel(getNodeStatus(node))
+}
+
 function getNodeStatusClass (node) {
   switch (getNodeStatus(node)) {
     case 'U': return 'workspace-tree-row--conflict'
@@ -2036,6 +2044,10 @@ function getModifiedEntryStatusClass(entry) {
     case '?': return 'workspace-tree-row--untracked'
     default: return ''
   }
+}
+
+function getModifiedEntryStatusLabel(entry) {
+  return getWorkspaceStatusLabel(entry?.status || '')
 }
 
 function getModifiedEntryIconComponent(entry) {
@@ -2317,6 +2329,18 @@ function getWorkspaceCommandFailure(result, fallback = '操作失败') {
   return result?.error || result?.stderr || result?.output || result?.stdout || fallback
 }
 
+function isGitConflictMessage(message) {
+  const text = String(message || '')
+  if (!text) return false
+  return /CONFLICT|冲突|unmerged|fix conflicts|could not apply|merge conflict/i.test(text)
+}
+
+function getWorkspaceConflictFailure(result, fallback = '检测到冲突，请先解决冲突') {
+  const failureText = getWorkspaceCommandFailure(result, fallback)
+  if (!isGitConflictMessage(failureText)) return null
+  return `${fallback}\n${failureText}`.trim()
+}
+
 async function refreshRemoteBranchStatus() {
   if (!props.projectPath || !window.electronAPI?.refreshRemote) return null
   try {
@@ -2479,6 +2503,10 @@ async function commitModifiedFiles() {
     operationOutput.value += '创建提交...\n'
     const commitResult = await executeWorkspaceCommand(`git commit -m "${escapeForBashCommand(commitMessage.value.trim())}"`)
     if (!commitResult?.success) {
+      const conflictFailure = getWorkspaceConflictFailure(commitResult, '检测到冲突，请先解决冲突后再提交')
+      if (conflictFailure) {
+        throw new Error(conflictFailure)
+      }
       throw new Error(getWorkspaceCommandFailure(commitResult, '提交失败'))
     }
     operationOutput.value += `${commitResult.output || ''}\n\n✅ 提交完成`
@@ -2505,8 +2533,9 @@ async function commitAndPushModifiedFiles() {
     if (statusOutput.includes('Your branch is behind') || statusOutput.includes('have diverged')) {
       operationOutput.value += '检测到远程有更新，先拉取...\n'
       const pullResult = await executeWorkspaceCommand('git pull --no-rebase')
-      if (!pullResult?.success && /CONFLICT|冲突/.test(`${pullResult?.output || ''}${pullResult?.stderr || ''}${pullResult?.error || ''}`)) {
-        throw new Error('拉取远程更新时发生冲突，请先解决冲突')
+      const pullConflictFailure = getWorkspaceConflictFailure(pullResult, '拉取远程更新时发生冲突，请先解决冲突')
+      if (pullConflictFailure) {
+        throw new Error(pullConflictFailure)
       }
       if (!pullResult?.success) {
         throw new Error(getWorkspaceCommandFailure(pullResult, '拉取远程更新失败'))
@@ -2521,6 +2550,10 @@ async function commitAndPushModifiedFiles() {
 
     const commitResult = await executeWorkspaceCommand(`git commit -m "${escapeForBashCommand(commitMessage.value.trim())}"`)
     if (!commitResult?.success) {
+      const conflictFailure = getWorkspaceConflictFailure(commitResult, '检测到冲突，请先解决冲突后再提交')
+      if (conflictFailure) {
+        throw new Error(conflictFailure)
+      }
       throw new Error(getWorkspaceCommandFailure(commitResult, '提交失败'))
     }
     operationOutput.value += `${commitResult.output || ''}\n`
