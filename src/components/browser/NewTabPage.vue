@@ -57,24 +57,20 @@
       v-else-if="routeType === 'clone-directory'"
       :path="routeProps?.path"
       allow-directory-mode
-      :is-favorite="favoriteProjectPaths.includes(routeProps?.path)"
       :is-active="isActive"
       @branch-changed="(payload) => emit('project-branch-changed', payload)"
       @status-updated="(payload) => emit('project-status-updated', payload)"
       @pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
-      @toggle-favorite="(payload) => emit('toggle-project-favorite', payload)"
     />
     
     <!-- 单个 Git 仓库 -->
     <ProjectDetail 
       v-else-if="routeType === 'single-project'"
       :path="routeProps?.path"
-      :is-favorite="favoriteProjectPaths.includes(routeProps?.path)"
       :is-active="isActive"
       @branch-changed="(payload) => emit('project-branch-changed', payload)"
       @status-updated="(payload) => emit('project-status-updated', payload)"
       @pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
-      @toggle-favorite="(payload) => emit('toggle-project-favorite', payload)"
     />
     
     <!-- 历史记录 -->

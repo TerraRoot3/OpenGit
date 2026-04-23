@@ -46,8 +46,12 @@
         <span>{{ hasRepositories ? '没有匹配的仓库' : '先添加一个目录开始扫描' }}</span>
       </div>
 
-      <div v-for="group in filteredGroups" :key="group.key" class="root-section">
-        <div class="group-row" :class="{ selected: selectedEntryPath === group.path }">
+      <div v-for="group in filteredGroups" :key="group.renderKey || group.key" class="root-section">
+        <div
+          class="group-row"
+          :class="{ selected: selectedEntryPath === group.path }"
+          @contextmenu.prevent="showGroupContextMenu($event, group)"
+        >
           <button
             class="group-row-main"
             type="button"
@@ -85,6 +89,7 @@
             class="child-row"
             :class="{ selected: selectedEntryPath === repo.path }"
             type="button"
+            @contextmenu.prevent="showRepositoryContextMenu($event, repo)"
             @click="$emit('open-repository', repo)"
           >
             <div class="repo-name-row">
@@ -135,11 +140,29 @@
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="showContextMenu"
+        ref="contextMenuRef"
+        class="context-menu"
+        :style="{ left: `${contextMenuPosition.x}px`, top: `${contextMenuPosition.y}px` }"
+        @click.stop
+      >
+        <div class="context-menu-item" @click="handleContextMenuOpen">打开</div>
+        <div class="context-menu-item" @click="handleContextMenuToggleFavorite">
+          {{ contextMenuItem?.favorited ? '取消收藏' : '收藏' }}
+        </div>
+        <div class="context-menu-item delete" @click="handleContextMenuDelete">
+          {{ contextMenuItem?.kind === 'group' ? '从侧栏删除目录' : '从侧栏删除项目' }}
+        </div>
+      </div>
+    </Teleport>
   </aside>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import {
   ChevronRight,
   ChevronsDown,
@@ -193,10 +216,13 @@ const props = defineProps({
   }
 })
 
-defineEmits([
+const emit = defineEmits([
   'add-root',
   'open-group',
   'open-repository',
+  'toggle-favorite',
+  'remove-root',
+  'remove-repository',
   'toggle-root',
   'refresh-current-root',
   'toggle-collapse',
@@ -207,6 +233,10 @@ defineEmits([
 
 const normalizedQuery = computed(() => props.searchQuery.trim().toLowerCase())
 const hasRepositories = computed(() => props.groups.length > 0)
+const showContextMenu = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const contextMenuItem = ref(null)
+const contextMenuRef = ref(null)
 
 const matchesQuery = (value) => {
   if (!normalizedQuery.value) return true
@@ -236,6 +266,97 @@ const isFavorited = (path) => {
   const normalizedPath = String(path || '').trim()
   return normalizedPath ? props.favoritePaths.includes(normalizedPath) : false
 }
+
+const closeContextMenu = () => {
+  showContextMenu.value = false
+  contextMenuItem.value = null
+}
+
+const openContextMenu = (event, item) => {
+  const menuWidth = 180
+  const menuHeight = 116
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 0
+  const maxX = Math.max(8, viewportWidth - menuWidth - 8)
+  const maxY = Math.max(8, viewportHeight - menuHeight - 8)
+
+  contextMenuPosition.value = {
+    x: Math.min(Math.max(8, event.clientX), maxX),
+    y: Math.min(Math.max(8, event.clientY), maxY)
+  }
+  contextMenuItem.value = item
+  showContextMenu.value = true
+}
+
+const showGroupContextMenu = (event, group) => {
+  openContextMenu(event, {
+    kind: 'group',
+    data: group,
+    favorited: isFavorited(group.path),
+    routeType: 'clone-directory'
+  })
+}
+
+const showRepositoryContextMenu = (event, repo) => {
+  openContextMenu(event, {
+    kind: 'repository',
+    data: repo,
+    favorited: isFavorited(repo.path),
+    routeType: 'single-project'
+  })
+}
+
+const handleContextMenuOpen = () => {
+  const item = contextMenuItem.value
+  if (!item) return
+  if (item.kind === 'group') {
+    emit('open-group', item.data)
+  } else {
+    emit('open-repository', item.data)
+  }
+  closeContextMenu()
+}
+
+const handleContextMenuToggleFavorite = () => {
+  const item = contextMenuItem.value
+  if (!item) return
+  emit('toggle-favorite', {
+    path: item.data?.path,
+    title: item.data?.name,
+    routeType: item.routeType
+  })
+  closeContextMenu()
+}
+
+const handleContextMenuDelete = () => {
+  const item = contextMenuItem.value
+  if (!item) return
+  if (item.kind === 'group') {
+    emit('remove-root', item.data)
+  } else {
+    emit('remove-repository', item.data)
+  }
+  closeContextMenu()
+}
+
+const handleWindowPointerDown = (event) => {
+  if (!showContextMenu.value) return
+  const target = event?.target
+  if (contextMenuRef.value instanceof HTMLElement && target instanceof Node && contextMenuRef.value.contains(target)) {
+    return
+  }
+  closeContextMenu()
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', handleWindowPointerDown)
+}
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('pointerdown', handleWindowPointerDown)
+  }
+})
 </script>
 
 <style scoped>
@@ -668,5 +789,39 @@ const isFavorited = (path) => {
 
 .rotated {
   transform: rotate(90deg);
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--theme-sem-bg-menu);
+  border: 1px solid var(--theme-sem-border-default);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.22);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--theme-sem-text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.context-menu-item:hover {
+  background: var(--theme-sem-hover);
+}
+
+.context-menu-item.delete {
+  color: var(--theme-sem-accent-danger-strong);
+}
+
+.context-menu-item.delete:hover {
+  background: color-mix(in srgb, var(--theme-sem-accent-danger-strong) 12%, transparent);
 }
 </style>

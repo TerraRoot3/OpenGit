@@ -3687,6 +3687,27 @@ const closeBrowserTab = async (tabId) => {
   console.log('✅ 关闭标签页完成，当前标签数:', browserTabs.value.length)
 }
 
+const closeProjectTabsByPaths = async (paths = []) => {
+  const normalizedPaths = new Set(
+    (Array.isArray(paths) ? paths : [])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  )
+  if (!normalizedPaths.size) return
+
+  const closableTabs = browserTabs.value
+    .filter((tab) => {
+      if (tab.routeType !== 'single-project' && tab.routeType !== 'clone-directory') return false
+      const path = String(tab.routeProps?.path || '').trim()
+      return normalizedPaths.has(path)
+    })
+    .map((tab) => tab.id)
+
+  for (const tabId of closableTabs) {
+    await closeBrowserTab(tabId)
+  }
+}
+
 const createNewBrowserTab = async () => {
   // 新建标签页使用数字 ID，与其他标签保持一致
   const tabId = nextBrowserTabId++
@@ -3954,6 +3975,7 @@ watch(() => browserTabs.value.map(tab => ({ id: tab.id, url: tab.url, title: tab
 defineExpose({
   openNewTab,
   openProjectRoute,
+  closeProjectTabsByPaths,
   getOpenedProjectPaths,
   refresh,
   stopRefreshing

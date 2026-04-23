@@ -155,17 +155,11 @@ const upsertScanRoot = (rootPath, initialState = {}) => {
   const path = normalizePath(rootPath)
   if (!path) return null
 
-  const containingRoot = scanRoots.value.find((item) => isSameOrNestedPath(path, item.path))
-  if (containingRoot) {
-    Object.assign(containingRoot, initialState)
+  const existingRoot = scanRoots.value.find((item) => normalizePath(item.path) === path)
+  if (existingRoot) {
+    Object.assign(existingRoot, initialState)
     persist()
-    return containingRoot
-  }
-
-  const nestedRoots = scanRoots.value.filter((item) => isSameOrNestedPath(item.path, path))
-  if (nestedRoots.length > 0) {
-    scanRoots.value = scanRoots.value.filter((item) => !isSameOrNestedPath(item.path, path))
-    expandedRootPaths.value = expandedRootPaths.value.filter((existingPath) => !isSameOrNestedPath(existingPath, path))
+    return existingRoot
   }
 
   const root = {
@@ -188,6 +182,43 @@ const removeScanRoot = (rootPath) => {
   scanRoots.value = scanRoots.value.filter((item) => item.path !== path)
   ensureExpandedState(path, false)
   persist()
+}
+
+const removeRepository = (repoPath) => {
+  const path = normalizePath(repoPath)
+  if (!path) return
+
+  let changed = false
+  scanRoots.value = scanRoots.value
+    .map((root) => {
+      if (!root?.path) return root
+
+      if (normalizePath(root.path) === path) {
+        changed = true
+        if (root.isGitRepo) {
+          return null
+        }
+        return {
+          ...root,
+          children: Array.isArray(root.children) ? root.children.filter((child) => normalizePath(child?.path) !== path) : []
+        }
+      }
+
+      if (Array.isArray(root.children) && root.children.some((child) => normalizePath(child?.path) === path)) {
+        changed = true
+        return {
+          ...root,
+          children: root.children.filter((child) => normalizePath(child?.path) !== path)
+        }
+      }
+
+      return root
+    })
+    .filter(Boolean)
+
+  if (changed) {
+    persist()
+  }
 }
 
 const markRootScanning = (rootPath, value) => {
@@ -322,6 +353,7 @@ export function useProjectSidebarStore() {
     maxSidebarWidth: MAX_WIDTH,
     addScanRoot: upsertScanRoot,
     removeScanRoot,
+    removeRepository,
     findOwningRoot,
     markRootScanning,
     setScanResult,

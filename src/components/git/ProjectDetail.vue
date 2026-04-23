@@ -57,15 +57,6 @@
           <button class="finder-open-btn" @click="openInFinder" :title="`在${systemFileManagerLabel}中打开`">
             <FolderOpen :size="14" /> {{ systemFileManagerLabel }}
           </button>
-          <button
-            class="favorite-project-btn"
-            :class="{ active: isFavorite }"
-            @click="toggleFavorite"
-            :title="isFavorite ? '取消收藏项目' : '收藏项目'"
-          >
-            <Star :size="14" :fill="isFavorite ? 'currentColor' : 'none'" />
-            <span>{{ isFavorite ? '已收藏' : '收藏' }}</span>
-          </button>
           <button class="settings-btn" @click="openProjectSettings" title="项目设置">
             <Settings :size="14" /> 设置
           </button>
@@ -558,7 +549,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick
 import {
   FolderOpen, GitBranch, Tag, GitPullRequest, ArrowUpCircle, GitMerge, Activity,
   Terminal as TerminalIcon, ExternalLink, FileText, History, Archive, Bot,
-  FolderTree, Cloud, RefreshCw, Check, ChevronRight, Settings, Star,
+  FolderTree, Cloud, RefreshCw, Check, ChevronRight, Settings,
   PanelLeftClose, PanelLeftOpen
 } from 'lucide-vue-next'
 import ProjectStashList from './ProjectStashList.vue'
@@ -651,10 +642,6 @@ const props = defineProps({
     type: Boolean,
     default: true
   },
-  isFavorite: {
-    type: Boolean,
-    default: false
-  },
   allowDirectoryMode: {
     type: Boolean,
     default: false
@@ -675,8 +662,7 @@ const emit = defineEmits([
   'branchChanged',    // 分支切换时通知
   'statusUpdated',    // 状态更新时通知 (remoteAhead, localAhead)
   'navigate',         // 需要在新标签打开 URL
-  'pendingStatusChanged', // 待定文件状态变化时通知（提交后刷新项目列表）
-  'toggleFavorite'
+  'pendingStatusChanged' // 待定文件状态变化时通知（提交后刷新项目列表）
 ])
 
 // ==================== Refs ====================
@@ -1119,6 +1105,18 @@ const showBranchContextMenuModal = ref(false)
 const branchContextMenuPosition = ref({ x: 0, y: 0 })
 const branchContextMenuBranch = ref('')
 const branchContextMenuType = ref('local')
+
+const resolveContextMenuPosition = (event, menuWidth = 220, menuHeight = 220) => {
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 0
+  const maxX = Math.max(8, viewportWidth - menuWidth - 8)
+  const maxY = Math.max(8, viewportHeight - menuHeight - 8)
+
+  return {
+    x: Math.min(Math.max(8, event.clientX), maxX),
+    y: Math.min(Math.max(8, event.clientY), maxY)
+  }
+}
 
 // ==================== 创建MR对话框 ====================
 const showCreateMRDialog = ref(false)
@@ -2464,7 +2462,11 @@ const createBranch = async () => {
 const showBranchContextMenu = (event, branch, type) => {
   branchContextMenuBranch.value = type === 'remote' ? branch.replace('origin/', '') : branch
   branchContextMenuType.value = type
-  branchContextMenuPosition.value = { x: event.clientX, y: event.clientY }
+  branchContextMenuPosition.value = resolveContextMenuPosition(
+    event,
+    220,
+    type === 'remote' ? 250 : 230
+  )
   showBranchContextMenuModal.value = true
   
   const closeMenu = () => {
@@ -2659,7 +2661,7 @@ const checkoutTag = async (tag) => {
 const handleTagContextMenu = (event, tag) => {
   event.preventDefault()
   tagContextMenuTag.value = tag
-  tagContextMenuPosition.value = { x: event.clientX, y: event.clientY }
+  tagContextMenuPosition.value = resolveContextMenuPosition(event, 220, 220)
   showTagContextMenu.value = true
   
   const closeMenu = () => {
@@ -2920,15 +2922,6 @@ const openInFinder = async () => {
 // ==================== 项目设置 ====================
 const openProjectSettings = () => {
   showProjectSettings.value = true
-}
-
-const toggleFavorite = () => {
-  const path = String(props.path || '').trim()
-  if (!path) return
-  emit('toggleFavorite', {
-    path,
-    title: String(projectInfo.value?.name || '').trim() || path.split(/[\\/]/).filter(Boolean).pop() || '项目'
-  })
 }
 
 const unmountTerminalForModeChange = async () => {
@@ -3443,7 +3436,7 @@ defineExpose({
 }
 
 .create-btn, .pull-single-btn, .push-single-btn, .mr-single-btn,
-.gitlab-open-btn, .finder-open-btn, .favorite-project-btn, .settings-btn {
+.gitlab-open-btn, .finder-open-btn, .settings-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3477,7 +3470,6 @@ defineExpose({
 .mr-single-btn svg,
 .gitlab-open-btn svg,
 .finder-open-btn svg,
-.favorite-project-btn svg,
 .settings-btn svg {
   flex-shrink: 0;
 }
@@ -3546,24 +3538,6 @@ defineExpose({
 .finder-open-btn:hover {
   background: var(--theme-comp-action-visit-hover-bg);
   border-color: color-mix(in srgb, var(--theme-comp-action-visit-border) 84%, transparent);
-}
-
-.favorite-project-btn {
-  background: var(--theme-comp-action-favorite-bg);
-  border-color: var(--theme-comp-action-favorite-border);
-  color: var(--theme-comp-action-favorite-text);
-}
-
-.favorite-project-btn:hover {
-  background: var(--theme-comp-action-favorite-hover-bg);
-  border-color: color-mix(in srgb, var(--theme-comp-action-favorite-border) 84%, transparent);
-}
-
-.favorite-project-btn.active {
-  background: var(--theme-comp-action-favorite-active-bg);
-  border-color: color-mix(in srgb, var(--theme-comp-action-favorite-border) 92%, transparent);
-  color: var(--theme-comp-action-favorite-active-text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-comp-action-favorite-border) 70%, transparent);
 }
 
 .settings-btn {

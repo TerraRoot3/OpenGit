@@ -27,6 +27,9 @@
         @add-root="handleAddRoot"
         @open-group="handleOpenGroup"
         @open-repository="handleOpenRepository"
+        @toggle-favorite="handleToggleProjectFavorite"
+        @remove-root="handleRemoveRoot"
+        @remove-repository="handleRemoveRepository"
         @toggle-root="sidebarStore.toggleRootExpanded"
         @refresh-current-root="handleRefreshCurrentRoot"
         @toggle-collapse="sidebarStore.setSidebarCollapsed(true)"
@@ -58,9 +61,11 @@ import { FolderPlus, PanelLeftOpen } from 'lucide-vue-next'
 import Browser from '../browser/Browser.vue'
 import ProjectSidebar from '../project-sidebar/ProjectSidebar.vue'
 import { useProjectSidebarStore } from '../../stores/projectSidebarStore'
+import { useConfirm } from '../../composables/useConfirm'
 
 const browserRef = ref(null)
 const sidebarStore = useProjectSidebarStore()
+const { confirm: showConfirm } = useConfirm()
 const selectedRootPath = ref('')
 const selectedEntryPath = ref('')
 const isResizing = ref(false)
@@ -116,17 +121,34 @@ const sortItemsByFavoriteFirst = (items = [], getPath) => {
 }
 
 const filteredGroups = computed(() => {
+  const repositoryGroups = sidebarStore.repositoryGroups.value.map((group) => ({
+    ...group,
+    renderKey: `repo-group:${group.path}`,
+    repositories: sortItemsByFavoriteFirst(
+      (group.repositories || []).map((repo) => ({
+        ...repo,
+        gitStatus: repositoryStatusMap.value[repo.path] || null
+      })),
+      (repo) => repo.path
+    )
+  }))
+
+  const emptyDirectoryGroups = sidebarStore.scanRoots.value
+    .filter((root) => {
+      if (!root?.path) return false
+      if (root.isGitRepo) return false
+      return !(root.children || []).some((child) => child?.isGitRepo)
+    })
+    .map((root) => ({
+      renderKey: `scan-root:${root.path}`,
+      key: root.path,
+      name: root.name || root.path.split('/').pop() || root.path,
+      path: root.path,
+      repositories: []
+    }))
+
   return sortItemsByFavoriteFirst(
-    sidebarStore.repositoryGroups.value.map((group) => ({
-      ...group,
-      repositories: sortItemsByFavoriteFirst(
-        (group.repositories || []).map((repo) => ({
-          ...repo,
-          gitStatus: repositoryStatusMap.value[repo.path] || null
-        })),
-        (repo) => repo.path
-      )
-    })),
+    [...repositoryGroups, ...emptyDirectoryGroups],
     (group) => group.path
   )
 })
@@ -263,6 +285,56 @@ const refreshRoot = async (rootPath) => {
     console.error('扫描目录失败:', error)
     sidebarStore.markRootScanning(path, false)
   }
+}
+
+const scanRootRepositories = async (rootPath) => {
+  const path = String(rootPath || '').trim()
+  if (!path || !window.electronAPI?.getScanRootRepositories) return null
+
+  try {
+    const result = await window.electronAPI.getScanRootRepositories({ path })
+    return result?.success ? result : null
+  } catch (error) {
+    console.error('扫描目录失败:', error)
+    return null
+  }
+}
+
+const hasGitRepositories = (scanResult) => {
+  if (!scanResult) return false
+  if (scanResult?.root?.isGitRepo) return true
+  return Array.isArray(scanResult?.children) && scanResult.children.some((child) => child?.isGitRepo)
+}
+
+const resolveDefaultOpenTarget = (scanResult, fallbackPath) => {
+  const normalizedFallbackPath = String(fallbackPath || '').trim()
+  if (!scanResult) {
+    return normalizedFallbackPath
+      ? { path: normalizedFallbackPath, type: 'clone-directory' }
+      : null
+  }
+
+  if (scanResult?.root?.isGitRepo && scanResult?.root?.path) {
+    return {
+      path: String(scanResult.root.path).trim(),
+      type: 'single-project'
+    }
+  }
+
+  const firstRepository = Array.isArray(scanResult?.children)
+    ? scanResult.children.find((child) => child?.isGitRepo && child?.path)
+    : null
+
+  if (firstRepository?.path) {
+    return {
+      path: String(firstRepository.path).trim(),
+      type: 'single-project'
+    }
+  }
+
+  return normalizedFallbackPath
+    ? { path: normalizedFallbackPath, type: 'clone-directory' }
+    : null
 }
 
 const runWithConcurrency = async (items, concurrency, worker) => {
@@ -555,10 +627,41 @@ const handleAddRoot = async () => {
   if (result?.canceled || !result?.filePaths?.length) return
 
   for (const filePath of result.filePaths) {
+    const scanResult = await scanRootRepositories(filePath)
+    const allowEmptyRoot = hasGitRepositories(scanResult)
+      ? true
+      : await showConfirm({
+        title: '当前没有 Git 仓库',
+        message: '当前目录不是 Git 仓库，且子目录中也没有扫描到 Git 仓库，是否继续添加？',
+        confirmText: '继续添加',
+        cancelText: '取消'
+      })
+
+    if (!allowEmptyRoot) continue
+
     const root = sidebarStore.addScanRoot(filePath)
-    if (root?.path) {
+    if (!root?.path) continue
+
+    if (scanResult) {
+      sidebarStore.setScanResult(root.path, scanResult)
+    } else {
       await refreshRoot(root.path)
-      await warmRepositoryStatusCache()
+    }
+
+    await warmRepositoryStatusCache()
+
+    const defaultOpenTarget = resolveDefaultOpenTarget(scanResult, root.path)
+    if (defaultOpenTarget?.path) {
+      if (defaultOpenTarget.type === 'single-project') {
+        const owningRoot = sidebarStore.findOwningRoot(defaultOpenTarget.path)
+        selectedRootPath.value = owningRoot?.path || root.path
+        selectedEntryPath.value = defaultOpenTarget.path
+      } else {
+        selectedRootPath.value = root.path
+        selectedEntryPath.value = root.path
+      }
+
+      await openProjectPath(defaultOpenTarget.path, defaultOpenTarget.type)
     }
   }
 }
@@ -573,7 +676,10 @@ const handleRefreshCurrentRoot = async () => {
 const handleToggleProjectFavorite = async (payload = {}) => {
   const path = String(payload?.path || '').trim()
   if (!path) return
-  const routeUrl = `git:project:${path}`
+  const routeType = payload?.routeType === 'clone-directory' ? 'clone-directory' : 'single-project'
+  const routeUrl = routeType === 'clone-directory'
+    ? `git:clone:${path}`
+    : `git:project:${path}`
 
   try {
     const favoritesResult = await window.electronAPI?.getBrowserFavorites?.()
@@ -596,6 +702,101 @@ const handleToggleProjectFavorite = async (payload = {}) => {
   }
 
   await refreshFavoriteProjectPaths()
+}
+
+const removeFavoritesByPaths = async (paths = []) => {
+  const normalizedPaths = Array.from(new Set(paths.map((item) => String(item || '').trim()).filter(Boolean)))
+  if (!normalizedPaths.length || !window.electronAPI?.getBrowserFavorites) return
+
+  const favoriteUrls = new Set()
+  for (const path of normalizedPaths) {
+    favoriteUrls.add(`git:project:${path}`)
+    favoriteUrls.add(`git:clone:${path}`)
+  }
+
+  try {
+    const favoritesResult = await window.electronAPI.getBrowserFavorites()
+    const favorites = Array.isArray(favoritesResult?.favorites) ? favoritesResult.favorites : []
+    const removals = favorites
+      .filter((favorite) => favorite?.id && favoriteUrls.has(String(favorite?.url || '').trim()))
+      .map((favorite) => window.electronAPI.removeBrowserFavorite({ id: favorite.id }))
+
+    if (removals.length) {
+      await Promise.all(removals)
+    }
+  } catch (error) {
+    console.warn('删除侧栏收藏失败:', error)
+  }
+
+  await refreshFavoriteProjectPaths()
+}
+
+const handleRemoveRoot = async (group = {}) => {
+  const rootPath = String(group?.path || '').trim()
+  if (!rootPath) return
+
+  const confirmed = await showConfirm({
+    title: '从侧栏删除目录',
+    message: '确认从侧栏删除这个目录？',
+    detail: rootPath,
+    type: 'danger',
+    confirmText: '删除',
+    cancelText: '取消'
+  })
+  if (!confirmed) return
+
+  const owningRoot = sidebarStore.scanRoots.value.find((item) => item.path === rootPath)
+  const relatedRepoPaths = Array.isArray(group?.repositories)
+    ? group.repositories.map((repo) => String(repo?.path || '').trim()).filter(Boolean)
+    : []
+  const relatedPaths = Array.from(new Set([
+    rootPath,
+    ...((owningRoot?.children || []).map((child) => child?.path)),
+    ...relatedRepoPaths
+  ].filter(Boolean)))
+
+  if (owningRoot) {
+    sidebarStore.removeScanRoot(rootPath)
+  } else {
+    for (const repoPath of relatedRepoPaths) {
+      sidebarStore.removeRepository(repoPath)
+    }
+  }
+
+  await removeFavoritesByPaths(relatedPaths)
+
+  if (selectedRootPath.value === rootPath) {
+    selectedRootPath.value = ''
+  }
+  if (selectedEntryPath.value === rootPath || relatedPaths.includes(selectedEntryPath.value)) {
+    selectedEntryPath.value = ''
+  }
+
+  await browserRef.value?.closeProjectTabsByPaths?.(relatedPaths)
+}
+
+const handleRemoveRepository = async (repo = {}) => {
+  const repoPath = String(repo?.path || '').trim()
+  if (!repoPath) return
+
+  const confirmed = await showConfirm({
+    title: '从侧栏删除项目',
+    message: '确认从侧栏删除这个项目？',
+    detail: repoPath,
+    type: 'danger',
+    confirmText: '删除',
+    cancelText: '取消'
+  })
+  if (!confirmed) return
+
+  sidebarStore.removeRepository(repoPath)
+  await removeFavoritesByPaths([repoPath])
+
+  if (selectedEntryPath.value === repoPath) {
+    selectedEntryPath.value = ''
+  }
+
+  await browserRef.value?.closeProjectTabsByPaths?.([repoPath])
 }
 
 const handleProjectContextChanged = (payload) => {
