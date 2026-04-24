@@ -190,7 +190,7 @@ const clearPollTimer = () => {
 const schedulePoll = () => {
   clearPollTimer()
   if (!props.isActive || !isDocumentVisible.value || typeof window === 'undefined') return
-  const delay = activePipelines.value.length > 0 ? 6000 : 18000
+  const delay = activePipelines.value.length > 0 ? 6000 : 60000
   pollTimer = window.setTimeout(() => {
     pollTimer = null
     loadPipelines({ silent: true })
