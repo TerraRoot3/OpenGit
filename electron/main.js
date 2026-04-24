@@ -2425,7 +2425,7 @@ async function checkAndRemoveGitLock(cwd) {
   }
 }
 
-registerCommandHandlers({
+const { cleanup: cleanupCommandProcesses } = registerCommandHandlers({
   ipcMain,
   isGitWriteCommand,
   checkAndRemoveGitLock,
@@ -2640,6 +2640,7 @@ app.on('will-quit', () => {
     webTabManager.cleanup()
   }
   cleanupTerminalSessions()
+  cleanupCommandProcesses()
 })
 
 registerExtensionHandlers({

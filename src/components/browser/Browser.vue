@@ -380,6 +380,8 @@ import { useBrowserNavigationState } from '../../composables/useBrowserNavigatio
 import { useBrowserPersistence } from '../../composables/useBrowserPersistence.js'
 import { useBrowserTabs } from '../../composables/useBrowserTabs.js'
 import { updateBrowserDebugState } from '../../debug/runtimeDebug.js'
+import { clearProjectCache } from '../../stores/projectStore'
+import { clearFocusTerminalScope } from '../../stores/focusTerminalStore.js'
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -3663,6 +3665,19 @@ const closeBrowserTab = async (tabId) => {
   
   // 使用 filter 创建新数组，确保 Vue 能检测到变化
   browserTabs.value = browserTabs.value.filter(t => String(t.id) !== tabIdStr)
+
+  const closedProjectPath = String(tab?.routeProps?.path || '').trim()
+  if (closedProjectPath && (tab.routeType === 'single-project' || tab.routeType === 'clone-directory')) {
+    const hasRemainingProjectTab = browserTabs.value.some((candidate) => {
+      const candidatePath = String(candidate?.routeProps?.path || '').trim()
+      if (candidatePath !== closedProjectPath) return false
+      return candidate?.routeType === 'single-project' || candidate?.routeType === 'clone-directory'
+    })
+    if (!hasRemainingProjectTab) {
+      clearProjectCache(closedProjectPath)
+      clearFocusTerminalScope(closedProjectPath)
+    }
+  }
   
   console.log('🗑️ 标签页已从数组移除，剩余标签数:', browserTabs.value.length)
   

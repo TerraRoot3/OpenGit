@@ -122,3 +122,14 @@ export function useFocusTerminalStore(scopeSource = '__default__') {
     swapSessionOrder
   }
 }
+
+export function clearFocusTerminalScope(scopeSource = '__default__') {
+  const key = normalizeScopeKey(scopeSource)
+  const scopeState = scopeStates.get(key)
+  if (!scopeState) return
+  scopeState.sessions.value = []
+  scopeState.focusedId.value = ''
+  scopeState.layoutReady.value = false
+  clearFocusTerminalScopeDebug(key)
+  scopeStates.delete(key)
+}

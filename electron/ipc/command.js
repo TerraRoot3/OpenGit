@@ -7,6 +7,24 @@ function registerCommandHandlers({
 }) {
   const runningProcesses = new Map()
   let processIdCounter = 0
+  const terminateChildProcess = (child, signal = 'SIGTERM') => {
+    if (!child?.pid) return
+    try {
+      if (process.platform !== 'win32') {
+        process.kill(-child.pid, signal)
+        return
+      }
+    } catch (error) {
+      safeError(`⚠️ 终止进程组失败(${signal}):`, error.message)
+    }
+
+    try {
+      child.kill(signal)
+    } catch (error) {
+      safeError(`⚠️ 终止进程失败(${signal}):`, error.message)
+    }
+  }
+
   const sendToRenderer = (sender, channel, payload) => {
     if (sender && !sender.isDestroyed()) {
       sender.send(channel, payload)
@@ -31,7 +49,8 @@ function registerCommandHandlers({
       return new Promise((resolve) => {
         const child = spawn('bash', ['-c', data.command], {
           cwd,
-          stdio: ['pipe', 'pipe', 'pipe']
+          stdio: ['pipe', 'pipe', 'pipe'],
+          detached: process.platform !== 'win32'
         })
 
         runningProcesses.set(processId, child)
@@ -56,8 +75,8 @@ function registerCommandHandlers({
             clearTimeout(timeout)
             cleanup()
             safeError(`⏰ 命令执行超时 (${timeoutMs / 1000}s): ${data.command}`)
-            child.kill('SIGTERM')
-            setTimeout(() => child.kill('SIGKILL'), 5000)
+            terminateChildProcess(child, 'SIGTERM')
+            setTimeout(() => terminateChildProcess(child, 'SIGKILL'), 5000)
             resolve({
               success: false,
               output: stdout.trim(),
@@ -137,7 +156,8 @@ function registerCommandHandlers({
       return new Promise((resolve) => {
         const child = spawn('bash', ['-c', data.command], {
           cwd,
-          stdio: ['pipe', 'pipe', 'pipe']
+          stdio: ['pipe', 'pipe', 'pipe'],
+          detached: process.platform !== 'win32'
         })
 
         runningProcesses.set(processId, child)
@@ -162,8 +182,8 @@ function registerCommandHandlers({
             resolved = true
             cleanup()
             safeError(`⏰ 实时命令执行超时 (${timeoutMs / 1000}s): ${data.command}`)
-            child.kill('SIGTERM')
-            setTimeout(() => child.kill('SIGKILL'), 5000)
+            terminateChildProcess(child, 'SIGTERM')
+            setTimeout(() => terminateChildProcess(child, 'SIGKILL'), 5000)
             sendToRenderer(event.sender, 'realtime-command-output', {
               type: 'complete',
               code: -1,
@@ -256,9 +276,9 @@ function registerCommandHandlers({
       const child = runningProcesses.get(processId)
       if (child) {
         safeLog(`🛑 取消命令进程: ${processId}`)
-        child.kill('SIGTERM')
+        terminateChildProcess(child, 'SIGTERM')
         setTimeout(() => {
-          try { child.kill('SIGKILL') } catch (e) { /* 已退出 */ }
+          terminateChildProcess(child, 'SIGKILL')
         }, 5000)
         runningProcesses.delete(processId)
         return { success: true }
@@ -268,6 +288,18 @@ function registerCommandHandlers({
       return { success: false, message: error.message }
     }
   })
+
+  const cleanup = () => {
+    for (const [, child] of runningProcesses) {
+      terminateChildProcess(child, 'SIGTERM')
+      setTimeout(() => {
+        terminateChildProcess(child, 'SIGKILL')
+      }, 5000)
+    }
+    runningProcesses.clear()
+  }
+
+  return { cleanup }
 }
 
 module.exports = { registerCommandHandlers }
