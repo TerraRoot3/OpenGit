@@ -3361,6 +3361,20 @@ watch(
 
 .workspace-tree-row--conflict {
   color: var(--theme-sem-file-conflict);
+  background: color-mix(in srgb, var(--theme-sem-file-conflict) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-sem-file-conflict) 20%, transparent);
+}
+
+.workspace-tree-row--conflict:hover {
+  background: color-mix(in srgb, var(--theme-sem-file-conflict) 16%, transparent);
+}
+
+.workspace-tree-row--conflict .workspace-tree-row__icon,
+.workspace-tree-row--conflict .workspace-tree-row__name,
+.workspace-tree-row--conflict .workspace-tree-row__status,
+.workspace-tree-row--conflict .workspace-modified-row__name,
+.workspace-tree-row--conflict .workspace-modified-row__path {
+  color: var(--theme-sem-file-conflict);
 }
 
 .workspace-tree-row--deleted {
