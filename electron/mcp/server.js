@@ -7,6 +7,91 @@ const SERVER_INFO = Object.freeze({
   version: '1.0.0'
 })
 
+function createJsonRpcDispatcher({ getRegisteredTools, safeError }) {
+  const handleInitialize = (id) => createJsonRpcSuccess(id, {
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    capabilities: {
+      tools: {},
+      resources: {}
+    },
+    serverInfo: SERVER_INFO
+  })
+
+  const handleResourcesList = (id) => createJsonRpcSuccess(id, {
+    resources: []
+  })
+
+  const handleToolsList = (id) => createJsonRpcSuccess(id, {
+    tools: getRegisteredTools().map((tool) => ({
+      name: tool.name,
+      description: tool.description || '',
+      inputSchema: tool.inputSchema || { type: 'object', properties: {} }
+    }))
+  })
+
+  const handleToolsCall = async (id, params = {}) => {
+    const toolName = String(params?.name || '').trim()
+    if (!toolName) {
+      return createJsonRpcError(id, -32602, 'Missing tool name')
+    }
+
+    const tool = getRegisteredTools().find((item) => item.name === toolName)
+    if (!tool) {
+      return createJsonRpcError(id, -32601, `Unknown tool: ${toolName}`)
+    }
+
+    try {
+      const result = await tool.handler(params.arguments || {})
+      return createJsonRpcSuccess(id, createTextToolResult(result == null ? {} : result))
+    } catch (error) {
+      safeError(`[MCP] tool call failed for ${toolName}:`, error?.message || error)
+      return createJsonRpcSuccess(id, createTextToolResult({
+        tool: toolName,
+        error: error?.message || 'Unknown error'
+      }, { isError: true }))
+    }
+  }
+
+  return async function handleJsonRpcRequest(payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return { statusCode: 400, payload: createJsonRpcError(null, -32600, 'Invalid Request') }
+    }
+
+    const hasRequestId = Object.prototype.hasOwnProperty.call(payload, 'id')
+    const id = hasRequestId ? payload.id : null
+    const method = String(payload.method || '').trim()
+    if (!method) {
+      return { statusCode: 400, payload: createJsonRpcError(id, -32600, 'Missing method') }
+    }
+
+    const isNotification = !hasRequestId && method.startsWith('notifications/')
+
+    if (method === 'initialize') {
+      return { statusCode: 200, payload: handleInitialize(id) }
+    }
+    if (method === 'notifications/initialized') {
+      return { statusCode: 204, payload: null, noContent: true }
+    }
+    if (method === 'ping') {
+      return { statusCode: 200, payload: createJsonRpcSuccess(id, {}) }
+    }
+    if (isNotification) {
+      return { statusCode: 204, payload: null, noContent: true }
+    }
+    if (method === 'tools/list') {
+      return { statusCode: 200, payload: handleToolsList(id) }
+    }
+    if (method === 'resources/list') {
+      return { statusCode: 200, payload: handleResourcesList(id) }
+    }
+    if (method === 'tools/call') {
+      return { statusCode: 200, payload: await handleToolsCall(id, payload.params || {}) }
+    }
+
+    return { statusCode: 404, payload: createJsonRpcError(id, -32601, `Method not found: ${method}`) }
+  }
+}
+
 function createEmbeddedMcpServer(deps = {}) {
   const safeLog = typeof deps.safeLog === 'function' ? deps.safeLog : () => {}
   const safeError = typeof deps.safeError === 'function' ? deps.safeError : () => {}
@@ -52,6 +137,11 @@ function createEmbeddedMcpServer(deps = {}) {
     res.end(JSON.stringify(payload))
   }
 
+  const sendNoContent = (res, code = 204) => {
+    res.writeHead(code)
+    res.end()
+  }
+
   const collectRequestBody = async (req) => {
     const chunks = []
     for await (const chunk of req) {
@@ -60,74 +150,10 @@ function createEmbeddedMcpServer(deps = {}) {
     return Buffer.concat(chunks).toString('utf8')
   }
 
-  const handleInitialize = (id) => createJsonRpcSuccess(id, {
-    protocolVersion: MCP_PROTOCOL_VERSION,
-    capabilities: {
-      tools: {}
-    },
-    serverInfo: SERVER_INFO
+  const handleJsonRpcRequest = createJsonRpcDispatcher({
+    getRegisteredTools,
+    safeError
   })
-
-  const handleToolsList = (id) => createJsonRpcSuccess(id, {
-    tools: getRegisteredTools().map((tool) => ({
-      name: tool.name,
-      description: tool.description || '',
-      inputSchema: tool.inputSchema || { type: 'object', properties: {} }
-    }))
-  })
-
-  const handleToolsCall = async (id, params = {}) => {
-    const toolName = String(params?.name || '').trim()
-    if (!toolName) {
-      return createJsonRpcError(id, -32602, 'Missing tool name')
-    }
-
-    const tool = getRegisteredTools().find((item) => item.name === toolName)
-    if (!tool) {
-      return createJsonRpcError(id, -32601, `Unknown tool: ${toolName}`)
-    }
-
-    try {
-      const result = await tool.handler(params.arguments || {})
-      return createJsonRpcSuccess(id, createTextToolResult(result == null ? {} : result))
-    } catch (error) {
-      safeError(`[MCP] tool call failed for ${toolName}:`, error?.message || error)
-      return createJsonRpcSuccess(id, createTextToolResult({
-        tool: toolName,
-        error: error?.message || 'Unknown error'
-      }, { isError: true }))
-    }
-  }
-
-  const handleJsonRpcRequest = async (payload) => {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      return { statusCode: 400, payload: createJsonRpcError(null, -32600, 'Invalid Request') }
-    }
-
-    const id = Object.prototype.hasOwnProperty.call(payload, 'id') ? payload.id : null
-    const method = String(payload.method || '').trim()
-    if (!method) {
-      return { statusCode: 400, payload: createJsonRpcError(id, -32600, 'Missing method') }
-    }
-
-    if (method === 'initialize') {
-      return { statusCode: 200, payload: handleInitialize(id) }
-    }
-    if (method === 'notifications/initialized') {
-      return { statusCode: 200, payload: createJsonRpcSuccess(id, {}) }
-    }
-    if (method === 'ping') {
-      return { statusCode: 200, payload: createJsonRpcSuccess(id, {}) }
-    }
-    if (method === 'tools/list') {
-      return { statusCode: 200, payload: handleToolsList(id) }
-    }
-    if (method === 'tools/call') {
-      return { statusCode: 200, payload: await handleToolsCall(id, payload.params || {}) }
-    }
-
-    return { statusCode: 404, payload: createJsonRpcError(id, -32601, `Method not found: ${method}`) }
-  }
 
   const createRequestHandler = () => http.createServer((req, res) => {
     const baseUrl = `http://${status.host}:${status.port}`
@@ -135,7 +161,7 @@ function createEmbeddedMcpServer(deps = {}) {
 
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
 
-    if (req.method === 'GET' && (requestUrl.pathname === '/' || requestUrl.pathname === '/health' || requestUrl.pathname === '/status')) {
+    if (req.method === 'GET' && (requestUrl.pathname === '/' || requestUrl.pathname === '/mcp' || requestUrl.pathname === '/health' || requestUrl.pathname === '/status')) {
       sendJson(res, 200, {
         service: SERVER_INFO.name,
         serverInfo: SERVER_INFO,
@@ -153,6 +179,10 @@ function createEmbeddedMcpServer(deps = {}) {
           const rawBody = await collectRequestBody(req)
           const payload = rawBody ? JSON.parse(rawBody) : {}
           const response = await handleJsonRpcRequest(payload)
+          if (response.noContent) {
+            sendNoContent(res, response.statusCode)
+            return
+          }
           sendJson(res, response.statusCode, response.payload)
         } catch (error) {
           sendJson(res, 500, createJsonRpcError(null, -32700, 'Parse error', error?.message || 'Invalid JSON'))
@@ -279,5 +309,6 @@ function createEmbeddedMcpServer(deps = {}) {
 }
 
 module.exports = {
-  createEmbeddedMcpServer
+  createEmbeddedMcpServer,
+  createJsonRpcDispatcher
 }

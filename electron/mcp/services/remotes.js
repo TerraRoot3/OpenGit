@@ -15,6 +15,8 @@ function parseGitlabRemote(remoteUrl = '') {
   return null
 }
 
+const DEFAULT_REMOTE_REQUEST_TIMEOUT_MS = 10000
+
 function parseGithubRemote(remoteUrl = '') {
   const normalized = String(remoteUrl || '').trim()
   if (!normalized) return null
@@ -200,31 +202,37 @@ function sanitizeRequestHeaders(headers = {}) {
   return out
 }
 
-function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjectId }) {
+function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjectId, requestTimeoutMs = DEFAULT_REMOTE_REQUEST_TIMEOUT_MS }) {
+  const fetchWithTimeout = async (url, options = {}) => {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null
+    let timeoutId = null
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        if (controller) {
+          try {
+            controller.abort()
+          } catch {}
+        }
+        reject(new Error(`Remote request timed out after ${requestTimeoutMs}ms`))
+      }, requestTimeoutMs)
+    })
+
+    const fetchPromise = fetch(url, {
+      ...options,
+      ...(controller ? { signal: controller.signal } : {})
+    })
+
+    try {
+      return await Promise.race([fetchPromise, timeoutPromise])
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }
+
   const resolveProviderContext = async (repoPath) => {
     const remoteResult = await executeGitCommand(['git', 'remote', 'get-url', 'origin'], repoPath)
     const remoteUrl = remoteResult?.success ? String(remoteResult.stdout || '').trim() : ''
     if (!remoteUrl) return { provider: 'unknown', context: null }
-
-    const gitlabRemote = parseGitlabRemote(remoteUrl)
-    if (gitlabRemote) {
-      const matchedConfig = findMatchingGitlabConfig(store, { baseUrl: gitlabRemote.baseUrl, repoPath })
-      if (matchedConfig?.token) {
-        const projectResult = await getGitlabProjectId(gitlabRemote.baseUrl, matchedConfig.token, gitlabRemote.projectPath)
-        if (projectResult?.success) {
-          return {
-            provider: 'gitlab',
-            context: {
-              ...gitlabRemote,
-              repoPath,
-              remoteUrl,
-              projectId: projectResult.projectId,
-              token: matchedConfig.token
-            }
-          }
-        }
-      }
-    }
 
     const githubRemote = parseGithubRemote(remoteUrl)
     if (githubRemote) {
@@ -250,6 +258,26 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
           repoPath,
           remoteUrl,
           token: matchedConfig?.token || ''
+        }
+      }
+    }
+
+    const gitlabRemote = parseGitlabRemote(remoteUrl)
+    if (gitlabRemote) {
+      const matchedConfig = findMatchingGitlabConfig(store, { baseUrl: gitlabRemote.baseUrl, repoPath })
+      if (matchedConfig?.token) {
+        const projectResult = await getGitlabProjectId(gitlabRemote.baseUrl, matchedConfig.token, gitlabRemote.projectPath)
+        if (projectResult?.success) {
+          return {
+            provider: 'gitlab',
+            context: {
+              ...gitlabRemote,
+              repoPath,
+              remoteUrl,
+              projectId: projectResult.projectId,
+              token: matchedConfig.token
+            }
+          }
         }
       }
     }
@@ -343,7 +371,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
       query
     })
     const hasBody = body !== undefined && body !== null && normalizedMethod !== 'GET'
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: normalizedMethod,
       headers: buildProviderHeaders({
         provider: resolvedProvider,
@@ -385,7 +413,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
       const { provider, context } = await resolveProviderContext(projectPath)
       if (!context) return []
       if (provider === 'gitlab') {
-        const response = await fetch(`${context.baseUrl}/api/v4/projects/${context.projectId}/repository/branches?per_page=100`, {
+        const response = await fetchWithTimeout(`${context.baseUrl}/api/v4/projects/${context.projectId}/repository/branches?per_page=100`, {
           headers: { Authorization: `Bearer ${context.token}` }
         })
         if (!response.ok) throw new Error(`GitLab branches request failed: ${response.status}`)
@@ -393,7 +421,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
         return Array.isArray(data) ? data.map((item) => ({ name: item.name, webUrl: item.web_url || '' })) : []
       }
       if (provider === 'github') {
-        const response = await fetch(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/branches?per_page=100`, {
+        const response = await fetchWithTimeout(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/branches?per_page=100`, {
           headers: buildGithubHeaders(context.token)
         })
         if (!response.ok) throw new Error(`GitHub branches request failed: ${response.status}`)
@@ -401,7 +429,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
         return Array.isArray(data) ? data.map((item) => ({ name: item.name, webUrl: `https://github.com/${context.owner}/${context.repo}/tree/${item.name}` })) : []
       }
       if (provider === 'gitee') {
-        const response = await fetch(`${GITEE_API_URL}/repos/${context.owner}/${context.repo}/branches?access_token=${encodeURIComponent(context.token || '')}&per_page=100`, {
+        const response = await fetchWithTimeout(`${GITEE_API_URL}/repos/${context.owner}/${context.repo}/branches?access_token=${encodeURIComponent(context.token || '')}&per_page=100`, {
           headers: buildGiteeHeaders()
         })
         if (!response.ok) throw new Error(`Gitee branches request failed: ${response.status}`)
@@ -413,7 +441,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
     async listMergeRequests(projectPath, state = 'opened') {
       const { provider, context } = await resolveProviderContext(projectPath)
       if (provider === 'gitlab' && context) {
-        const response = await fetch(`${context.baseUrl}/api/v4/projects/${context.projectId}/merge_requests?state=${encodeURIComponent(state)}&per_page=50`, {
+        const response = await fetchWithTimeout(`${context.baseUrl}/api/v4/projects/${context.projectId}/merge_requests?state=${encodeURIComponent(state)}&per_page=50`, {
           headers: { Authorization: `Bearer ${context.token}` }
         })
         if (!response.ok) throw new Error(`GitLab merge requests request failed: ${response.status}`)
@@ -424,7 +452,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
         })) : []
       }
       if (provider === 'gitee' && context) {
-        const response = await fetch(`${GITEE_API_URL}/repos/${context.owner}/${context.repo}/pulls?state=${encodeURIComponent(state)}&access_token=${encodeURIComponent(context.token || '')}&per_page=50`, {
+        const response = await fetchWithTimeout(`${GITEE_API_URL}/repos/${context.owner}/${context.repo}/pulls?state=${encodeURIComponent(state)}&access_token=${encodeURIComponent(context.token || '')}&per_page=50`, {
           headers: buildGiteeHeaders()
         })
         if (!response.ok) throw new Error(`Gitee pulls request failed: ${response.status}`)
@@ -439,7 +467,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
     async listPullRequests(projectPath, state = 'open') {
       const { provider, context } = await resolveProviderContext(projectPath)
       if (provider !== 'github' || !context) return []
-      const response = await fetch(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/pulls?state=${encodeURIComponent(state)}&per_page=50`, {
+      const response = await fetchWithTimeout(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/pulls?state=${encodeURIComponent(state)}&per_page=50`, {
         headers: buildGithubHeaders(context.token)
       })
       if (!response.ok) throw new Error(`GitHub pulls request failed: ${response.status}`)
@@ -453,7 +481,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
       const { provider, context } = await resolveProviderContext(projectPath)
       if (!context) return []
       if (provider === 'gitlab') {
-        const response = await fetch(`${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines?per_page=${Math.max(1, Math.min(limit, 30))}&order_by=updated_at&sort=desc`, {
+        const response = await fetchWithTimeout(`${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines?per_page=${Math.max(1, Math.min(limit, 30))}&order_by=updated_at&sort=desc`, {
           headers: { Authorization: `Bearer ${context.token}` }
         })
         if (!response.ok) throw new Error(`GitLab pipelines request failed: ${response.status}`)
@@ -461,7 +489,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
         return Array.isArray(data) ? data.map((item) => formatPipeline({ ...item, provider: 'gitlab', providerLabel: 'GitLab' })) : []
       }
       if (provider === 'github') {
-        const response = await fetch(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/actions/runs?per_page=${Math.max(1, Math.min(limit, 30))}`, {
+        const response = await fetchWithTimeout(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/actions/runs?per_page=${Math.max(1, Math.min(limit, 30))}`, {
           headers: buildGithubHeaders(context.token)
         })
         if (!response.ok) throw new Error(`GitHub workflow runs request failed: ${response.status}`)
@@ -475,8 +503,8 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
       if (!context || !pipelineId) return null
       if (provider === 'gitlab') {
         const [detailResponse, jobsResponse] = await Promise.all([
-          fetch(`${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines/${pipelineId}`, { headers: { Authorization: `Bearer ${context.token}` } }),
-          fetch(`${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines/${pipelineId}/jobs?per_page=100&include_retried=true`, { headers: { Authorization: `Bearer ${context.token}` } })
+          fetchWithTimeout(`${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines/${pipelineId}`, { headers: { Authorization: `Bearer ${context.token}` } }),
+          fetchWithTimeout(`${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines/${pipelineId}/jobs?per_page=100&include_retried=true`, { headers: { Authorization: `Bearer ${context.token}` } })
         ])
         if (!detailResponse.ok) throw new Error(`GitLab pipeline detail request failed: ${detailResponse.status}`)
         if (!jobsResponse.ok) throw new Error(`GitLab pipeline jobs request failed: ${jobsResponse.status}`)
@@ -490,8 +518,8 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
       }
       if (provider === 'github') {
         const [detailResponse, jobsResponse] = await Promise.all([
-          fetch(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/actions/runs/${pipelineId}`, { headers: buildGithubHeaders(context.token) }),
-          fetch(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/actions/runs/${pipelineId}/jobs?per_page=100`, { headers: buildGithubHeaders(context.token) })
+          fetchWithTimeout(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/actions/runs/${pipelineId}`, { headers: buildGithubHeaders(context.token) }),
+          fetchWithTimeout(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/actions/runs/${pipelineId}/jobs?per_page=100`, { headers: buildGithubHeaders(context.token) })
         ])
         if (!detailResponse.ok) throw new Error(`GitHub run detail request failed: ${detailResponse.status}`)
         if (!jobsResponse.ok) throw new Error(`GitHub run jobs request failed: ${jobsResponse.status}`)
@@ -517,7 +545,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
         description: description || '',
         remove_source_branch: !!removeSourceBranch
       }
-      const response = await fetch(`${context.baseUrl}/api/v4/projects/${context.projectId}/merge_requests`, {
+      const response = await fetchWithTimeout(`${context.baseUrl}/api/v4/projects/${context.projectId}/merge_requests`, {
         method: 'POST',
         headers: buildProviderHeaders({ provider, context, hasBody: true }),
         body: JSON.stringify(payload)
@@ -529,7 +557,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
     async createPullRequest({ projectPath = '', sourceBranch = '', targetBranch = '', title = '', description = '', draft = false } = {}) {
       const { provider, context } = await buildProviderRequestContext(projectPath)
       if (provider === 'github') {
-        const response = await fetch(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/pulls`, {
+        const response = await fetchWithTimeout(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/pulls`, {
           method: 'POST',
           headers: buildProviderHeaders({ provider, context, hasBody: true }),
           body: JSON.stringify({
@@ -550,7 +578,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
           context,
           relativePath: `repos/${context.owner}/${context.repo}/pulls`
         })
-        const response = await fetch(url, {
+        const response = await fetchWithTimeout(url, {
           method: 'POST',
           headers: buildProviderHeaders({ provider, context, hasBody: true }),
           body: JSON.stringify({
@@ -569,7 +597,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
     },
     async commentMergeRequest({ projectPath = '', mergeRequestIid, body = '' } = {}) {
       const { provider, context } = await buildProviderRequestContext(projectPath, 'gitlab')
-      const response = await fetch(`${context.baseUrl}/api/v4/projects/${context.projectId}/merge_requests/${mergeRequestIid}/notes`, {
+      const response = await fetchWithTimeout(`${context.baseUrl}/api/v4/projects/${context.projectId}/merge_requests/${mergeRequestIid}/notes`, {
         method: 'POST',
         headers: buildProviderHeaders({ provider, context, hasBody: true }),
         body: JSON.stringify({ body })
@@ -581,7 +609,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
     async commentPullRequest({ projectPath = '', pullRequestNumber, body = '' } = {}) {
       const { provider, context } = await buildProviderRequestContext(projectPath)
       if (provider === 'github') {
-        const response = await fetch(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/issues/${pullRequestNumber}/comments`, {
+        const response = await fetchWithTimeout(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/issues/${pullRequestNumber}/comments`, {
           method: 'POST',
           headers: buildProviderHeaders({ provider, context, hasBody: true }),
           body: JSON.stringify({ body })
@@ -596,7 +624,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
           context,
           relativePath: `repos/${context.owner}/${context.repo}/pulls/${pullRequestNumber}/comments`
         })
-        const response = await fetch(url, {
+        const response = await fetchWithTimeout(url, {
           method: 'POST',
           headers: buildProviderHeaders({ provider, context, hasBody: true }),
           body: JSON.stringify({ body })
@@ -611,7 +639,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
       const { provider, context } = await buildProviderRequestContext(projectPath)
       if (provider === 'gitlab') {
         const action = failedJobsOnly ? 'retry' : 'retry'
-        const response = await fetch(`${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines/${pipelineId}/${action}`, {
+        const response = await fetchWithTimeout(`${context.baseUrl}/api/v4/projects/${context.projectId}/pipelines/${pipelineId}/${action}`, {
           method: 'POST',
           headers: buildGitlabHeaders(context.token)
         })
@@ -620,7 +648,7 @@ function createRemotesService({ store, executeGitCommand, fetch, getGitlabProjec
         return normalizeToolResponse(data, provider)
       }
       if (provider === 'github') {
-        const response = await fetch(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/actions/runs/${pipelineId}/rerun${failedJobsOnly ? '-failed-jobs' : ''}`, {
+        const response = await fetchWithTimeout(`${GITHUB_API_URL}/repos/${context.owner}/${context.repo}/actions/runs/${pipelineId}/rerun${failedJobsOnly ? '-failed-jobs' : ''}`, {
           method: 'POST',
           headers: buildGithubHeaders(context.token)
         })
