@@ -23,6 +23,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getOnlineWallpaperList: (data) => ipcRenderer.invoke('get-online-wallpaper-list', data),
   downloadOnlineWallpaper: (data) => ipcRenderer.invoke('download-online-wallpaper', data),
   refreshOnlineWallpaperIfNeeded: (data) => ipcRenderer.invoke('refresh-online-wallpaper-if-needed', data),
+  getMcpConfig: () => ipcRenderer.invoke('mcp-get-config'),
+  saveMcpConfig: (payload) => ipcRenderer.invoke('mcp-save-config', payload),
+  getMcpServerStatus: () => ipcRenderer.invoke('mcp-get-status'),
+  reportMcpRuntimeState: (payload) => ipcRenderer.send('mcp-runtime-state-update', payload),
+  onMcpServerStatusChanged: (callback) => {
+    ipcRenderer.on('mcp-status-changed', (event, status) => callback(status))
+  },
+  removeMcpServerStatusChangedListener: () => {
+    ipcRenderer.removeAllListeners('mcp-status-changed')
+  },
   
   // GitLab API 操作
   gitlabTest: (data) => ipcRenderer.invoke('gitlab-test', data),

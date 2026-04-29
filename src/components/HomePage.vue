@@ -92,6 +92,13 @@
               </div>
               <div
                 class="settings-sidebar-item"
+                :class="{ active: activeSettingsGroup === 'mcp' }"
+                @click="activeSettingsGroup = 'mcp'"
+              >
+                MCP 服务
+              </div>
+              <div
+                class="settings-sidebar-item"
                 :class="{ active: activeSettingsGroup === 'diagnostics' }"
                 @click="activeSettingsGroup = 'diagnostics'"
               >
@@ -224,6 +231,126 @@
                       </span>
                     </button>
                   </div>
+                </div>
+              </div>
+
+              <div v-else-if="activeSettingsGroup === 'mcp'" class="settings-panel">
+                <div class="settings-item">
+                  <label class="settings-switch settings-switch--block">
+                    <input
+                      type="checkbox"
+                      :checked="mcpConfig.enabled"
+                      @change="handleMcpEnabledChange"
+                    />
+                    <span>启用内置 MCP 服务</span>
+                  </label>
+                  <div class="mcp-status-card">
+                    <div class="mcp-status-row">
+                      <span class="mcp-status-label">状态</span>
+                      <span class="mcp-status-value" :class="{ 'is-running': mcpStatus.running }">
+                        {{ mcpStatusLabel }}
+                      </span>
+                    </div>
+                    <div class="mcp-status-row">
+                      <span class="mcp-status-label">地址</span>
+                      <span class="mcp-status-value">{{ mcpAddressLabel }}</span>
+                    </div>
+                    <div v-if="mcpStatus.lastError" class="mcp-status-error">{{ mcpStatus.lastError }}</div>
+                  </div>
+                </div>
+
+                <div class="settings-item">
+                  <label>MCP 接入</label>
+                  <div class="settings-item-content settings-item-content--stack">
+                    <div class="mcp-copy-card">
+                      <div class="mcp-copy-row">
+                        <span class="mcp-copy-label">端点</span>
+                        <code class="mcp-copy-code">{{ mcpEndpointUrl }}</code>
+                      </div>
+                      <div class="mcp-copy-actions">
+                        <button class="settings-btn-secondary" @click="copyMcpEndpoint">
+                          复制端点
+                        </button>
+                        <button class="settings-btn-secondary" @click="copyMcpClientConfig">
+                          复制示例配置
+                        </button>
+                      </div>
+                    </div>
+                    <pre class="mcp-config-preview">{{ mcpClientConfigSnippet }}</pre>
+                    <div v-if="mcpCopyFeedback" class="settings-hint">{{ mcpCopyFeedback }}</div>
+                  </div>
+                </div>
+
+                <div class="settings-item">
+                  <label for="mcp-port-input">监听端口</label>
+                  <div class="settings-item-content settings-item-content--compact">
+                    <input
+                      id="mcp-port-input"
+                      v-model="mcpPortInput"
+                      type="number"
+                      min="1"
+                      max="65535"
+                      class="settings-input"
+                      @change="handleMcpPortCommit"
+                      @blur="handleMcpPortCommit"
+                    />
+                    <span class="settings-hint">仅监听本机 `127.0.0.1`</span>
+                  </div>
+                </div>
+
+                <div class="settings-item">
+                  <label>能力开关</label>
+                  <div class="mcp-capability-list">
+                    <label class="settings-switch settings-switch--block">
+                      <input
+                        type="checkbox"
+                        :checked="mcpConfig.capabilities.projects"
+                        @change="handleMcpCapabilityChange('projects', $event)"
+                      />
+                      <span>项目发现</span>
+                    </label>
+                    <label class="settings-switch settings-switch--block">
+                      <input
+                        type="checkbox"
+                        :checked="mcpConfig.capabilities.terminals"
+                        @change="handleMcpCapabilityChange('terminals', $event)"
+                      />
+                      <span>终端读取</span>
+                    </label>
+                    <label class="settings-switch settings-switch--block">
+                      <input
+                        type="checkbox"
+                        :checked="mcpConfig.capabilities.remotesRead"
+                        @change="handleMcpCapabilityChange('remotesRead', $event)"
+                      />
+                      <span>远端只读查询</span>
+                    </label>
+                    <label class="settings-switch settings-switch--block">
+                      <input
+                        type="checkbox"
+                        :checked="mcpConfig.capabilities.terminalsWrite"
+                        @change="handleMcpCapabilityChange('terminalsWrite', $event)"
+                      />
+                      <span>终端写入（高风险）</span>
+                    </label>
+                    <label class="settings-switch settings-switch--block">
+                      <input
+                        type="checkbox"
+                        :checked="mcpConfig.capabilities.remotesWrite"
+                        @change="handleMcpCapabilityChange('remotesWrite', $event)"
+                      />
+                      <span>远端写操作（高风险）</span>
+                    </label>
+                    <label class="settings-switch settings-switch--block">
+                      <input
+                        type="checkbox"
+                        :checked="mcpConfig.capabilities.remotesRequest"
+                        @change="handleMcpCapabilityChange('remotesRequest', $event)"
+                      />
+                      <span>远端受控请求（高风险）</span>
+                    </label>
+                  </div>
+                  <div class="settings-hint">高风险能力默认关闭，仅在你明确希望 AI 写终端或触发远端 API 变更时开启。</div>
                 </div>
               </div>
 
@@ -426,6 +553,10 @@ const diagnosticsLoading = ref(false)
 const diagnosticsSnapshot = ref(null)
 const diagnosticsLastUpdated = ref('')
 const diagnosticsError = ref('')
+const mcpConfig = ref(createDefaultMcpConfig())
+const mcpStatus = ref(createDefaultMcpStatus())
+const mcpPortInput = ref(String(mcpConfig.value.port))
+const mcpCopyFeedback = ref('')
 
 // 图标错误状态
 const iconErrors = ref({})
@@ -480,6 +611,22 @@ const currentOnlineProviderLabel = computed(() => {
   return onlineWallpaperProviders.value.find((item) => item.id === selectedOnlineProviderId.value)?.label
     || '在线壁纸'
 })
+const mcpStatusLabel = computed(() => {
+  if (!mcpConfig.value.enabled) return '未启用'
+  if (mcpStatus.value.running) return '运行中'
+  if (mcpStatus.value.lastError) return '启动失败'
+  return '未启动'
+})
+const mcpAddressLabel = computed(() => `${mcpConfig.value.host}:${mcpConfig.value.port}`)
+const mcpEndpointUrl = computed(() => `http://${mcpConfig.value.host}:${mcpConfig.value.port}/mcp`)
+const mcpClientConfigSnippet = computed(() => JSON.stringify({
+  mcpServers: {
+    OpenGit: {
+      type: 'http',
+      url: mcpEndpointUrl.value
+    }
+  }
+}, null, 2))
 
 // 更新时钟
 const updateClock = () => {
@@ -647,6 +794,176 @@ const loadSettings = async () => {
   }
 }
 
+function createDefaultMcpConfig() {
+  return {
+    enabled: false,
+    host: '127.0.0.1',
+    port: 3765,
+    capabilities: {
+      projects: true,
+      terminals: true,
+      remotesRead: true,
+      terminalsWrite: false,
+      remotesWrite: false,
+      remotesRequest: false
+    }
+  }
+}
+
+function createDefaultMcpStatus() {
+  return {
+    enabled: false,
+    running: false,
+    host: '127.0.0.1',
+    port: 3765,
+    startedAt: '',
+    lastError: ''
+  }
+}
+
+function normalizeMcpConfig(payload = {}) {
+  const defaults = createDefaultMcpConfig()
+  const capabilities = payload && typeof payload.capabilities === 'object' ? payload.capabilities : {}
+  return {
+    enabled: typeof payload.enabled === 'boolean' ? payload.enabled : defaults.enabled,
+    host: typeof payload.host === 'string' && payload.host.trim() ? payload.host.trim() : defaults.host,
+    port: normalizeMcpPort(payload.port, defaults.port),
+    capabilities: {
+      projects: typeof capabilities.projects === 'boolean' ? capabilities.projects : defaults.capabilities.projects,
+      terminals: typeof capabilities.terminals === 'boolean' ? capabilities.terminals : defaults.capabilities.terminals,
+      remotesRead: typeof capabilities.remotesRead === 'boolean' ? capabilities.remotesRead : defaults.capabilities.remotesRead,
+      terminalsWrite: typeof capabilities.terminalsWrite === 'boolean' ? capabilities.terminalsWrite : defaults.capabilities.terminalsWrite,
+      remotesWrite: typeof capabilities.remotesWrite === 'boolean' ? capabilities.remotesWrite : defaults.capabilities.remotesWrite,
+      remotesRequest: typeof capabilities.remotesRequest === 'boolean' ? capabilities.remotesRequest : defaults.capabilities.remotesRequest
+    }
+  }
+}
+
+function normalizeMcpStatus(payload = {}) {
+  const defaults = createDefaultMcpStatus()
+  return {
+    enabled: typeof payload.enabled === 'boolean' ? payload.enabled : defaults.enabled,
+    running: typeof payload.running === 'boolean' ? payload.running : defaults.running,
+    host: typeof payload.host === 'string' && payload.host.trim() ? payload.host.trim() : defaults.host,
+    port: normalizeMcpPort(payload.port, defaults.port),
+    startedAt: typeof payload.startedAt === 'string' ? payload.startedAt : defaults.startedAt,
+    lastError: typeof payload.lastError === 'string' ? payload.lastError : defaults.lastError
+  }
+}
+
+function normalizeMcpPort(value, fallback = 3765) {
+  const numericPort = Number.parseInt(value, 10)
+  if (!Number.isInteger(numericPort) || numericPort < 1 || numericPort > 65535) {
+    return fallback
+  }
+  return numericPort
+}
+
+function applyMcpConfig(payload) {
+  mcpConfig.value = normalizeMcpConfig(payload)
+  mcpPortInput.value = String(mcpConfig.value.port)
+}
+
+function applyMcpStatus(payload) {
+  mcpStatus.value = normalizeMcpStatus(payload)
+}
+
+const loadMcpSettings = async () => {
+  if (!window.electronAPI?.getMcpConfig) return
+  try {
+    const configResult = await window.electronAPI.getMcpConfig()
+    applyMcpConfig(configResult?.config || configResult || {})
+    if (window.electronAPI.getMcpServerStatus) {
+      const statusResult = await window.electronAPI.getMcpServerStatus()
+      applyMcpStatus(statusResult?.status || statusResult || {})
+    }
+  } catch (error) {
+    console.error('加载 MCP 配置失败:', error)
+  }
+}
+
+const persistMcpConfig = async (partial = {}) => {
+  const nextConfig = normalizeMcpConfig({
+    ...mcpConfig.value,
+    ...partial,
+    capabilities: {
+      ...mcpConfig.value.capabilities,
+      ...(partial.capabilities || {})
+    }
+  })
+
+  applyMcpConfig(nextConfig)
+
+  if (!window.electronAPI?.saveMcpConfig) return
+
+  try {
+    const result = await window.electronAPI.saveMcpConfig(partial)
+    if (!result?.success) {
+      throw new Error(result?.error || '保存 MCP 配置失败')
+    }
+    applyMcpConfig(result.config || nextConfig)
+    applyMcpStatus(result.status || {})
+  } catch (error) {
+    console.error('保存 MCP 配置失败:', error)
+  }
+}
+
+const handleMcpEnabledChange = async (event) => {
+  await persistMcpConfig({
+    enabled: !!event?.target?.checked
+  })
+}
+
+const handleMcpPortCommit = async () => {
+  const nextPort = normalizeMcpPort(mcpPortInput.value, mcpConfig.value.port)
+  mcpPortInput.value = String(nextPort)
+  if (nextPort === mcpConfig.value.port) return
+  await persistMcpConfig({
+    port: nextPort
+  })
+}
+
+const handleMcpCapabilityChange = async (key, event) => {
+  await persistMcpConfig({
+    capabilities: {
+      [key]: !!event?.target?.checked
+    }
+  })
+}
+
+let mcpCopyFeedbackTimer = null
+
+const setMcpCopyFeedback = (message) => {
+  mcpCopyFeedback.value = message
+  if (mcpCopyFeedbackTimer) {
+    clearTimeout(mcpCopyFeedbackTimer)
+  }
+  mcpCopyFeedbackTimer = setTimeout(() => {
+    mcpCopyFeedback.value = ''
+    mcpCopyFeedbackTimer = null
+  }, 2200)
+}
+
+const copyMcpEndpoint = async () => {
+  try {
+    await navigator.clipboard.writeText(mcpEndpointUrl.value)
+    setMcpCopyFeedback('MCP 端点已复制')
+  } catch (error) {
+    console.error('复制 MCP 端点失败:', error)
+    setMcpCopyFeedback('复制失败')
+  }
+}
+
+const copyMcpClientConfig = async () => {
+  try {
+    await navigator.clipboard.writeText(mcpClientConfigSnippet.value)
+    setMcpCopyFeedback('示例配置已复制')
+  } catch (error) {
+    console.error('复制 MCP 配置失败:', error)
+    setMcpCopyFeedback('复制失败')
+  }
+}
+
 // 监听设置变化
 watch([overlayOpacity, blurAmount], () => {
   saveSettings()
@@ -659,6 +976,9 @@ watch([showSettingsDialog, activeSettingsGroup], async ([visible, group]) => {
   }
   if (visible && group === 'background' && backgroundMode.value === 'online' && !onlineWallpaperItems.value.length && !onlineWallpaperLoading.value) {
     await loadOnlineWallpaperList()
+  }
+  if (visible && group === 'mcp') {
+    await loadMcpSettings()
   }
 })
 
@@ -1181,6 +1501,7 @@ onMounted(async () => {
     updateClock()
     clockInterval = setInterval(updateClock, 1000)
     await loadSettings()
+    await loadMcpSettings()
     await loadOnlineWallpaperProviders()
     if (backgroundMode.value === 'online') {
       await loadOnlineWallpaperList()
@@ -1212,11 +1533,20 @@ onMounted(async () => {
       homeContentDisplay: homeContent ? window.getComputedStyle(homeContent).display : 'null'
     })
   })
+
+  if (window.electronAPI?.onMcpServerStatusChanged) {
+    window.electronAPI.onMcpServerStatusChanged((status) => {
+      applyMcpStatus(status)
+    })
+  }
 })
 
 onUnmounted(() => {
   if (clockInterval) {
     clearInterval(clockInterval)
+  }
+  if (window.electronAPI?.removeMcpServerStatusChangedListener) {
+    window.electronAPI.removeMcpServerStatusChangedListener()
   }
 })
 </script>
@@ -1715,6 +2045,12 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
+.settings-item-content--compact {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .settings-switch {
   display: inline-flex;
   align-items: center;
@@ -1723,8 +2059,122 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
+.settings-switch--block {
+  display: flex;
+}
+
 .settings-switch input {
   accent-color: var(--theme-sem-accent-primary);
+}
+
+.settings-input {
+  width: 100%;
+  max-width: 160px;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 86%, transparent);
+  color: var(--theme-sem-text-primary);
+  font-size: 13px;
+}
+
+.settings-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--theme-sem-text-muted);
+}
+
+.mcp-status-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 82%, transparent);
+  padding: 12px;
+}
+
+.mcp-status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mcp-status-label {
+  font-size: 12px;
+  color: var(--theme-sem-text-muted);
+}
+
+.mcp-status-value {
+  font-size: 13px;
+  color: var(--theme-sem-text-primary);
+  font-weight: 600;
+  text-align: right;
+}
+
+.mcp-status-value.is-running {
+  color: color-mix(in srgb, var(--theme-sem-accent-primary) 82%, var(--theme-sem-text-primary) 18%);
+}
+
+.mcp-status-error {
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--theme-sem-danger-bg) 78%, var(--theme-sem-text-primary) 22%);
+}
+
+.mcp-copy-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theme-sem-bg-dialog) 82%, transparent);
+  padding: 12px;
+}
+
+.mcp-copy-row {
+  display: grid;
+  gap: 6px;
+}
+
+.mcp-copy-label {
+  font-size: 12px;
+  color: var(--theme-sem-text-muted);
+}
+
+.mcp-copy-code {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 86%, transparent);
+  border: 1px solid var(--theme-sem-border-default);
+  color: var(--theme-sem-text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.mcp-copy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.mcp-config-preview {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, transparent);
+  border: 1px solid var(--theme-sem-border-default);
+  color: var(--theme-sem-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mcp-capability-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .online-wallpaper-error {

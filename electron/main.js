@@ -23,6 +23,16 @@ const { registerWindowUiHandlers } = require('./ipc/window-ui')
 const { registerBranchHandlers } = require('./ipc/branch')
 const { registerExtensionHandlers } = require('./ipc/extensions')
 const { registerScmHandlers } = require('./ipc/scm')
+const { getDefaultMcpConfig, getMcpConfig, saveMcpConfig } = require('./mcp/config')
+const { createEmbeddedMcpServer } = require('./mcp/server')
+const { createProjectsService } = require('./mcp/services/projects')
+const { createTerminalsService } = require('./mcp/services/terminals')
+const { createRemotesService } = require('./mcp/services/remotes')
+const { terminalBuffers } = require('./mcp/services/terminalBuffers')
+const { createProjectsTools } = require('./mcp/tools/projects')
+const { createTerminalsTools } = require('./mcp/tools/terminals')
+const { createRemotesTools } = require('./mcp/tools/remotes')
+const { writeTerminalSession } = require('./ipc/terminal-runtime')
 const { WebTabManager } = require('./tab-manager/web-tab-manager')
 const { createSessionPartitionManager } = require('./tab-manager/session-partition-manager')
 const { decideWindowOpenAction } = require('./tab-manager/window-open-policy')
@@ -742,6 +752,76 @@ safeLog('🔧 自定义 fetch 函数已设置:', typeof fetch)
 
 // 保持对窗口对象的全局引用
 let mainWindow
+let embeddedMcpServer = null
+let mcpRuntimeState = {
+  browser: {
+    totalTabs: 0,
+    activeTabId: null,
+    projectTabCount: 0,
+    openProjectTabs: [],
+    activeProject: null
+  }
+}
+
+function getMcpRuntimeState() {
+  return JSON.parse(JSON.stringify(mcpRuntimeState))
+}
+
+function getEmbeddedMcpTools(config = getMcpConfig(store)) {
+  const projectsService = createProjectsService({
+    store,
+    executeGitCommand,
+    getRuntimeState: getMcpRuntimeState
+  })
+  const terminalsService = createTerminalsService({
+    terminalBuffers,
+    writeTerminal: writeTerminalSession
+  })
+  const remotesService = createRemotesService({
+    store,
+    executeGitCommand,
+    fetch,
+    getGitlabProjectId
+  })
+
+  const tools = []
+  if (config?.capabilities?.projects !== false) {
+    tools.push(...createProjectsTools(projectsService))
+  }
+  if (config?.capabilities?.terminals !== false || config?.capabilities?.terminalsWrite === true) {
+    tools.push(...createTerminalsTools(terminalsService, {
+      enableWrite: config?.capabilities?.terminalsWrite === true
+    }))
+  }
+  if (config?.capabilities?.remotesRead !== false || config?.capabilities?.remotesWrite === true || config?.capabilities?.remotesRequest === true) {
+    tools.push(...createRemotesTools(remotesService, {
+      enableWrite: config?.capabilities?.remotesWrite === true,
+      enableRequest: config?.capabilities?.remotesRequest === true
+    }))
+  }
+  return tools
+}
+
+function broadcastMcpServerStatus(status) {
+  const windows = BrowserWindow.getAllWindows()
+  windows.forEach((win) => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('mcp-status-changed', status)
+    }
+  })
+}
+
+function ensureEmbeddedMcpServer() {
+  if (!embeddedMcpServer) {
+    embeddedMcpServer = createEmbeddedMcpServer({
+      safeLog,
+      safeError,
+      onStatusChange: broadcastMcpServerStatus,
+      getTools: getEmbeddedMcpTools
+    })
+  }
+  return embeddedMcpServer
+}
 
 // 初始化 electron-store
 const store = new Store({
@@ -750,7 +830,80 @@ const store = new Store({
     gitlabHistory: [],
     savedConfigs: [],
     browserFavorites: [],
-    browserPasswords: []
+    browserPasswords: [],
+    mcpConfig: getDefaultMcpConfig()
+  }
+})
+
+async function syncEmbeddedMcpServer() {
+  const server = ensureEmbeddedMcpServer()
+  const config = getMcpConfig(store)
+  const status = await server.start(config)
+  return { config, status }
+}
+
+ipcMain.handle('mcp-get-config', async () => {
+  return {
+    success: true,
+    config: getMcpConfig(store)
+  }
+})
+
+ipcMain.handle('mcp-save-config', async (event, payload = {}) => {
+  try {
+    const config = saveMcpConfig(store, payload)
+    const status = await ensureEmbeddedMcpServer().restart(config)
+    return { success: true, config, status }
+  } catch (error) {
+    safeError('❌ 保存 MCP 配置失败:', error.message)
+    return {
+      success: false,
+      error: error.message,
+      config: getMcpConfig(store),
+      status: ensureEmbeddedMcpServer().getStatus()
+    }
+  }
+})
+
+ipcMain.handle('mcp-get-status', async () => {
+  const config = getMcpConfig(store)
+  const status = ensureEmbeddedMcpServer().getStatus()
+  return {
+    success: true,
+    status: {
+      ...status,
+      enabled: config.enabled,
+      host: config.host,
+      port: config.port
+    }
+  }
+})
+
+ipcMain.on('mcp-runtime-state-update', (event, payload = {}) => {
+  if (!payload || typeof payload !== 'object') return
+  if (payload.browser && typeof payload.browser === 'object') {
+    const browser = payload.browser
+    mcpRuntimeState.browser = {
+      totalTabs: Number.isFinite(browser.totalTabs) ? browser.totalTabs : 0,
+      activeTabId: browser.activeTabId ?? null,
+      projectTabCount: Number.isFinite(browser.projectTabCount) ? browser.projectTabCount : 0,
+      openProjectTabs: Array.isArray(browser.openProjectTabs)
+        ? browser.openProjectTabs.map((tab) => ({
+          id: tab?.id ?? null,
+          path: String(tab?.path || '').trim(),
+          routeType: String(tab?.routeType || '').trim(),
+          title: String(tab?.title || '').trim()
+        })).filter((tab) => tab.path)
+        : [],
+      activeProject: browser.activeProject && typeof browser.activeProject === 'object'
+        ? {
+          id: browser.activeProject?.id ?? null,
+          path: String(browser.activeProject?.path || '').trim(),
+          routeType: String(browser.activeProject?.routeType || '').trim(),
+          title: String(browser.activeProject?.title || '').trim()
+        }
+        : null
+    }
   }
 })
 
@@ -2557,6 +2710,7 @@ app.whenReady().then(async () => {
   safeLog(`✅ Webview session configured with persist:main`)
   
   createWindow()
+  await syncEmbeddedMcpServer()
 
 }).catch((error) => {
   safeError('Error in app.whenReady():', error)
@@ -2632,6 +2786,9 @@ const { cleanup: cleanupTerminalSessions } = registerTerminalHandlers({
 })
 
 app.on('will-quit', () => {
+  if (embeddedMcpServer) {
+    void embeddedMcpServer.stop()
+  }
   if (webTabLifecycleInterval) {
     clearInterval(webTabLifecycleInterval)
     webTabLifecycleInterval = null

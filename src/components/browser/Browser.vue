@@ -631,11 +631,18 @@ const currentTab = computed(() => {
 const syncBrowserDebugState = () => {
   const routeCounts = {}
   let projectTabCount = 0
+  const openProjectTabs = []
   for (const tab of browserTabs.value) {
     const routeType = tab?.routeType || 'unknown'
     routeCounts[routeType] = (routeCounts[routeType] || 0) + 1
     if (routeType === 'clone-directory' || routeType === 'single-project') {
       projectTabCount += 1
+      openProjectTabs.push({
+        id: tab.id,
+        routeType,
+        path: String(tab?.routeProps?.path || '').trim(),
+        title: String(tab?.title || '').trim()
+      })
     }
   }
   updateBrowserDebugState({
@@ -644,6 +651,26 @@ const syncBrowserDebugState = () => {
     routeCounts,
     projectTabCount
   })
+  if (window.electronAPI?.reportMcpRuntimeState) {
+    const activeTab = currentTab.value
+    const activeProject = activeTab && (activeTab.routeType === 'clone-directory' || activeTab.routeType === 'single-project')
+      ? {
+        id: activeTab.id,
+        routeType: activeTab.routeType,
+        path: String(activeTab?.routeProps?.path || '').trim(),
+        title: String(activeTab?.title || '').trim()
+      }
+      : null
+    window.electronAPI.reportMcpRuntimeState({
+      browser: {
+        totalTabs: browserTabs.value.length,
+        activeTabId: activeBrowserTabId.value,
+        projectTabCount,
+        openProjectTabs,
+        activeProject
+      }
+    })
+  }
 }
 
 const emitProjectContext = () => {
@@ -4230,6 +4257,17 @@ onUnmounted(() => {
     routeCounts: {},
     projectTabCount: 0
   })
+  if (window.electronAPI?.reportMcpRuntimeState) {
+    window.electronAPI.reportMcpRuntimeState({
+      browser: {
+        totalTabs: 0,
+        activeTabId: null,
+        projectTabCount: 0,
+        openProjectTabs: [],
+        activeProject: null
+      }
+    })
+  }
 })
 
 watch(

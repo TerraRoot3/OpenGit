@@ -31,16 +31,20 @@ OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKr
 
 ### 最近新增
 
-- 新增完整主题系统，已内置 `4` 套主题：
+- 新增完整主题系统，已内置 `7` 套主题，并支持 `跟随系统`
   - `Slate Dual`
   - `Graphite Moss`
   - `Abyss Blue`
   - `Mist Paper`
-- 首页设置抽屉支持主题切换，并持久化保存主题选择
+  - `Frost Slate`
+  - `Aurora Paper`
+  - `Cobalt Mist`
+- 首页设置抽屉支持主题切换、跟随系统、在线壁纸和本地壁纸切换，并持久化保存选择
 - 浏览器、项目详情、工作区、终端、弹层与原生浮动菜单已接入统一主题变量
 - 支持深色与浅色主题混合扩展，便于后续继续增加新皮肤
-- GitLab Pipeline 在提交、推送、创建 MR、推送标签等操作后会自动触发延时刷新，并在后台跟踪运行状态
-- Project Detail 顶部可直接查看当前运行中的 Pipeline 摘要状态
+- GitLab / GitHub 流水线在提交、推送、创建 MR/PR、推送标签等操作后会自动触发延时刷新，并在后台跟踪运行状态
+- Project Detail 顶部可直接查看当前运行中的流水线摘要状态
+- 新增 OpenGit 内置 MCP，本地 AI 和外部 AI 可直接读取项目、终端输出、远端平台只读信息
 
 ### 核心能力
 
@@ -62,11 +66,11 @@ OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKr
 
 #### 3. 协作能力
 
-- GitLab 快速打开
+- GitLab / GitHub / Gitee 快速打开
 - 快速创建 Merge Request
 - 常见远端同步操作可视化
-- GitLab Pipeline 子页面：查看进行中的与最近的流水线
-- Project Detail 头部显示当前运行中的 GitLab Pipeline 状态，并自动轮询更新
+- GitLab Pipeline 与 GitHub Actions 子页面：查看进行中的与最近的流水线
+- Project Detail 头部显示当前运行中的流水线状态，并自动轮询更新
 
 #### 4. 终端工作区
 
@@ -99,6 +103,24 @@ OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKr
 - 统一的 `theme token` 结构，支持语义色、组件别名和后续一键换肤扩展
 - 主链路界面已完成主题化：项目详情、工作区、终端、内置浏览器、菜单、弹窗
 - 常用功能按钮支持按语义分色，并随主题自动调整明暗与对比度
+
+#### 8. 在线壁纸与首页背景
+
+- 支持 `本地图片 / 在线壁纸` 两种首页背景来源
+- 第一版内置 `Bing` 在线壁纸源
+- 支持下载到本地缓存后作为首页背景
+- 支持自动更新到最新在线壁纸
+
+#### 9. 内置 MCP
+
+- OpenGit 主进程可启动本地 MCP Server，仅监听 `127.0.0.1`
+- 支持项目发现能力：列目录、列仓库、活动项目、打开标签
+- 支持终端日志读取能力：读取终端最近输出、按项目聚合终端输出、提取错误片段
+- 支持终端交互能力：增量 tail 与向现有终端写入文本/命令
+- 支持远端平台只读能力：GitLab / GitHub / Gitee 仓库信息、MR/PR、流水线
+- 支持远端高层写能力：创建 MR/PR、评论、重跑流水线
+- 支持远端受控 API 请求：由 OpenGit 主进程附加凭据，AI 不直接拿到 token
+- 外部 AI 和内部 Codex 可共用同一 MCP 接口
 
 ### 适合谁
 
@@ -156,6 +178,57 @@ npm run electron:build:linux
 ```text
 dist-electron/
 ```
+
+### OpenGit 内置 MCP
+
+OpenGit 现在支持在主进程内启动一个本地 MCP Server。
+
+特点：
+
+- 仅监听 `127.0.0.1`
+- 不对公网开放
+- 默认从首页设置抽屉里手动开启
+- 当前为第一版只读能力
+
+默认端点：
+
+```text
+http://127.0.0.1:3765/mcp
+```
+
+当前工具分组：
+
+- `projects.*`
+  - `projects.list`
+  - `projects.find`
+  - `projects.get`
+  - `projects.get_active`
+  - `projects.get_open_tabs`
+- `terminals.*`
+  - `terminals.list`
+  - `terminals.get_output`
+  - `terminals.get_project_outputs`
+  - `terminals.get_recent_errors`
+  - `terminals.tail`
+  - `terminals.write`
+- `remotes.*`
+  - `remotes.detect_provider`
+  - `remotes.get_repo`
+  - `remotes.list_branches`
+  - `remotes.list_merge_requests`
+  - `remotes.list_pull_requests`
+  - `remotes.list_pipelines`
+  - `remotes.get_pipeline`
+  - `remotes.create_merge_request`
+  - `remotes.create_pull_request`
+  - `remotes.comment_merge_request`
+  - `remotes.comment_pull_request`
+  - `remotes.rerun_pipeline`
+  - `remotes.request`
+
+详细接入说明见：
+
+- [docs/mcp/opengit-embedded-mcp.md](./docs/mcp/opengit-embedded-mcp.md)
 
 ### 目录结构
 
@@ -239,16 +312,20 @@ Instead of trying to expose every Git concept equally, OpenGit focuses on the wo
 
 ### Recent Additions
 
-- A complete theme system with `4` built-in themes:
+- A complete theme system with `7` built-in themes plus `Follow System`
   - `Slate Dual`
   - `Graphite Moss`
   - `Abyss Blue`
   - `Mist Paper`
-- Theme switching from the Home settings drawer, with persisted selection
+  - `Frost Slate`
+  - `Aurora Paper`
+  - `Cobalt Mist`
+- Theme switching, follow-system mode, and local/online wallpaper selection from the Home settings drawer
 - Unified theme tokens now cover the browser, project detail views, workspace, terminal, dialogs, and native floating popups
 - Theming now supports both dark and light theme expansion cleanly
-- GitLab Pipeline refresh is now triggered automatically after commit, push, MR-related submit flows, and tag push operations
+- GitLab Pipelines and GitHub Actions now refresh automatically after commit, push, MR/PR submit flows, and tag push operations
 - Project Detail now keeps a running pipeline summary visible in the header
+- A new embedded local MCP server exposes project discovery, terminal output, and remote provider read-only tools to AI clients
 
 ### Core Capabilities
 

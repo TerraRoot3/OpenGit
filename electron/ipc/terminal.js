@@ -10,7 +10,15 @@ function registerTerminalHandlers({
   safeLog,
   getMainWindow
 }) {
-  const ptyProcesses = new Map()
+  const { terminalBuffers, normalizeTerminalMode } = require('../mcp/services/terminalBuffers')
+  const {
+    registerTerminalSession,
+    getTerminalSession,
+    removeTerminalSession,
+    clearTerminalSessions,
+    listTerminalSessions,
+    writeTerminalSession
+  } = require('./terminal-runtime')
   const { execFile } = require('child_process')
 
   const resolveProcessCwd = (pid) => {
@@ -52,7 +60,7 @@ function registerTerminalHandlers({
   }
 
   const resolveSessionCwd = async (terminalId) => {
-    const session = ptyProcesses.get(terminalId)
+    const session = getTerminalSession(terminalId)
     if (!session?.ptyProcess) return ''
     try {
       const pid = session.ptyProcess.pid
@@ -71,6 +79,7 @@ function registerTerminalHandlers({
       let cwd = raw.cwd
       if (cwd != null && typeof cwd !== 'string') cwd = String(cwd)
       const id = raw.id
+      const mode = normalizeTerminalMode(raw.mode || raw.terminalMode || raw.routeType || raw.kind || '')
 
       const shell = process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash'
       const homeDir = app.getPath('home')
@@ -128,10 +137,17 @@ function registerTerminalHandlers({
       const terminalSession = {
         ptyProcess,
         projectPath: resolvedCwd,
+        mode,
         skipInitialRefresh: true,
         hasUserInput: false
       }
-      ptyProcesses.set(terminalId, terminalSession)
+      registerTerminalSession(terminalId, terminalSession)
+      terminalBuffers.ensureTerminal({
+        terminalId,
+        projectPath: resolvedCwd,
+        cwd: resolvedCwd,
+        mode
+      })
 
       const senderContents = event.sender
       const getSenderWindow = () => {
@@ -196,11 +212,15 @@ function registerTerminalHandlers({
             if (wc) wc.send('terminal-title', { id: terminalId, title })
           }
 
-          const sessionInfo = ptyProcesses.get(terminalId)
+          const sessionInfo = getTerminalSession(terminalId)
           if (sessionInfo) {
             const cwd = await resolveProcessCwd(ptyProcess.pid)
             if (cwd && cwd !== sessionInfo.projectPath) {
               sessionInfo.projectPath = cwd
+              terminalBuffers.updateTerminal(terminalId, {
+                projectPath: cwd,
+                cwd
+              })
               const wc = getSenderWindow()
               if (wc) wc.send('terminal-cwd', { id: terminalId, cwd })
             }
@@ -212,13 +232,14 @@ function registerTerminalHandlers({
 
       let refreshDebounce = null
       ptyProcess.onData((data) => {
+        terminalBuffers.appendOutput(terminalId, data)
         const wc = getSenderWindow()
         if (wc) wc.send('terminal-output', { id: terminalId, data })
         if (refreshDebounce) clearTimeout(refreshDebounce)
         refreshDebounce = setTimeout(() => {
           refreshDebounce = null
-          const sessionInfo = ptyProcesses.get(terminalId)
-          if (!sessionInfo) return
+        const sessionInfo = getTerminalSession(terminalId)
+        if (!sessionInfo) return
           if (sessionInfo.skipInitialRefresh && !sessionInfo.hasUserInput) {
             sessionInfo.skipInitialRefresh = false
             return
@@ -241,7 +262,8 @@ function registerTerminalHandlers({
           clearTimeout(refreshDebounce)
           refreshDebounce = null
         }
-        ptyProcesses.delete(terminalId)
+        terminalBuffers.removeTerminal(terminalId)
+        removeTerminalSession(terminalId)
         const wc = getSenderWindow()
         if (wc) wc.send('terminal-exit', { id: terminalId, exitCode, signal })
       })
@@ -254,15 +276,11 @@ function registerTerminalHandlers({
   })
 
   ipcMain.on('terminal-write', (event, { id, data }) => {
-    const session = ptyProcesses.get(id)
-    if (session?.ptyProcess) {
-      session.hasUserInput = true
-      session.ptyProcess.write(data)
-    }
+    void writeTerminalSession(id, data).catch(() => {})
   })
 
   ipcMain.on('terminal-resize', (event, { id, cols, rows }) => {
-    const session = ptyProcesses.get(id)
+    const session = getTerminalSession(id)
     if (session?.ptyProcess) {
       try {
         session.ptyProcess.resize(cols, rows)
@@ -280,6 +298,10 @@ function registerTerminalHandlers({
       if (!cwd) {
         return { success: false, error: 'cwd unavailable' }
       }
+      terminalBuffers.updateTerminal(terminalId, {
+        projectPath: cwd,
+        cwd
+      })
       return { success: true, id: terminalId, cwd, projectPath: cwd }
     } catch (error) {
       return { success: false, error: error.message }
@@ -287,11 +309,12 @@ function registerTerminalHandlers({
   })
 
   ipcMain.handle('terminal-destroy', async (event, { id }) => {
-    const session = ptyProcesses.get(id)
+    const session = getTerminalSession(id)
     if (session?.ptyProcess) {
       try {
         session.ptyProcess.kill()
-        ptyProcesses.delete(id)
+        terminalBuffers.removeTerminal(id)
+        removeTerminalSession(id)
         return { success: true }
       } catch (e) {
         return { success: false, error: e.message }
@@ -301,12 +324,15 @@ function registerTerminalHandlers({
   })
 
   const cleanup = () => {
-    for (const [, session] of ptyProcesses) {
+    for (const { terminalId } of listTerminalSessions()) {
+      const session = getTerminalSession(terminalId)
+      if (!session) continue
       try {
         session.ptyProcess.kill()
       } catch {}
+      terminalBuffers.removeTerminal(terminalId)
     }
-    ptyProcesses.clear()
+    clearTerminalSessions()
   }
 
   return { cleanup }
