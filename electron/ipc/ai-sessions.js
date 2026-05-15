@@ -143,6 +143,11 @@ function readJsonlFileUntil(filePath, onItem, chunkSize = 64 * 1024) {
   }
 }
 
+function appendJsonlRecord(filePath, record) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  fs.appendFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8')
+}
+
 function ensureSummaryCacheLoaded() {
   if (summaryCacheStore.loaded) return summaryCacheStore
 
@@ -591,18 +596,136 @@ function pruneEmptyDirectories(startDir = '', rootDir = '') {
   }
 }
 
-function deleteAiSessionSource({ provider = '', sourcePath = '' } = {}) {
+function resolveAiSessionRoots(provider = '', homeDir = os.homedir()) {
+  const normalizedHomeDir = normalizeProjectPath(homeDir)
+  if (!normalizedHomeDir) {
+    return {
+      rootDir: '',
+      archiveDir: '',
+      indexPath: ''
+    }
+  }
+
+  if (provider === 'codex') {
+    const codexRoot = path.join(normalizedHomeDir, '.codex')
+    return {
+      rootDir: path.join(codexRoot, 'sessions'),
+      archiveDir: path.join(codexRoot, 'archived_sessions'),
+      indexPath: path.join(codexRoot, 'session_index.jsonl')
+    }
+  }
+
+  if (provider === 'claude') {
+    return {
+      rootDir: path.join(normalizedHomeDir, '.claude', 'projects'),
+      archiveDir: '',
+      indexPath: ''
+    }
+  }
+
+  return {
+    rootDir: '',
+    archiveDir: '',
+    indexPath: ''
+  }
+}
+
+function resolveUniqueArchivePath(archiveDir = '', fileName = '') {
+  const parsed = path.parse(fileName || 'session.jsonl')
+  let candidate = path.join(archiveDir, fileName)
+  let suffix = 1
+
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(archiveDir, `${parsed.name}-${suffix}${parsed.ext || '.jsonl'}`)
+    suffix += 1
+  }
+
+  return candidate
+}
+
+function renameCodexSession({
+  homeDir = os.homedir(),
+  sourcePath = '',
+  sessionId = '',
+  title = '',
+  updatedAt = ''
+} = {}) {
+  const normalizedTitle = typeof title === 'string' ? title.trim() : ''
+  const normalizedSessionId = String(sessionId || '').trim()
+  const normalizedSourcePath = normalizeProjectPath(sourcePath)
+  const { rootDir, indexPath } = resolveAiSessionRoots('codex', homeDir)
+
+  if (!normalizedSessionId || !normalizedTitle) {
+    throw new Error('invalid codex rename request')
+  }
+
+  if (!rootDir || !normalizedSourcePath || !isPathInsideRoot(normalizedSourcePath, rootDir)) {
+    throw new Error('codex session source is not allowed')
+  }
+
+  if (!fs.existsSync(normalizedSourcePath)) {
+    throw new Error('codex session source unavailable')
+  }
+
+  const normalizedUpdatedAt = normalizeIsoString(updatedAt) || new Date().toISOString()
+  appendJsonlRecord(indexPath, {
+    id: normalizedSessionId,
+    thread_name: normalizedTitle,
+    updated_at: normalizedUpdatedAt
+  })
+
+  resetSessionCaches()
+
+  return {
+    renamed: true,
+    title: normalizedTitle,
+    updatedAt: normalizedUpdatedAt
+  }
+}
+
+function archiveCodexSessionSource({
+  homeDir = os.homedir(),
+  sourcePath = ''
+} = {}) {
+  const normalizedSourcePath = normalizeProjectPath(sourcePath)
+  const { rootDir, archiveDir } = resolveAiSessionRoots('codex', homeDir)
+
+  if (!rootDir || !archiveDir || !normalizedSourcePath || !isPathInsideRoot(normalizedSourcePath, rootDir)) {
+    throw new Error('codex session source is not allowed')
+  }
+
+  if (!fs.existsSync(normalizedSourcePath)) {
+    return {
+      archived: false,
+      archivedPath: ''
+    }
+  }
+
+  fs.mkdirSync(archiveDir, { recursive: true })
+  const archivedPath = resolveUniqueArchivePath(archiveDir, path.basename(normalizedSourcePath))
+  fs.renameSync(normalizedSourcePath, archivedPath)
+  pruneEmptyDirectories(path.dirname(normalizedSourcePath), rootDir)
+  deleteSessionSummaryCache({ provider: 'codex', sourcePath: normalizedSourcePath })
+  flushSummaryCache()
+  resetSessionCaches()
+
+  return {
+    archived: true,
+    archivedPath
+  }
+}
+
+function deleteAiSessionSource({ provider = '', sourcePath = '', homeDir = os.homedir() } = {}) {
   const normalizedSourcePath = normalizeProjectPath(sourcePath)
   if (!normalizedSourcePath) {
     throw new Error('invalid session source path')
   }
 
-  const homeDir = os.homedir()
-  const rootDir = provider === 'codex'
-    ? path.join(homeDir, '.codex', 'sessions')
-    : provider === 'claude'
-      ? path.join(homeDir, '.claude', 'projects')
-      : ''
+  if (provider === 'codex') {
+    return archiveCodexSessionSource({ homeDir, sourcePath: normalizedSourcePath })
+  }
+
+  const { rootDir } = resolveAiSessionRoots(provider, homeDir)
 
   if (!rootDir || !isPathInsideRoot(normalizedSourcePath, rootDir)) {
     throw new Error('session source is not allowed')
@@ -630,7 +753,7 @@ function mergeSessionEntry(targetMap, entry) {
 }
 
 function buildCodexIndex(homeDir) {
-  const indexPath = path.join(homeDir, '.codex', 'session_index.jsonl')
+  const { indexPath } = resolveAiSessionRoots('codex', homeDir)
   const indexMap = new Map()
 
   readJsonlFile(indexPath, (item) => {
@@ -653,7 +776,7 @@ function loadCodexSessions(homeDir) {
     }
   }
 
-  const sessionsRoot = path.join(homeDir, '.codex', 'sessions')
+  const { rootDir: sessionsRoot } = resolveAiSessionRoots('codex', homeDir)
   const indexMap = buildCodexIndex(homeDir)
   const files = walkFiles(sessionsRoot, (fullPath) => fullPath.endsWith('.jsonl'))
   const sessionMap = new Map()
@@ -685,11 +808,12 @@ function loadCodexSessions(homeDir) {
       extractSummary: extractCodexSummary
     })
     hasPendingSummaryRefresh = hasPendingSummaryRefresh || summaryState.pendingRefresh
+    const fallbackTitle = extractCodexSummary(filePath)
 
     mergeSessionEntry(sessionMap, {
       provider: 'codex',
       sessionId,
-      title: indexed?.title || path.basename(cwd) || sessionId,
+      title: indexed?.title || fallbackTitle || path.basename(cwd) || sessionId,
       cwd,
       updatedAt,
       summary: summaryState.summary,
@@ -956,12 +1080,57 @@ function registerAiSessionHandlers({
       }
     }
   })
+
+  ipcMain.handle('rename-project-ai-session', async (event, { provider, sourcePath, sessionId, title, updatedAt } = {}) => {
+    try {
+      if (provider !== 'codex') {
+        throw new Error('rename is only supported for codex sessions')
+      }
+      const result = renameCodexSession({ sourcePath, sessionId, title, updatedAt })
+      return {
+        success: true,
+        data: result
+      }
+    } catch (error) {
+      safeError('❌ 重命名 AI 会话失败:', error.message)
+      return {
+        success: false,
+        error: error.message,
+        data: {
+          renamed: false
+        }
+      }
+    }
+  })
+
+  ipcMain.handle('archive-project-ai-session', async (event, { provider, sourcePath } = {}) => {
+    try {
+      if (provider !== 'codex') {
+        throw new Error('archive is only supported for codex sessions')
+      }
+      const result = archiveCodexSessionSource({ sourcePath })
+      return {
+        success: true,
+        data: result
+      }
+    } catch (error) {
+      safeError('❌ 归档 AI 会话失败:', error.message)
+      return {
+        success: false,
+        error: error.message,
+        data: {
+          archived: false
+        }
+      }
+    }
+  })
 }
 
 module.exports = {
   registerAiSessionHandlers,
   __testables: {
     normalizeSessionText,
+    resetSessionCaches,
     configureSummaryCache,
     flushSummaryCache,
     getSessionSummaryCacheState,
@@ -974,6 +1143,10 @@ module.exports = {
     extractCodexTranscript,
     extractClaudeContentText,
     extractClaudeSummary,
-    extractClaudeTranscript
+    extractClaudeTranscript,
+    resolveAiSessionRoots,
+    renameCodexSession,
+    archiveCodexSessionSource,
+    loadCodexSessions
   }
 }

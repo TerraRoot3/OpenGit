@@ -68,7 +68,11 @@
               <div v-else class="session-meta-spacer"></div>
               <div class="session-actions">
                 <button class="resume-btn" @click.stop="resumeSession(session)">恢复</button>
-                <button class="delete-btn-inline" @click.stop="promptDeleteSession(session)">删除</button>
+                <template v-if="isCodexSession(session)">
+                  <button class="rename-btn-inline" @click.stop="promptRenameSession(session)">重命名</button>
+                  <button class="archive-btn-inline" @click.stop="promptArchiveSession(session)">归档</button>
+                </template>
+                <button v-else class="delete-btn-inline" @click.stop="promptDeleteSession(session)">删除</button>
               </div>
             </div>
           </div>
@@ -125,9 +129,75 @@
 
         <div class="dialog-footer">
           <button class="cancel-btn-large" @click="closeSummaryDialog">关闭</button>
+          <button
+            v-if="isCodexSession(summaryDialogSession)"
+            class="rename-btn-large"
+            :disabled="renameLoading"
+            @click="promptRenameSession()"
+          >
+            {{ renameLoading ? '处理中...' : '重命名' }}
+          </button>
           <button class="confirm-btn-large" @click="resumeFromDialog">恢复会话</button>
-          <button class="delete-btn-large" :disabled="deleteLoading" @click="promptDeleteSession()">
+          <button
+            v-if="isCodexSession(summaryDialogSession)"
+            class="archive-btn-large"
+            :disabled="archiveLoading"
+            @click="promptArchiveSession()"
+          >
+            {{ archiveLoading ? '归档中...' : '归档会话' }}
+          </button>
+          <button v-else class="delete-btn-large" :disabled="deleteLoading" @click="promptDeleteSession()">
             {{ deleteLoading ? '删除中...' : '删除会话' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showRenameDialog && renameTargetSession" class="dialog-overlay" @click="closeRenameDialog">
+      <div class="dialog-content rename-dialog" @click.stop>
+        <div class="dialog-header-simple">
+          <h3>重命名会话</h3>
+        </div>
+        <div class="dialog-body">
+          <p>为 Codex 会话设置新的名称。</p>
+          <input
+            v-model="renameDraft"
+            class="rename-session-input"
+            type="text"
+            maxlength="120"
+            placeholder="输入新的会话名称"
+            @keydown.enter.prevent="confirmRenameSession"
+            @keydown.escape.prevent="closeRenameDialog"
+          />
+          <div class="rename-session-hint">
+            会写入本机 `~/.codex/session_index.jsonl`，和 Codex 的会话标题保持一致。
+          </div>
+        </div>
+        <div class="dialog-footer">
+          <button class="cancel-btn-large" :disabled="renameLoading" @click="closeRenameDialog">取消</button>
+          <button class="rename-btn-large" :disabled="renameLoading" @click="confirmRenameSession">
+            {{ renameLoading ? '保存中...' : '确认重命名' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showArchiveConfirm && archiveTargetSession" class="dialog-overlay" @click="closeArchiveConfirm">
+      <div class="dialog-content delete-dialog" @click.stop>
+        <div class="dialog-header-simple">
+          <h3>归档会话</h3>
+        </div>
+        <div class="dialog-body">
+          <p>确定要归档会话 “<strong>{{ getSessionTitle(archiveTargetSession) }}</strong>” 吗？</p>
+          <div class="delete-session-summary">
+            {{ getSessionSummary(archiveTargetSession) }}
+          </div>
+          <p class="warning-text">归档后会移动到本机 Codex 的 archived_sessions，并且不再显示在这里。</p>
+        </div>
+        <div class="dialog-footer">
+          <button class="cancel-btn-large" :disabled="archiveLoading" @click="closeArchiveConfirm">取消</button>
+          <button class="archive-btn-large" :disabled="archiveLoading" @click="confirmArchiveSession">
+            {{ archiveLoading ? '归档中...' : '确认归档' }}
           </button>
         </div>
       </div>
@@ -176,10 +246,17 @@ const errorMessage = ref('')
 const selectedProvider = ref('codex')
 const selectedSessionId = ref('')
 const summaryDialogSession = ref(null)
+const renameTargetSession = ref(null)
+const archiveTargetSession = ref(null)
 const deleteTargetSession = ref(null)
 const detailLoading = ref(false)
 const detailError = ref('')
+const renameDraft = ref('')
+const renameLoading = ref(false)
+const archiveLoading = ref(false)
 const deleteLoading = ref(false)
+const showRenameDialog = ref(false)
+const showArchiveConfirm = ref(false)
 const showDeleteConfirm = ref(false)
 const dialogMessages = ref([])
 const sessions = ref({
@@ -271,6 +348,8 @@ const getProviderLabel = (providerKey) => {
   return provider?.label || 'AI'
 }
 
+const isCodexSession = (session) => session?.provider === 'codex'
+
 const getSessionTitle = (session) => {
   const title = typeof session?.title === 'string' ? session.title.trim() : ''
   return title || '未命名会话'
@@ -342,6 +421,21 @@ const syncSelectedSession = () => {
   selectedSessionId.value = selectedProviderSessions.value[0]?.sessionId || ''
 }
 
+const findSessionByIdentity = (provider = '', sessionId = '') => {
+  if (!provider || !sessionId) return null
+  const providerSessions = sessions.value[provider] || []
+  return providerSessions.find((session) => session.sessionId === sessionId) || null
+}
+
+const syncDialogSession = () => {
+  const current = summaryDialogSession.value
+  if (!current?.provider || !current?.sessionId) return
+  const updated = findSessionByIdentity(current.provider, current.sessionId)
+  if (updated) {
+    summaryDialogSession.value = updated
+  }
+}
+
 const loadSessions = async ({ silent = false } = {}) => {
   if (!props.projectPath || !window.electronAPI?.getProjectAiSessions) {
     sessions.value = { claude: [], codex: [] }
@@ -374,6 +468,7 @@ const loadSessions = async ({ silent = false } = {}) => {
     }
     syncSelectedProvider()
     syncSelectedSession()
+    syncDialogSession()
     syncSessionCache()
     errorMessage.value = ''
 
@@ -444,6 +539,40 @@ const promptDeleteSession = (session = summaryDialogSession.value) => {
   showDeleteConfirm.value = true
 }
 
+const promptRenameSession = (session = summaryDialogSession.value) => {
+  if (!isCodexSession(session) || renameLoading.value) return
+  renameTargetSession.value = session
+  renameDraft.value = getSessionTitle(session)
+  showRenameDialog.value = true
+}
+
+const resetRenameDialogState = () => {
+  showRenameDialog.value = false
+  renameTargetSession.value = null
+  renameDraft.value = ''
+}
+
+const closeRenameDialog = () => {
+  if (renameLoading.value) return
+  resetRenameDialogState()
+}
+
+const promptArchiveSession = (session = summaryDialogSession.value) => {
+  if (!isCodexSession(session) || archiveLoading.value) return
+  archiveTargetSession.value = session
+  showArchiveConfirm.value = true
+}
+
+const resetArchiveConfirmState = () => {
+  showArchiveConfirm.value = false
+  archiveTargetSession.value = null
+}
+
+const closeArchiveConfirm = () => {
+  if (archiveLoading.value) return
+  resetArchiveConfirmState()
+}
+
 const resetDeleteConfirmState = () => {
   showDeleteConfirm.value = false
   deleteTargetSession.value = null
@@ -452,6 +581,73 @@ const resetDeleteConfirmState = () => {
 const closeDeleteConfirm = () => {
   if (deleteLoading.value) return
   resetDeleteConfirmState()
+}
+
+const confirmRenameSession = async () => {
+  const session = renameTargetSession.value
+  const title = renameDraft.value.trim()
+  if (!session?.sourcePath || !window.electronAPI?.renameProjectAiSession || renameLoading.value) return
+  if (!title) {
+    errorMessage.value = '会话名称不能为空'
+    return
+  }
+
+  renameLoading.value = true
+
+  try {
+    const result = await window.electronAPI.renameProjectAiSession({
+      provider: session.provider,
+      sourcePath: session.sourcePath,
+      sessionId: session.sessionId,
+      title,
+      updatedAt: session.updatedAt
+    })
+
+    if (!result?.success) {
+      errorMessage.value = result?.error || '重命名会话失败'
+      return
+    }
+
+    errorMessage.value = ''
+    await loadSessions()
+    resetRenameDialogState()
+  } catch (error) {
+    errorMessage.value = error?.message || '重命名会话失败'
+  } finally {
+    renameLoading.value = false
+  }
+}
+
+const confirmArchiveSession = async () => {
+  const session = archiveTargetSession.value
+  if (!session?.sourcePath || !window.electronAPI?.archiveProjectAiSession || archiveLoading.value) return
+
+  archiveLoading.value = true
+
+  try {
+    const result = await window.electronAPI.archiveProjectAiSession({
+      provider: session.provider,
+      sourcePath: session.sourcePath
+    })
+
+    if (!result?.success) {
+      errorMessage.value = result?.error || '归档会话失败'
+      return
+    }
+
+    errorMessage.value = ''
+    await loadSessions()
+
+    if (summaryDialogSession.value?.sessionId === session.sessionId) {
+      closeSummaryDialog()
+    }
+
+    resetArchiveConfirmState()
+  } catch (error) {
+    errorMessage.value = error?.message || '归档会话失败'
+  } finally {
+    archiveLoading.value = false
+  }
 }
 
 const confirmDeleteSession = async () => {
@@ -523,6 +719,9 @@ const loadSessionDetail = async (session) => {
 watch(() => props.projectPath, () => {
   clearSilentReload()
   silentReloadAttempts = 0
+  resetRenameDialogState()
+  resetArchiveConfirmState()
+  resetDeleteConfirmState()
   closeSummaryDialog()
   restoreSessionCache()
   loadSessions()
@@ -531,6 +730,9 @@ watch(() => props.projectPath, () => {
 onUnmounted(() => {
   syncSessionCache()
   clearSilentReload()
+  resetRenameDialogState()
+  resetArchiveConfirmState()
+  resetDeleteConfirmState()
 })
 </script>
 
@@ -710,6 +912,10 @@ onUnmounted(() => {
 .session-title {
   flex: 1;
   min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .session-summary {
@@ -750,6 +956,8 @@ onUnmounted(() => {
 }
 
 .resume-btn,
+.rename-btn-inline,
+.archive-btn-inline,
 .refresh-btn,
 .delete-btn-inline {
   flex-shrink: 0;
@@ -770,7 +978,14 @@ onUnmounted(() => {
   color: var(--theme-comp-workspace-git-commit-text);
 }
 
+.rename-btn-inline,
+.archive-btn-inline {
+  color: var(--theme-sem-text-primary);
+}
+
 .resume-btn:hover,
+.rename-btn-inline:hover,
+.archive-btn-inline:hover,
 .refresh-btn:hover:not(:disabled),
 .delete-btn-inline:hover {
   background: var(--theme-sem-hover);
@@ -983,6 +1198,8 @@ onUnmounted(() => {
 }
 
 .cancel-btn-large,
+.rename-btn-large,
+.archive-btn-large,
 .confirm-btn-large,
 .delete-btn-large {
   padding: 8px 16px;
@@ -1008,8 +1225,23 @@ onUnmounted(() => {
   color: var(--theme-sem-text-primary);
 }
 
+.rename-btn-large {
+  background: color-mix(in srgb, var(--theme-sem-hover) 90%, transparent);
+  color: var(--theme-sem-text-primary);
+}
+
+.archive-btn-large {
+  background: color-mix(in srgb, var(--theme-sem-hover) 96%, transparent);
+  color: var(--theme-sem-text-primary);
+}
+
 .confirm-btn-large:hover {
   background: color-mix(in srgb, var(--theme-sem-hover) 96%, transparent);
+}
+
+.rename-btn-large:hover:not(:disabled),
+.archive-btn-large:hover:not(:disabled) {
+  background: var(--theme-sem-hover);
 }
 
 .delete-btn-large {
@@ -1022,10 +1254,40 @@ onUnmounted(() => {
 }
 
 .delete-btn-large:disabled,
+.archive-btn-large:disabled,
+.rename-btn-large:disabled,
 .confirm-btn-large:disabled,
 .cancel-btn-large:disabled {
   opacity: 0.65;
   cursor: default;
+}
+
+.rename-dialog {
+  max-width: 520px;
+}
+
+.rename-session-input {
+  width: 100%;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--theme-sem-border-default);
+  background: color-mix(in srgb, var(--theme-sem-hover) 40%, transparent);
+  color: var(--theme-sem-text-primary);
+  padding: 0 12px;
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.rename-session-input:focus {
+  border-color: var(--theme-sem-border-strong);
+  background: color-mix(in srgb, var(--theme-sem-hover) 60%, transparent);
+}
+
+.rename-session-hint {
+  color: var(--theme-sem-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .delete-dialog {

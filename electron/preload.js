@@ -95,6 +95,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   detectGitRepository: (data) => ipcRenderer.invoke('detect-git-repository', data),
   getProjectAiSessions: (data) => ipcRenderer.invoke('get-project-ai-sessions', data),
   getProjectAiSessionDetail: (data) => ipcRenderer.invoke('get-project-ai-session-detail', data),
+  renameProjectAiSession: (data) => ipcRenderer.invoke('rename-project-ai-session', data),
+  archiveProjectAiSession: (data) => ipcRenderer.invoke('archive-project-ai-session', data),
   deleteProjectAiSession: (data) => ipcRenderer.invoke('delete-project-ai-session', data),
   
   // 配置管理
