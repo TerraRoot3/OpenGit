@@ -1,11 +1,28 @@
 <template>
-  <aside class="project-sidebar" :class="{ collapsed: collapsed }">
+  <aside class="project-sidebar">
     <div class="project-sidebar-header">
       <div class="header-title-row">
         <div class="header-title">项目</div>
-        <button class="icon-btn" type="button" title="收起侧边栏" @click="$emit('toggle-collapse')">
-          <PanelLeftClose :size="16" />
-        </button>
+        <div class="header-title-actions">
+          <button
+            class="icon-btn"
+            :class="{ active: !isFloatingMode }"
+            type="button"
+            :title="isFloatingMode ? '固定侧边栏' : '取消固定'"
+            @click="isFloatingMode ? $emit('pin-sidebar') : $emit('unpin-sidebar')"
+          >
+            <Pin :size="16" />
+          </button>
+          <button
+            v-if="isFloatingMode"
+            class="icon-btn"
+            type="button"
+            title="关闭侧边栏"
+            @click="$emit('close-sidebar')"
+          >
+            <X :size="16" />
+          </button>
+        </div>
       </div>
       <div class="header-actions">
         <button class="action-btn primary" type="button" @click="$emit('add-root')">
@@ -175,10 +192,11 @@ import {
   FolderPlus,
   FolderSearch,
   GitBranch,
-  PanelLeftClose,
+  Pin,
   RefreshCw,
   Search,
-  Star
+  Star,
+  X
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -194,9 +212,9 @@ const props = defineProps({
     type: String,
     default: ''
   },
-  collapsed: {
-    type: Boolean,
-    default: false
+  mode: {
+    type: String,
+    default: 'floating'
   },
   selectedRootPath: {
     type: String,
@@ -241,7 +259,9 @@ const emit = defineEmits([
   'remove-repository',
   'toggle-root',
   'refresh-current-root',
-  'toggle-collapse',
+  'pin-sidebar',
+  'unpin-sidebar',
+  'close-sidebar',
   'expand-all',
   'collapse-all',
   'update:searchQuery'
@@ -249,6 +269,7 @@ const emit = defineEmits([
 
 const normalizedQuery = computed(() => props.searchQuery.trim().toLowerCase())
 const hasRepositories = computed(() => props.groups.length > 0)
+const isFloatingMode = computed(() => props.mode !== 'pinned')
 const showContextMenu = ref(false)
 const contextMenuPosition = ref({ x: 0, y: 0 })
 const contextMenuItem = ref(null)
@@ -409,6 +430,7 @@ onBeforeUnmount(() => {
 
 .header-title-row,
 .header-actions,
+.header-title-actions,
 .group-row,
 .group-row-main,
 .root-main,
@@ -423,6 +445,10 @@ onBeforeUnmount(() => {
 .header-title-row,
 .group-row {
   justify-content: space-between;
+}
+
+.header-title-actions {
+  gap: 8px;
 }
 
 .group-row {
@@ -609,6 +635,12 @@ onBeforeUnmount(() => {
 .icon-btn:disabled {
   opacity: 0.42;
   cursor: default;
+}
+
+.icon-btn.active {
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
+  color: var(--theme-comp-selected-text);
 }
 
 .root-expand-btn:hover,

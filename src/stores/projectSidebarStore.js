@@ -5,10 +5,12 @@ const ELECTRON_STORE_KEY = 'project-sidebar-state-v1'
 const DEFAULT_WIDTH = 320
 const MIN_WIDTH = 250
 const MAX_WIDTH = 520
+const DEFAULT_MODE = 'floating'
 
 const scanRoots = ref([])
 const sidebarWidth = ref(DEFAULT_WIDTH)
-const sidebarCollapsed = ref(false)
+const sidebarMode = ref(DEFAULT_MODE)
+const sidebarOpen = ref(false)
 const expandedRootPaths = ref([])
 const searchQuery = ref('')
 const initialized = ref(false)
@@ -33,6 +35,10 @@ const clampWidth = (value) => {
   return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(numeric)))
 }
 
+const normalizeSidebarMode = (value) => {
+  return value === 'pinned' ? 'pinned' : DEFAULT_MODE
+}
+
 const getStorage = () => {
   if (typeof window === 'undefined' || !window.localStorage) return null
   return window.localStorage
@@ -42,7 +48,8 @@ const toPlainData = (value) => JSON.parse(JSON.stringify(toRaw(value)))
 
 const buildPayload = () => toPlainData({
   sidebarWidth: sidebarWidth.value,
-  sidebarCollapsed: sidebarCollapsed.value,
+  sidebarMode: sidebarMode.value,
+  sidebarOpen: sidebarMode.value === 'pinned' ? true : sidebarOpen.value,
   expandedRootPaths: expandedRootPaths.value,
   scanRoots: scanRoots.value.map((root) => ({
     path: root.path,
@@ -55,7 +62,15 @@ const buildPayload = () => toPlainData({
 
 const applyPayload = (parsed = {}) => {
   sidebarWidth.value = clampWidth(parsed.sidebarWidth)
-  sidebarCollapsed.value = Boolean(parsed.sidebarCollapsed)
+  sidebarMode.value = normalizeSidebarMode(parsed.sidebarMode)
+  sidebarOpen.value = sidebarMode.value === 'pinned'
+    ? true
+    : Boolean(parsed.sidebarOpen)
+
+  if (!('sidebarMode' in parsed) && 'sidebarCollapsed' in parsed) {
+    sidebarMode.value = DEFAULT_MODE
+    sidebarOpen.value = false
+  }
   expandedRootPaths.value = Array.isArray(parsed.expandedRootPaths)
     ? parsed.expandedRootPaths.map(normalizePath).filter(Boolean)
     : []
@@ -252,9 +267,38 @@ const setSidebarWidth = (value) => {
   persist()
 }
 
-const setSidebarCollapsed = (value) => {
-  sidebarCollapsed.value = Boolean(value)
+const setSidebarMode = (value) => {
+  sidebarMode.value = normalizeSidebarMode(value)
+  if (sidebarMode.value === 'pinned') {
+    sidebarOpen.value = true
+  }
   persist()
+}
+
+const setSidebarOpen = (value) => {
+  if (sidebarMode.value === 'pinned') {
+    sidebarOpen.value = true
+  } else {
+    sidebarOpen.value = Boolean(value)
+  }
+  persist()
+}
+
+const openSidebar = () => {
+  setSidebarOpen(true)
+}
+
+const closeSidebar = () => {
+  if (sidebarMode.value === 'pinned') return
+  setSidebarOpen(false)
+}
+
+const toggleSidebarOpen = () => {
+  if (sidebarMode.value === 'pinned') {
+    openSidebar()
+    return
+  }
+  setSidebarOpen(!sidebarOpen.value)
 }
 
 const toggleRootExpanded = (rootPath) => {
@@ -346,7 +390,8 @@ export function useProjectSidebarStore() {
     orderedRoots,
     repositoryGroups,
     sidebarWidth,
-    sidebarCollapsed,
+    sidebarMode,
+    sidebarOpen,
     expandedRootPaths,
     searchQuery,
     minSidebarWidth: MIN_WIDTH,
@@ -358,7 +403,11 @@ export function useProjectSidebarStore() {
     markRootScanning,
     setScanResult,
     setSidebarWidth,
-    setSidebarCollapsed,
+    setSidebarMode,
+    setSidebarOpen,
+    openSidebar,
+    closeSidebar,
+    toggleSidebarOpen,
     toggleRootExpanded,
     expandAllRoots,
     collapseAllRoots,

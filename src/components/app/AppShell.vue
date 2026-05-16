@@ -1,7 +1,13 @@
 <template>
   <div class="app-shell" :class="{ resizing: isResizing }">
-    <div v-if="sidebarCollapsed" class="sidebar-collapsed-rail">
-      <button class="rail-btn" type="button" title="展开侧边栏" @click="sidebarStore.setSidebarCollapsed(false)">
+    <div class="sidebar-rail">
+      <button
+        class="rail-btn"
+        :class="{ active: isSidebarVisible }"
+        type="button"
+        :title="railToggleTitle"
+        @click="handleRailSidebarToggle"
+      >
         <PanelLeftOpen :size="18" />
       </button>
       <button class="rail-btn" type="button" title="添加目录" @click="handleAddRoot">
@@ -9,8 +15,50 @@
       </button>
     </div>
 
+    <Transition :name="floatingSidebarTransitionName" :duration="240">
+      <div v-if="isFloatingDrawerVisible" class="floating-sidebar-layer">
+        <button class="floating-sidebar-backdrop" type="button" aria-label="关闭项目侧边栏" @click="closeFloatingSidebar"></button>
+        <div
+          class="floating-sidebar-drawer-shell"
+          :style="{ width: `${sidebarWidth}px`, flexBasis: `${sidebarWidth}px` }"
+          @click.stop
+        >
+          <div class="floating-sidebar-drawer">
+            <ProjectSidebar
+              :groups="filteredGroups"
+              :favorite-paths="favoriteProjectPaths"
+              :expanded-root-paths="sidebarStore.expandedRootPaths.value"
+              :search-query="sidebarStore.searchQuery.value"
+              :mode="sidebarMode"
+              :selected-root-path="selectedRootPath"
+              :selected-entry-path="selectedEntryPath"
+              :current-refresh-root-path="currentRefreshRootPath"
+              :can-refresh-current-root="Boolean(currentRefreshRootPath)"
+              :is-current-root-refreshing="isCurrentRootRefreshing"
+              :result-message="sidebarResultMessage"
+              :result-type="sidebarResultType"
+              @add-root="handleAddRoot"
+              @open-group="handleOpenGroup"
+              @open-repository="handleOpenRepository"
+              @toggle-favorite="handleToggleProjectFavorite"
+              @remove-root="handleRemoveRoot"
+              @remove-repository="handleRemoveRepository"
+              @toggle-root="sidebarStore.toggleRootExpanded"
+              @refresh-current-root="handleRefreshCurrentRoot"
+              @pin-sidebar="handlePinSidebar"
+              @unpin-sidebar="handleUnpinSidebar"
+              @close-sidebar="closeFloatingSidebar"
+              @expand-all="() => sidebarStore.expandAllRoots(filteredGroups.map(group => group.key))"
+              @collapse-all="sidebarStore.collapseAllRoots"
+              @update:searchQuery="(value) => sidebarStore.searchQuery.value = value"
+            />
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <div
-      v-else
+      v-if="showPinnedSidebarPane"
       class="sidebar-pane"
       :style="{ width: `${sidebarWidth}px`, flexBasis: `${sidebarWidth}px` }"
     >
@@ -19,7 +67,7 @@
         :favorite-paths="favoriteProjectPaths"
         :expanded-root-paths="sidebarStore.expandedRootPaths.value"
         :search-query="sidebarStore.searchQuery.value"
-        :collapsed="sidebarCollapsed"
+        :mode="sidebarMode"
         :selected-root-path="selectedRootPath"
         :selected-entry-path="selectedEntryPath"
         :current-refresh-root-path="currentRefreshRootPath"
@@ -35,7 +83,9 @@
         @remove-repository="handleRemoveRepository"
         @toggle-root="sidebarStore.toggleRootExpanded"
         @refresh-current-root="handleRefreshCurrentRoot"
-        @toggle-collapse="sidebarStore.setSidebarCollapsed(true)"
+        @pin-sidebar="handlePinSidebar"
+        @unpin-sidebar="handleUnpinSidebar"
+        @close-sidebar="closeFloatingSidebar"
         @expand-all="() => sidebarStore.expandAllRoots(filteredGroups.map(group => group.key))"
         @collapse-all="sidebarStore.collapseAllRoots"
         @update:searchQuery="(value) => sidebarStore.searchQuery.value = value"
@@ -59,7 +109,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { FolderPlus, PanelLeftOpen } from 'lucide-vue-next'
 import Browser from '../browser/Browser.vue'
 import ProjectSidebar from '../project-sidebar/ProjectSidebar.vue'
@@ -88,8 +138,22 @@ const sidebarResultType = ref('success')
 let sidebarResultTimer = null
 
 const sidebarWidth = computed(() => sidebarStore.sidebarWidth.value)
-const sidebarCollapsed = computed(() => sidebarStore.sidebarCollapsed.value)
-const browserLeadingTabInset = computed(() => (sidebarCollapsed.value ? Math.max(72 - 52, 0) : 10))
+const sidebarMode = computed(() => sidebarStore.sidebarMode.value)
+const sidebarOpen = computed(() => sidebarStore.sidebarOpen.value)
+const isSidebarPinned = computed(() => sidebarMode.value === 'pinned')
+const isUnpinningSidebar = ref(false)
+const isSidebarVisible = computed(() => isSidebarPinned.value || sidebarOpen.value)
+const isFloatingDrawerVisible = computed(() => !isSidebarPinned.value && sidebarOpen.value)
+const showPinnedSidebarPane = computed(() => isSidebarPinned.value || isUnpinningSidebar.value)
+const browserLeadingTabInset = computed(() => (isSidebarPinned.value ? 10 : Math.max(72 - 52, 0)))
+const suppressNextFloatingTransition = ref(false)
+const floatingSidebarTransitionName = computed(() => (
+  suppressNextFloatingTransition.value ? 'floating-sidebar-instant' : 'floating-sidebar'
+))
+const railToggleTitle = computed(() => {
+  if (isSidebarPinned.value) return '项目侧边栏已固定'
+  return sidebarOpen.value ? '收起项目侧边栏' : '展开项目侧边栏'
+})
 const currentRefreshRootPath = computed(() => {
   if (selectedRootPath.value) return selectedRootPath.value
   if (selectedEntryPath.value) {
@@ -628,10 +692,57 @@ const openProjectPath = async (path, type) => {
   await browserRef.value?.openProjectRoute?.(routeUrl)
 }
 
+const closeFloatingSidebar = () => {
+  if (isSidebarPinned.value) return
+  sidebarStore.closeSidebar()
+}
+
+const handleRailSidebarToggle = () => {
+  if (isSidebarPinned.value) {
+    sidebarStore.openSidebar()
+    return
+  }
+  sidebarStore.toggleSidebarOpen()
+}
+
+const handlePinSidebar = () => {
+  suppressNextFloatingTransition.value = true
+  sidebarStore.setSidebarMode('pinned')
+  nextTick(() => {
+    const release = () => {
+      suppressNextFloatingTransition.value = false
+    }
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(release)
+    } else {
+      setTimeout(release, 16)
+    }
+  })
+}
+
+const handleUnpinSidebar = () => {
+  suppressNextFloatingTransition.value = true
+  isUnpinningSidebar.value = true
+  sidebarStore.setSidebarMode('floating')
+  sidebarStore.openSidebar()
+  nextTick(() => {
+    const release = () => {
+      isUnpinningSidebar.value = false
+      suppressNextFloatingTransition.value = false
+    }
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(release)
+    } else {
+      setTimeout(release, 16)
+    }
+  })
+}
+
 const handleOpenRepository = async (repo) => {
   selectedRootPath.value = repo?.rootPath || ''
   selectedEntryPath.value = repo?.path || ''
   await openProjectPath(repo?.path, 'single-project')
+  closeFloatingSidebar()
 }
 
 const handleOpenGroup = async (group) => {
@@ -640,6 +751,7 @@ const handleOpenGroup = async (group) => {
   const owningRoot = sidebarStore.findOwningRoot(targetPath)
   selectedRootPath.value = owningRoot?.path || ''
   await openProjectPath(targetPath, 'clone-directory')
+  closeFloatingSidebar()
 }
 
 const handleAddRoot = async () => {
@@ -688,6 +800,7 @@ const handleAddRoot = async () => {
       }
 
       await openProjectPath(defaultOpenTarget.path, defaultOpenTarget.type)
+      closeFloatingSidebar()
     }
   }
 }
@@ -894,12 +1007,104 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .app-shell {
+  position: relative;
   display: flex;
   width: 100%;
   height: 100%;
   min-height: 0;
   background: var(--theme-sem-bg-app);
   overflow: hidden;
+}
+
+.sidebar-rail {
+  position: relative;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  flex: 0 0 52px;
+  width: 52px;
+  height: 100%;
+  padding-top: 30px;
+  background: var(--theme-sem-bg-sidebar);
+  border-right: 1px solid var(--theme-sem-border-default);
+}
+
+.floating-sidebar-layer {
+  position: absolute;
+  top: 0;
+  left: 52px;
+  right: 0;
+  bottom: 0;
+  z-index: 32;
+  pointer-events: none;
+}
+
+.floating-sidebar-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: color-mix(in srgb, var(--theme-sem-bg-overlay) 72%, transparent);
+  cursor: default;
+  pointer-events: auto;
+}
+
+.floating-sidebar-drawer-shell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.floating-sidebar-drawer {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  background: var(--theme-sem-bg-sidebar);
+  box-shadow:
+    0 18px 44px color-mix(in srgb, black 18%, transparent),
+    inset -1px 0 0 var(--theme-sem-border-default);
+}
+
+.floating-sidebar-enter-active,
+.floating-sidebar-leave-active {
+  transition: none;
+}
+
+.floating-sidebar-enter-active .floating-sidebar-backdrop,
+.floating-sidebar-leave-active .floating-sidebar-backdrop {
+  transition: opacity 0.18s ease;
+}
+
+.floating-sidebar-enter-active .floating-sidebar-drawer,
+.floating-sidebar-leave-active .floating-sidebar-drawer {
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.floating-sidebar-enter-from .floating-sidebar-backdrop,
+.floating-sidebar-leave-to .floating-sidebar-backdrop {
+  opacity: 0;
+}
+
+.floating-sidebar-enter-from .floating-sidebar-drawer,
+.floating-sidebar-leave-to .floating-sidebar-drawer {
+  transform: translateX(-100%);
+}
+
+.floating-sidebar-instant-enter-active,
+.floating-sidebar-instant-leave-active {
+  transition: none;
+}
+
+.floating-sidebar-instant-enter-active .floating-sidebar-drawer,
+.floating-sidebar-instant-leave-active .floating-sidebar-drawer {
+  transition: none;
 }
 
 .sidebar-pane {
@@ -949,19 +1154,6 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-sem-accent-primary) 34%, transparent);
 }
 
-.sidebar-collapsed-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: center;
-  flex: 0 0 52px;
-  width: 52px;
-  height: 100%;
-  padding-top: 30px;
-  background: var(--theme-sem-bg-sidebar);
-  border-right: 1px solid var(--theme-sem-border-default);
-}
-
 .app-shell.resizing .workspace-pane {
   box-shadow: inset 1px 0 0 color-mix(in srgb, var(--theme-sem-accent-primary) 34%, transparent);
 }
@@ -977,6 +1169,12 @@ onBeforeUnmount(() => {
   background: var(--theme-sem-hover);
   color: var(--theme-sem-text-primary);
   cursor: pointer;
+}
+
+.rail-btn.active {
+  background: var(--theme-comp-sidebar-item-active-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-comp-sidebar-item-active-border);
+  color: var(--theme-comp-selected-text);
 }
 
 .rail-btn:hover {
