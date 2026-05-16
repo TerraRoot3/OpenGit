@@ -255,6 +255,7 @@
     <div ref="browserContentRef" class="browser-content">
       <div
         v-if="activeTabCrashed"
+        ref="errorBannerRef"
         class="browser-error-banner"
         :class="{ 'with-permission-banner': hasPermissionPrompt && currentPermissionPrompt }"
       >
@@ -266,6 +267,7 @@
       </div>
       <div
         v-else-if="activeTabLoadError"
+        ref="errorBannerRef"
         class="browser-error-banner"
         :class="{ 'with-permission-banner': hasPermissionPrompt && currentPermissionPrompt }"
       >
@@ -275,7 +277,7 @@
         </div>
         <button class="error-retry-btn" @click="retryActiveTabLoad">重试</button>
       </div>
-      <div v-if="hasPermissionPrompt && currentPermissionPrompt" class="browser-permission-banner">
+      <div v-if="hasPermissionPrompt && currentPermissionPrompt" ref="permissionBannerRef" class="browser-permission-banner">
         <div class="permission-main">
           <span class="permission-title">站点权限请求</span>
           <span class="permission-detail">
@@ -291,7 +293,7 @@
           <button class="permission-btn danger" @click="respondToPermissionPrompt('deny', false)">拒绝</button>
         </div>
       </div>
-      <div v-if="webAuthnDiagnosticsVisible" class="browser-error-banner">
+      <div v-if="webAuthnDiagnosticsVisible" ref="webAuthnBannerRef" class="browser-error-banner">
         <div class="error-main">
           <span class="error-title">WebAuthn 诊断</span>
           <span v-if="webAuthnDiagnostics" class="error-detail">
@@ -305,7 +307,7 @@
         </div>
       </div>
       <!-- 网页内容 -->
-      <div class="browser-main" v-if="isBrowserReady">
+      <div ref="browserViewportRef" class="browser-main" v-if="isBrowserReady">
         <!-- 所有标签页 - 每个 NewTabPage 自己控制显示/隐藏 -->
         <NewTabPage
           v-for="tab in browserTabs"
@@ -437,6 +439,10 @@ const props = defineProps({
 })
 
 const browserContentRef = ref(null)
+const browserViewportRef = ref(null)
+const permissionBannerRef = ref(null)
+const errorBannerRef = ref(null)
+const webAuthnBannerRef = ref(null)
 let browserContentAdapter = null
 
 // ==================== 路由配置系统 ====================
@@ -1572,6 +1578,16 @@ const savedCloneDirectories = ref([]) // 保存的克隆目录列表
 // 兼容旧变量名
 const showAboutSuggestions = showSuggestions
 const aboutSuggestionIndex = suggestionIndex
+
+const shouldHideWebContentsViewForOverlay = computed(() => {
+  return Boolean(
+    showMenu.value ||
+    showDownloadPanel.value ||
+    sitePermissionPanelView.value?.isOpen ||
+    showPasswordSaveDialog.value ||
+    (showSuggestions.value && !useNativeUrlSuggestions.value)
+  )
+})
 
 // 加载克隆目录列表
 const loadCloneDirectories = async () => {
@@ -2977,15 +2993,32 @@ browserContentAdapter = createBrowserContentAdapter({
 })
 
 function getWebContentsViewBounds() {
-  const el = browserContentRef.value
+  const el = browserViewportRef.value || browserContentRef.value
   if (!el) return null
 
   const rect = el.getBoundingClientRect()
+  const hostRect = browserContentRef.value?.getBoundingClientRect?.() || rect
+  const bannerElements = [
+    permissionBannerRef.value,
+    errorBannerRef.value,
+    webAuthnBannerRef.value
+  ].filter((item) => item instanceof HTMLElement)
+
+  let topInset = 0
+  for (const bannerEl of bannerElements) {
+    const bannerRect = bannerEl.getBoundingClientRect()
+    const overlapBottom = Math.round(bannerRect.bottom - hostRect.top + 8)
+    if (overlapBottom > topInset) {
+      topInset = overlapBottom
+    }
+  }
+
+  const adjustedHeight = Math.max(0, Math.round(rect.height) - topInset)
   return {
     x: Math.round(rect.left),
-    y: Math.round(rect.top),
+    y: Math.round(rect.top) + topInset,
     width: Math.max(0, Math.round(rect.width)),
-    height: Math.max(0, Math.round(rect.height))
+    height: adjustedHeight
   }
 }
 
@@ -3062,6 +3095,10 @@ async function syncActiveContentHost() {
   const tab = currentTab.value
   if (!tab) return
   if (isWebContentsViewTab(tab)) {
+    if (shouldHideWebContentsViewForOverlay.value) {
+      await hideAllWebContentsViewTabs()
+      return
+    }
     if (tab.lifecyclePhase === 'discarded') {
       await restoreWebContentsViewTab(tab, { activate: true })
       return
@@ -4069,6 +4106,23 @@ watch(() => loadingProgressVisible.value, () => {
     syncWebContentsViewBounds()
   })
 })
+
+watch(
+  () => [
+    shouldHideWebContentsViewForOverlay.value,
+    hasPermissionPrompt.value,
+    Boolean(activeTabLoadError.value),
+    activeTabCrashed.value,
+    webAuthnDiagnosticsVisible.value
+  ],
+  () => {
+    nextTick(() => {
+      syncWebContentsViewBounds()
+      syncActiveContentHost()
+    })
+  },
+  { deep: false }
+)
 
 // 初始化
 onMounted(async () => {
