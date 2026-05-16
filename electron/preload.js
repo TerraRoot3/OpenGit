@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const codexProjectStatusHandlers = new WeakMap()
 const codexTerminalStatusHandlers = new WeakMap()
+const focusProjectTerminalHandlers = new WeakMap()
 
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -117,6 +118,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 标签页管理
   onRefreshCurrentTab: (callback) => {
     ipcRenderer.on('refresh-current-tab', callback)
+  },
+  onFocusProjectTerminal: (callback) => {
+    const handler = (event, payload) => callback(payload)
+    focusProjectTerminalHandlers.set(callback, handler)
+    ipcRenderer.on('focus-project-terminal', handler)
+    return () => {
+      ipcRenderer.removeListener('focus-project-terminal', handler)
+      focusProjectTerminalHandlers.delete(callback)
+    }
+  },
+  removeFocusProjectTerminalListener: (callback) => {
+    if (typeof callback === 'function') {
+      const handler = focusProjectTerminalHandlers.get(callback) || callback
+      ipcRenderer.removeListener('focus-project-terminal', handler)
+      focusProjectTerminalHandlers.delete(callback)
+      return
+    }
+    ipcRenderer.removeAllListeners('focus-project-terminal')
   },
   removeRefreshCurrentTabListener: (callback) => {
     ipcRenderer.removeListener('refresh-current-tab', callback)

@@ -58,6 +58,7 @@
       :path="routeProps?.path"
       allow-directory-mode
       :is-active="isActive"
+      :terminal-focus-request="terminalFocusRequest"
       @branch-changed="(payload) => emit('project-branch-changed', payload)"
       @status-updated="(payload) => emit('project-status-updated', payload)"
       @pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
@@ -68,6 +69,7 @@
       v-else-if="routeType === 'single-project'"
       :path="routeProps?.path"
       :is-active="isActive"
+      :terminal-focus-request="terminalFocusRequest"
       @branch-changed="(payload) => emit('project-branch-changed', payload)"
       @status-updated="(payload) => emit('project-status-updated', payload)"
       @pending-status-changed="(payload) => emit('project-pending-status-changed', payload)"
@@ -156,6 +158,10 @@ const props = defineProps({
   isActive: {
     type: Boolean,
     default: false
+  },
+  terminalFocusRequest: {
+    type: Object,
+    default: null
   }
 })
 

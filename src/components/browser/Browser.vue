@@ -330,6 +330,7 @@
           :user-agent="userAgent"
           :favorite-project-paths="favoriteProjectPaths"
           :is-active="tab.id === activeBrowserTabId"
+          :terminal-focus-request="projectTerminalFocusRequest"
           @navigate="openInNewTab"
           @navigate-current="(url) => openInCurrentTab(url, tab.id)"
           @did-start-loading="(e, tabId) => onLoadStart(e, tabId)"
@@ -628,6 +629,7 @@ const parseRoute = (url) => {
 // 浏览器标签页管理
 const browserTabs = ref([])
 const activeBrowserTabId = ref(null)
+const projectTerminalFocusRequest = ref(null)
 const isBrowserReady = ref(false) // 标记浏览器组件是否已准备好
 let nextBrowserTabId = 1
 const isRestoringTabs = ref(false) // 标记是否正在恢复标签页
@@ -2139,6 +2141,45 @@ const openInNewTab = async (url) => {
 
 const openProjectRoute = async (url) => {
   await openInNewTab(url)
+}
+
+const buildProjectRouteUrl = (projectPath, routeType = 'single-project') => {
+  const normalizedPath = String(projectPath || '').trim()
+  if (!normalizedPath) return ''
+  return routeType === 'clone-directory'
+    ? `git:clone:${normalizedPath}`
+    : `git:project:${normalizedPath}`
+}
+
+const dispatchProjectTerminalFocus = (projectPath) => {
+  const normalizedPath = String(projectPath || '').trim()
+  if (!normalizedPath) return
+  projectTerminalFocusRequest.value = {
+    path: normalizedPath,
+    nonce: Date.now() + Math.random()
+  }
+}
+
+const focusProjectTerminal = async ({ projectPath = '', routeType = 'single-project' } = {}) => {
+  const normalizedPath = String(projectPath || '').trim()
+  if (!normalizedPath) return
+
+  const existingTab = browserTabs.value.find((tab) => {
+    const tabRouteType = tab?.routeType || ''
+    if (tabRouteType !== 'clone-directory' && tabRouteType !== 'single-project') return false
+    return String(tab?.routeProps?.path || '').trim() === normalizedPath
+  }) || null
+
+  const normalizedRouteType = existingTab?.routeType === 'clone-directory'
+    ? 'clone-directory'
+    : (routeType === 'clone-directory' ? 'clone-directory' : 'single-project')
+  const routeUrl = buildProjectRouteUrl(normalizedPath, normalizedRouteType)
+  if (!routeUrl) return
+
+  dispatchProjectTerminalFocus(normalizedPath)
+  await openProjectRoute(routeUrl)
+  await nextTick()
+  dispatchProjectTerminalFocus(normalizedPath)
 }
 
 /**
@@ -4033,6 +4074,10 @@ const onTabsBarMouseLeave = () => {
   hideTooltip()
 }
 
+const handleFocusProjectTerminalMessage = (payload = {}) => {
+  void focusProjectTerminal(payload)
+}
+
 const {
   saveBrowserTabs,
   restoreBrowserTabs
@@ -4218,6 +4263,9 @@ onMounted(async () => {
     if (window.electronAPI.onRefreshCurrentTab) {
       window.electronAPI.onRefreshCurrentTab(handleRefreshCurrentTabMessage)
     }
+    if (window.electronAPI.onFocusProjectTerminal) {
+      window.electronAPI.onFocusProjectTerminal(handleFocusProjectTerminalMessage)
+    }
     if (window.electronAPI.onExportFavorites) {
       window.electronAPI.onExportFavorites(() => {
         exportFavorites()
@@ -4314,6 +4362,7 @@ onUnmounted(() => {
 
   if (window.electronAPI) {
     window.electronAPI.removeRefreshCurrentTabListener?.(handleRefreshCurrentTabMessage)
+    window.electronAPI.removeFocusProjectTerminalListener?.(handleFocusProjectTerminalMessage)
     window.electronAPI.removeWebTabStateChangedListener?.()
     window.electronAPI.removeWebTabTitleUpdatedListener?.()
     window.electronAPI.removeWebTabFaviconUpdatedListener?.()

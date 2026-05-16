@@ -669,6 +669,10 @@ const props = defineProps({
   allowDirectoryMode: {
     type: Boolean,
     default: false
+  },
+  terminalFocusRequest: {
+    type: Object,
+    default: null
   }
 })
 
@@ -696,6 +700,17 @@ const stashListRef = ref(null)
 const terminalRef = ref(null)
 const liquidTerminalRef = ref(null)
 const newTagNameInputRef = ref(null)
+const lastHandledTerminalFocusNonce = ref(0)
+
+const normalizeFocusProjectPath = (value = '') => {
+  const rawValue = String(value || '').trim()
+  if (!rawValue) return ''
+  try {
+    return decodeURIComponent(rawValue)
+  } catch {
+    return rawValue
+  }
+}
 
 /** 传给嵌入式终端的项目根（解码 git: 路由里可能出现的 %20 等），保证主进程拿到真实绝对路径 */
 const terminalProjectPath = computed(() => {
@@ -2194,6 +2209,16 @@ const selectWorkspace = () => {
   saveCurrentView('workspace')
 }
 
+const handleTerminalFocusRequest = (request) => {
+  const nonce = Number(request?.nonce) || 0
+  if (!nonce || nonce === lastHandledTerminalFocusNonce.value) return
+  const requestPath = normalizeFocusProjectPath(request?.path || '')
+  const currentPath = normalizeFocusProjectPath(props.path)
+  if (!requestPath || !currentPath || requestPath !== currentPath) return
+  lastHandledTerminalFocusNonce.value = nonce
+  selectTerminal()
+}
+
 const handleResumeAiSession = async (session) => {
   const command = typeof session?.command === 'string' ? session.command.trim() : ''
   if (!command) return
@@ -3248,6 +3273,14 @@ watch(currentView, (view) => {
     workspaceMounted.value = false
   }
 }, { immediate: true })
+
+watch(
+  () => props.terminalFocusRequest,
+  (request) => {
+    handleTerminalFocusRequest(request)
+  },
+  { immediate: true, deep: false }
+)
 
 watch(() => props.isActive, (active) => {
   if (active && currentView.value === 'terminal') {

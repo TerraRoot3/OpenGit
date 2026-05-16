@@ -10,7 +10,6 @@ const { createCodexSessionStateSource } = require('./codex-session-state-source'
 
 const MAX_COMMAND_BUFFER = 1024
 const POLL_INTERVAL_MS = 1500
-const ENDED_RETENTION_MS = 120000
 const THREAD_MATCH_WINDOW_MS = 120000
 const THREAD_BIND_GRACE_MS = 30000
 
@@ -54,6 +53,7 @@ function createTerminalState({ terminalId, projectPath = '', mode = 'classic', c
 }
 
 function cloneTerminalSnapshot(record) {
+  if (!record) return null
   return {
     terminalId: record.terminalId,
     projectPath: record.projectPath,
@@ -94,32 +94,9 @@ function createCodexSessionMonitor({
   const emitter = new EventEmitter()
   const terminals = new Map()
   const projects = new Map()
-  const removalTimers = new Map()
   const stateSource = createCodexSessionStateSource({ safeLog, safeError })
   let isPolling = false
   let pollTimer = null
-
-  const clearRemovalTimer = (terminalId) => {
-    const timer = removalTimers.get(terminalId)
-    if (timer) {
-      clearTimeout(timer)
-      removalTimers.delete(terminalId)
-    }
-  }
-
-  const scheduleTerminalRemoval = (terminalId, delayMs = ENDED_RETENTION_MS) => {
-    if (!terminalId) return
-    clearRemovalTimer(terminalId)
-    const timer = setTimeout(() => {
-      removalTimers.delete(terminalId)
-      const terminal = terminals.get(terminalId)
-      if (!terminal || terminal.status !== CODEX_SESSION_STATUS.ENDED) return
-      updateTerminalStatus(terminalId, CODEX_SESSION_STATUS.UNKNOWN, 'ended.retention_expired', {
-        isCodexSession: true
-      })
-    }, delayMs)
-    removalTimers.set(terminalId, timer)
-  }
 
   const rebuildProjectSnapshot = (projectPath) => {
     const normalizedProjectPath = normalizeProjectPath(projectPath)
@@ -240,9 +217,6 @@ function createCodexSessionMonitor({
       terminal.lastSignalAt = patch.lastSignalAt
     }
 
-    if (nextStatus !== CODEX_SESSION_STATUS.ENDED) {
-      clearRemovalTimer(terminalId)
-    }
     terminal.updatedAt = Date.now()
     terminal.statusReason = reason || terminal.statusReason
     terminal.status = nextStatus
@@ -264,10 +238,6 @@ function createCodexSessionMonitor({
     if (snapshot.projectPath) {
       rebuildProjectSnapshot(snapshot.projectPath)
     }
-    if (nextStatus === CODEX_SESSION_STATUS.ENDED) {
-      scheduleTerminalRemoval(terminalId)
-    }
-
     return snapshot
   }
 
@@ -299,10 +269,15 @@ function createCodexSessionMonitor({
 
   const bindThreadToTerminal = (terminal, candidate) => {
     if (!terminal || !candidate?.id) return
+    const previousThreadId = terminal.boundThreadId
     terminal.boundThreadId = candidate.id
     terminal.boundRolloutPath = candidate.rolloutPath || ''
     terminal.boundThreadUpdatedAt = candidate.updatedAt || 0
     terminal.threadBoundAt = Date.now()
+    if (previousThreadId && previousThreadId !== candidate.id) {
+      terminal.lastSignalAt = 0
+      terminal.lastCodexLaunchAt = candidate.createdAt || Date.now()
+    }
   }
 
   const resolveThreadBindings = (trackedTerminals, activeThreads) => {
@@ -316,12 +291,48 @@ function createCodexSessionMonitor({
         cwd: normalizedPath
       })
     }
+    for (const candidates of activeByProject.values()) {
+      candidates.sort((left, right) => {
+        const byUpdated = (right.updatedAt || 0) - (left.updatedAt || 0)
+        if (byUpdated !== 0) return byUpdated
+        return (right.createdAt || 0) - (left.createdAt || 0)
+      })
+    }
 
     const assignedThreadIds = new Set(
       trackedTerminals
         .map((terminal) => terminal.boundThreadId)
         .filter(Boolean)
     )
+
+    for (const terminal of trackedTerminals) {
+      if (!terminal.boundThreadId) continue
+      const candidates = activeByProject.get(terminal.projectPath) || []
+      if (!candidates.length) continue
+
+      const currentCandidate = candidates.find((candidate) => candidate.id === terminal.boundThreadId) || null
+      const preferredCandidate = candidates.find((candidate) => !assignedThreadIds.has(candidate.id) || candidate.id === terminal.boundThreadId) || null
+      const hasNewerThread = Boolean(
+        preferredCandidate &&
+        preferredCandidate.id !== terminal.boundThreadId &&
+        (
+          (preferredCandidate.updatedAt || 0) > (terminal.boundThreadUpdatedAt || 0) ||
+          (preferredCandidate.createdAt || 0) > (terminal.lastSignalAt || terminal.boundThreadUpdatedAt || 0)
+        )
+      )
+      const shouldRebind =
+        !currentCandidate ||
+        (
+          (terminal.status === CODEX_SESSION_STATUS.UNKNOWN || terminal.status === CODEX_SESSION_STATUS.ENDED) &&
+          hasNewerThread
+        )
+
+      if (!shouldRebind || !preferredCandidate) continue
+
+      assignedThreadIds.delete(terminal.boundThreadId)
+      bindThreadToTerminal(terminal, preferredCandidate)
+      assignedThreadIds.add(preferredCandidate.id)
+    }
 
     const pendingTerminals = trackedTerminals
       .filter((terminal) => !terminal.boundThreadId && terminal.lastCodexLaunchAt > 0)
@@ -443,7 +454,8 @@ function createCodexSessionMonitor({
 
     handleTerminalInput(terminalId, data) {
       const terminal = terminals.get(terminalId)
-      if (!terminal || data == null) return cloneTerminalSnapshot(terminal)
+      if (!terminal) return null
+      if (data == null) return cloneTerminalSnapshot(terminal)
 
       const text = String(data)
       terminal.updatedAt = Date.now()
@@ -462,6 +474,17 @@ function createCodexSessionMonitor({
             terminal.activeCommandBuffer = current
             const snapshot = startCodexTracking(terminalId, terminal.detectionSource || 'input.command', 'input.codex_command')
             if (snapshot) return snapshot
+          }
+          if (
+            command &&
+            terminal.isCodexSession &&
+            terminal.status === CODEX_SESSION_STATUS.ENDED &&
+            detectCodexProcess(terminal.lastForegroundProcess)
+          ) {
+            return updateTerminalStatus(terminalId, CODEX_SESSION_STATUS.RUNNING, 'input.codex_resume', {
+              isCodexSession: true,
+              lastSignalAt: Date.now()
+            })
           }
           if (terminal.status === CODEX_SESSION_STATUS.AWAITING_CONFIRMATION && terminal.isCodexSession) {
             updateTerminalStatus(terminalId, CODEX_SESSION_STATUS.RUNNING, 'input.confirmation_submitted', {
@@ -482,7 +505,8 @@ function createCodexSessionMonitor({
 
     handleTerminalOutput(terminalId, data) {
       const terminal = terminals.get(terminalId)
-      if (!terminal || data == null) return cloneTerminalSnapshot(terminal)
+      if (!terminal) return null
+      if (data == null) return cloneTerminalSnapshot(terminal)
 
       const text = String(data)
       terminal.updatedAt = Date.now()
@@ -544,7 +568,6 @@ function createCodexSessionMonitor({
     removeTerminal(terminalId) {
       const terminal = terminals.get(terminalId)
       if (!terminal) return false
-      clearRemovalTimer(terminalId)
       const projectPath = terminal.projectPath
       terminals.delete(terminalId)
       if (projectPath) rebuildProjectSnapshot(projectPath)
@@ -552,9 +575,6 @@ function createCodexSessionMonitor({
     },
 
     clear() {
-      for (const terminalId of removalTimers.keys()) {
-        clearRemovalTimer(terminalId)
-      }
       terminals.clear()
       projects.clear()
       if (pollTimer) {

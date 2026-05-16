@@ -774,6 +774,51 @@ function getActiveProjectPath() {
   return normalizeProjectPath(mcpRuntimeState?.browser?.activeProject?.path || '')
 }
 
+function getProjectRouteType(projectPath = '') {
+  const normalizedProjectPath = normalizeProjectPath(projectPath)
+  if (!normalizedProjectPath) return 'single-project'
+  const matchingTab = Array.isArray(mcpRuntimeState?.browser?.openProjectTabs)
+    ? mcpRuntimeState.browser.openProjectTabs.find((tab) => normalizeProjectPath(tab?.path || '') === normalizedProjectPath)
+    : null
+  return matchingTab?.routeType === 'clone-directory' ? 'clone-directory' : 'single-project'
+}
+
+function focusProjectTerminalInRenderer(projectPath = '', routeType = 'single-project') {
+  const normalizedProjectPath = normalizeProjectPath(projectPath)
+  if (!normalizedProjectPath || !mainWindow || mainWindow.isDestroyed()) return
+
+  const payload = {
+    projectPath: normalizedProjectPath,
+    routeType: routeType === 'clone-directory' ? 'clone-directory' : 'single-project'
+  }
+
+  const sendFocusEvent = () => {
+    try {
+      mainWindow.webContents.send('focus-project-terminal', payload)
+    } catch (error) {
+      safeError('❌ 发送项目终端聚焦事件失败:', error.message)
+    }
+  }
+
+  try {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    if (!mainWindow.isVisible()) {
+      mainWindow.show()
+    }
+    mainWindow.focus()
+
+    if (mainWindow.webContents.isLoadingMainFrame()) {
+      mainWindow.webContents.once('did-finish-load', sendFocusEvent)
+      return
+    }
+    sendFocusEvent()
+  } catch (error) {
+    safeError('❌ 聚焦项目终端失败:', error.message)
+  }
+}
+
 const codexSessionMonitor = createCodexSessionMonitor({
   safeLog,
   safeError,
@@ -795,15 +840,23 @@ const codexSessionMonitor = createCodexSessionMonitor({
 
     const projectPath = project?.projectPath || ''
     const projectName = projectPath ? path.basename(projectPath) : 'Unknown Project'
-    const body = project?.status === 'awaiting_confirmation'
-      ? `Codex 在 ${projectName} 中等待确认`
-      : `Codex 在 ${projectName} 中已结束`
+    const routeType = getProjectRouteType(projectPath)
+    const awaitingConfirmation = project?.status === 'awaiting_confirmation'
+    const title = awaitingConfirmation
+      ? `${projectName} · Codex 等待确认`
+      : `${projectName} · Codex 已结束`
+    const body = awaitingConfirmation
+      ? `项目 ${projectName} 的 Codex 会话正在等待你的确认`
+      : `项目 ${projectName} 的 Codex 会话本次任务已结束`
 
     try {
       const notification = new Notification({
-        title: 'OpenGit Codex 会话',
+        title,
         body,
         silent: false
+      })
+      notification.on('click', () => {
+        focusProjectTerminalInRenderer(projectPath, routeType)
       })
       notification.show()
       safeLog('🔔 Codex session notification sent:', {
@@ -811,6 +864,7 @@ const codexSessionMonitor = createCodexSessionMonitor({
         status: project?.status,
         previousStatus: project?.previousStatus,
         terminalIds: project?.terminalIds || [],
+        routeType,
         appBackground: context?.appBackground,
         activeProjectPath: context?.activeProjectPath
       })
