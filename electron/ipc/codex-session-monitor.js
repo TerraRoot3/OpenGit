@@ -375,6 +375,9 @@ function createCodexSessionMonitor({
         if (!terminal.boundThreadId) {
           const foregroundStillCodex = detectCodexProcess(terminal.lastForegroundProcess)
           if (foregroundStillCodex) {
+            if (terminal.status === CODEX_SESSION_STATUS.AWAITING_CONFIRMATION) {
+              continue
+            }
             if (terminal.status !== CODEX_SESSION_STATUS.RUNNING) {
               updateTerminalStatus(terminalId, CODEX_SESSION_STATUS.RUNNING, 'process.foreground_codex_fallback', {
                 isCodexSession: true
@@ -420,6 +423,13 @@ function createCodexSessionMonitor({
             isCodexSession: true,
             lastSignalAt: signal.at || terminal.lastSignalAt || 0
           })
+          continue
+        }
+
+        if (
+          terminal.status === CODEX_SESSION_STATUS.AWAITING_CONFIRMATION &&
+          detectCodexProcess(terminal.lastForegroundProcess)
+        ) {
           continue
         }
 
