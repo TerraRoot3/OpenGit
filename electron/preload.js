@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
+const codexProjectStatusHandlers = new WeakMap()
+const codexTerminalStatusHandlers = new WeakMap()
+
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
@@ -371,6 +374,70 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeCwdChangeListener: () => {
       ipcRenderer.removeAllListeners('terminal-cwd')
     }
+  },
+
+  codexSessionMonitor: {
+    getSnapshot: () => ipcRenderer.invoke('codex-session-monitor-get-snapshot'),
+    getTerminal: (data) => ipcRenderer.invoke('codex-session-monitor-get-terminal', data),
+    getProject: (data) => ipcRenderer.invoke('codex-session-monitor-get-project', data),
+    onTerminalStatusChanged: (callback) => {
+      const handler = (event, data) => callback(data)
+      codexTerminalStatusHandlers.set(callback, handler)
+      ipcRenderer.on('codex-session-terminal-status-changed', handler)
+      return () => {
+        ipcRenderer.removeListener('codex-session-terminal-status-changed', handler)
+        codexTerminalStatusHandlers.delete(callback)
+      }
+    },
+    removeTerminalStatusChangedListener: (callback) => {
+      if (typeof callback === 'function') {
+        const handler = codexTerminalStatusHandlers.get(callback) || callback
+        ipcRenderer.removeListener('codex-session-terminal-status-changed', handler)
+        codexTerminalStatusHandlers.delete(callback)
+        return
+      }
+      ipcRenderer.removeAllListeners('codex-session-terminal-status-changed')
+    },
+    onProjectStatusChanged: (callback) => {
+      const handler = (event, data) => callback(data)
+      codexProjectStatusHandlers.set(callback, handler)
+      ipcRenderer.on('codex-session-project-status-changed', handler)
+      return () => {
+        ipcRenderer.removeListener('codex-session-project-status-changed', handler)
+        codexProjectStatusHandlers.delete(callback)
+      }
+    },
+    removeProjectStatusChangedListener: (callback) => {
+      if (typeof callback === 'function') {
+        const handler = codexProjectStatusHandlers.get(callback) || callback
+        ipcRenderer.removeListener('codex-session-project-status-changed', handler)
+        codexProjectStatusHandlers.delete(callback)
+        return
+      }
+      ipcRenderer.removeAllListeners('codex-session-project-status-changed')
+    }
+  },
+  getCodexProjectStatusSnapshot: async () => {
+    const result = await ipcRenderer.invoke('codex-session-monitor-get-snapshot')
+    return result?.snapshot?.projects || []
+  },
+  onCodexProjectStatusChanged: (callback) => {
+    const handler = (event, data) => callback(data)
+    codexProjectStatusHandlers.set(callback, handler)
+    ipcRenderer.on('codex-session-project-status-changed', handler)
+    return () => {
+      ipcRenderer.removeListener('codex-session-project-status-changed', handler)
+      codexProjectStatusHandlers.delete(callback)
+    }
+  },
+  removeCodexProjectStatusListener: (callback) => {
+    if (typeof callback === 'function') {
+      const handler = codexProjectStatusHandlers.get(callback) || callback
+      ipcRenderer.removeListener('codex-session-project-status-changed', handler)
+      codexProjectStatusHandlers.delete(callback)
+      return
+    }
+    ipcRenderer.removeAllListeners('codex-session-project-status-changed')
   },
 
   // Chrome 扩展管理

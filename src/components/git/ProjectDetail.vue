@@ -120,6 +120,12 @@
             >
               <TerminalIcon :size="16" />
               <span class="branches-nav-label">终端</span>
+              <span
+                v-if="terminalCodexStatus"
+                class="codex-status-dot"
+                :class="`codex-status-dot--${terminalCodexStatus}`"
+                :title="terminalCodexStatusLabel"
+              />
             </div>
 
             <div
@@ -605,6 +611,7 @@ import {
   getProjectDetail,
   getBranchStatus as getStoreBranchStatus
 } from '../../stores/projectStore'
+import { useCodexProjectStatusStore } from '../../stores/codexProjectStatusStore.js'
 import { removeProjectDetailDebugEntry, updateProjectDetailDebugEntry } from '../../debug/runtimeDebug.js'
 
 const ProjectWorkspace = defineAsyncComponent(() => import('./ProjectWorkspace.vue'))
@@ -668,6 +675,7 @@ const props = defineProps({
 const projectDetailDebugId = Symbol('project-detail-debug')
 
 const platform = window.electronAPI?.platform || 'darwin'
+const { getProjectStatus } = useCodexProjectStatusStore()
 const systemFileManagerLabel = computed(() => {
   if (platform === 'win32') return '资源管理器'
   if (platform === 'darwin') return '访达'
@@ -697,6 +705,19 @@ const terminalProjectPath = computed(() => {
     return decodeURIComponent(p.trim())
   } catch {
     return p.trim()
+  }
+})
+const terminalCodexStatus = computed(() => getProjectStatus(terminalProjectPath.value))
+const terminalCodexStatusLabel = computed(() => {
+  switch (terminalCodexStatus.value) {
+    case 'running':
+      return 'Codex 运行中'
+    case 'awaiting_confirmation':
+      return 'Codex 等待确认'
+    case 'ended':
+      return 'Codex 已结束'
+    default:
+      return ''
   }
 })
 
@@ -3845,6 +3866,7 @@ defineExpose({
 }
 
 .branches-panel--icon-rail .file-status-button {
+  position: relative;
   justify-content: center;
   gap: 4px;
   padding: 10px 6px;
@@ -3870,6 +3892,13 @@ defineExpose({
   position: absolute;
   top: 8px;
   right: 8px;
+}
+
+.branches-panel--icon-rail .codex-status-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  margin-left: 0;
 }
 
 .branches-panel--icon-rail .branch-section-header {
@@ -4110,6 +4139,31 @@ defineExpose({
 .nav-status-dot--conflict {
   background: var(--theme-sem-file-conflict);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-file-conflict) 18%, transparent);
+}
+
+.codex-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--theme-sem-text-muted);
+  box-shadow: 0 0 0 2px rgba(20, 23, 28, 0.9);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.codex-status-dot--running {
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
+}
+
+.codex-status-dot--awaiting_confirmation {
+  background: color-mix(in srgb, var(--theme-sem-accent-warning) 72%, var(--theme-sem-accent-danger) 28%);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--theme-sem-accent-danger) 42%, transparent);
+}
+
+.codex-status-dot--ended {
+  background: var(--theme-sem-accent-success);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--theme-sem-accent-success) 32%, transparent);
 }
 
 .header-branch-status {

@@ -66,6 +66,14 @@
             <Terminal v-else-if="tab.routeType === 'standalone-terminal' || tab.routeType === 'standalone-terminal-focus' || tab.routeType === 'standalone-terminal-split'" :size="14" />
             <Globe v-else :size="14" />
           </div>
+          <span
+            v-if="getCodexStatusForTab(tab)"
+            class="browser-tab-status-inline"
+            :class="`browser-tab-status-inline--${getCodexStatusForTab(tab)}`"
+            @mouseenter.stop="(e) => showTooltip(e, getCodexStatusTooltip(getCodexStatusForTab(tab)))"
+            @mouseleave="hideTooltip"
+            aria-hidden="true"
+          />
           <span class="browser-tab-title">{{ tab.isLoading && !tab.title ? '加载中...' : (tab.title || '新标签页') }}</span>
           <button
             class="browser-tab-close"
@@ -384,6 +392,7 @@ import { useBrowserTabs } from '../../composables/useBrowserTabs.js'
 import { updateBrowserDebugState } from '../../debug/runtimeDebug.js'
 import { clearProjectCache } from '../../stores/projectStore'
 import { clearFocusTerminalScope } from '../../stores/focusTerminalStore.js'
+import { useCodexProjectStatusStore } from '../../stores/codexProjectStatusStore.js'
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -622,6 +631,7 @@ const activeBrowserTabId = ref(null)
 const isBrowserReady = ref(false) // 标记浏览器组件是否已准备好
 let nextBrowserTabId = 1
 const isRestoringTabs = ref(false) // 标记是否正在恢复标签页
+const { getProjectStatus } = useCodexProjectStatusStore()
 
 // 标签拖拽相关
 const draggingTabId = ref(null) // 正在拖拽的标签 ID
@@ -707,6 +717,29 @@ const getOpenedProjectPaths = () => {
     }
   }
   return Array.from(paths)
+}
+
+const isProjectBrowserTab = (tab) => {
+  const routeType = tab?.routeType || ''
+  return routeType === 'clone-directory' || routeType === 'single-project'
+}
+
+const getCodexStatusForTab = (tab) => {
+  if (!isProjectBrowserTab(tab)) return ''
+  return getProjectStatus(tab?.routeProps?.path || '')
+}
+
+const getCodexStatusTooltip = (status) => {
+  switch (status) {
+    case 'running':
+      return 'Codex 进行中'
+    case 'awaiting_confirmation':
+      return 'Codex 等待确认'
+    case 'ended':
+      return 'Codex 本次已结束'
+    default:
+      return ''
+  }
 }
 
 
@@ -4504,8 +4537,13 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 /* 拖拽时子元素不阻止事件 */
 .browser-tab-item .browser-tab-icon,
-.browser-tab-item .browser-tab-title {
+.browser-tab-item .browser-tab-title,
+.browser-tab-item .browser-tab-status-inline {
   pointer-events: none;
+}
+
+.browser-tab-status-inline {
+  pointer-events: auto;
 }
 
 /* 关闭按钮保持可点击，但在拖拽开始后也不阻止 */
@@ -4523,6 +4561,7 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   height: 16px;
   flex-shrink: 0;
   color: var(--theme-sem-text-secondary);
+  position: relative;
 }
 
 .browser-tab-icon .tab-favicon {
@@ -4534,6 +4573,38 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
 
 .browser-tab-item.active .browser-tab-icon {
   color: var(--theme-comp-selected-text);
+}
+
+.browser-tab-status-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 2px;
+  border-radius: 999px;
+}
+
+.browser-tab-status-inline--running {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  border-top-color: transparent;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
+  animation: spin 0.8s linear infinite;
+}
+
+.browser-tab-status-inline--awaiting_confirmation {
+  width: 10px;
+  height: 10px;
+  background: color-mix(in srgb, var(--theme-sem-accent-warning) 72%, var(--theme-sem-accent-danger) 28%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-danger) 42%, transparent);
+}
+
+.browser-tab-status-inline--ended {
+  width: 10px;
+  height: 10px;
+  background: var(--theme-sem-accent-success);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--theme-sem-accent-success) 32%, transparent);
 }
 
 .browser-tab-item.active {

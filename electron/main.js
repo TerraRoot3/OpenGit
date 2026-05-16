@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, dialog, ipcMain, session, protocol, net, screen } = require('electron')
+const { app, BrowserWindow, Menu, Notification, shell, dialog, ipcMain, session, protocol, net, screen } = require('electron')
 const path = require('path')
 const { exec, spawn, execFileSync } = require('child_process')
 const { promisify, format } = require('util')
@@ -23,6 +23,7 @@ const { registerWindowUiHandlers } = require('./ipc/window-ui')
 const { registerBranchHandlers } = require('./ipc/branch')
 const { registerExtensionHandlers } = require('./ipc/extensions')
 const { registerScmHandlers } = require('./ipc/scm')
+const { createCodexSessionMonitor, normalizeProjectPath } = require('./ipc/codex-session-monitor')
 const { getDefaultMcpConfig, getMcpConfig, saveMcpConfig } = require('./mcp/config')
 const { createEmbeddedMcpServer } = require('./mcp/server')
 const { createProjectsService } = require('./mcp/services/projects')
@@ -763,6 +764,62 @@ let mcpRuntimeState = {
   }
 }
 
+function isAppBackground() {
+  if (!mainWindow || mainWindow.isDestroyed()) return true
+  if (!mainWindow.isVisible()) return true
+  return !mainWindow.isFocused()
+}
+
+function getActiveProjectPath() {
+  return normalizeProjectPath(mcpRuntimeState?.browser?.activeProject?.path || '')
+}
+
+const codexSessionMonitor = createCodexSessionMonitor({
+  safeLog,
+  safeError,
+  getNotificationContext(projectPath = '') {
+    const normalizedProjectPath = normalizeProjectPath(projectPath)
+    const activeProjectPath = getActiveProjectPath()
+    const appBackground = isAppBackground()
+    const visibleProjectMatches = !!normalizedProjectPath && normalizedProjectPath === activeProjectPath
+
+    return {
+      shouldNotify: appBackground || !visibleProjectMatches,
+      appBackground,
+      activeProjectPath,
+      visibleProjectMatches
+    }
+  },
+  notifyStatusTransition({ project, context }) {
+    if (!Notification || !Notification.isSupported()) return
+
+    const projectPath = project?.projectPath || ''
+    const projectName = projectPath ? path.basename(projectPath) : 'Unknown Project'
+    const body = project?.status === 'awaiting_confirmation'
+      ? `Codex 在 ${projectName} 中等待确认`
+      : `Codex 在 ${projectName} 中已结束`
+
+    try {
+      const notification = new Notification({
+        title: 'OpenGit Codex 会话',
+        body,
+        silent: false
+      })
+      notification.show()
+      safeLog('🔔 Codex session notification sent:', {
+        projectPath,
+        status: project?.status,
+        previousStatus: project?.previousStatus,
+        terminalIds: project?.terminalIds || [],
+        appBackground: context?.appBackground,
+        activeProjectPath: context?.activeProjectPath
+      })
+    } catch (error) {
+      safeError('❌ Codex session notification failed:', error.message)
+    }
+  }
+})
+
 function getMcpRuntimeState() {
   return JSON.parse(JSON.stringify(mcpRuntimeState))
 }
@@ -775,7 +832,10 @@ function getEmbeddedMcpTools(config = getMcpConfig(store)) {
   })
   const terminalsService = createTerminalsService({
     terminalBuffers,
-    writeTerminal: writeTerminalSession
+    writeTerminal: async (terminalId, data) => {
+      codexSessionMonitor.handleTerminalInput(terminalId, data)
+      return writeTerminalSession(terminalId, data)
+    }
   })
   const remotesService = createRemotesService({
     store,
@@ -972,6 +1032,7 @@ const SITE_PERMISSION_REQUEST_TIMEOUT_MS = 30_000
 let nextPermissionRequestId = 0
 
 function getDebugMemoryStats() {
+  const codexSnapshot = codexSessionMonitor.getSnapshot()
   return {
     webTabs: {
       views: webTabManager?.views?.size || 0,
@@ -990,6 +1051,13 @@ function getDebugMemoryStats() {
     },
     downloads: {
       history: downloadHistory.size
+    },
+    codexSessions: {
+      terminals: codexSnapshot.terminals.length,
+      projects: codexSnapshot.projects.length,
+      awaitingConfirmation: codexSnapshot.projects.filter((project) => project.status === 'awaiting_confirmation').length,
+      running: codexSnapshot.projects.filter((project) => project.status === 'running').length,
+      ended: codexSnapshot.projects.filter((project) => project.status === 'ended').length
     }
   }
 }
@@ -2782,7 +2850,8 @@ const { cleanup: cleanupTerminalSessions } = registerTerminalHandlers({
   fileURLToPath,
   buildTerminalLaunchOptions,
   safeLog,
-  getMainWindow: () => mainWindow
+  getMainWindow: () => mainWindow,
+  codexSessionMonitor
 })
 
 app.on('will-quit', () => {

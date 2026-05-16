@@ -8,7 +8,8 @@ function registerTerminalHandlers({
   fileURLToPath,
   buildTerminalLaunchOptions,
   safeLog,
-  getMainWindow
+  getMainWindow,
+  codexSessionMonitor
 }) {
   const { terminalBuffers, normalizeTerminalMode } = require('../mcp/services/terminalBuffers')
   const {
@@ -20,6 +21,23 @@ function registerTerminalHandlers({
     writeTerminalSession
   } = require('./terminal-runtime')
   const { execFile } = require('child_process')
+
+  const sendCodexSessionEvent = (channel, payload) => {
+    if (!channel || !payload) return
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win || win.isDestroyed()) continue
+      win.webContents.send(channel, payload)
+    }
+  }
+
+  if (codexSessionMonitor) {
+    codexSessionMonitor.on('terminal-status-changed', (payload) => {
+      sendCodexSessionEvent('codex-session-terminal-status-changed', payload)
+    })
+    codexSessionMonitor.on('project-status-changed', (payload) => {
+      sendCodexSessionEvent('codex-session-project-status-changed', payload)
+    })
+  }
 
   const resolveProcessCwd = (pid) => {
     if (!pid) return Promise.resolve('')
@@ -148,6 +166,11 @@ function registerTerminalHandlers({
         cwd: resolvedCwd,
         mode
       })
+      codexSessionMonitor?.registerTerminal({
+        terminalId,
+        projectPath: resolvedCwd,
+        mode
+      })
 
       const senderContents = event.sender
       const getSenderWindow = () => {
@@ -211,6 +234,7 @@ function registerTerminalHandlers({
             const wc = getSenderWindow()
             if (wc) wc.send('terminal-title', { id: terminalId, title })
           }
+          codexSessionMonitor?.handleForegroundProcess(terminalId, title || procName)
 
           const sessionInfo = getTerminalSession(terminalId)
           if (sessionInfo) {
@@ -221,6 +245,7 @@ function registerTerminalHandlers({
                 projectPath: cwd,
                 cwd
               })
+              codexSessionMonitor?.updateTerminalProjectPath(terminalId, cwd)
               const wc = getSenderWindow()
               if (wc) wc.send('terminal-cwd', { id: terminalId, cwd })
             }
@@ -233,13 +258,14 @@ function registerTerminalHandlers({
       let refreshDebounce = null
       ptyProcess.onData((data) => {
         terminalBuffers.appendOutput(terminalId, data)
+        codexSessionMonitor?.handleTerminalOutput(terminalId, data)
         const wc = getSenderWindow()
         if (wc) wc.send('terminal-output', { id: terminalId, data })
         if (refreshDebounce) clearTimeout(refreshDebounce)
         refreshDebounce = setTimeout(() => {
           refreshDebounce = null
-        const sessionInfo = getTerminalSession(terminalId)
-        if (!sessionInfo) return
+          const sessionInfo = getTerminalSession(terminalId)
+          if (!sessionInfo) return
           if (sessionInfo.skipInitialRefresh && !sessionInfo.hasUserInput) {
             sessionInfo.skipInitialRefresh = false
             return
@@ -258,6 +284,7 @@ function registerTerminalHandlers({
 
       ptyProcess.onExit(({ exitCode, signal }) => {
         clearInterval(titleTimer)
+        codexSessionMonitor?.handleTerminalExit(terminalId, { exitCode, signal })
         if (refreshDebounce) {
           clearTimeout(refreshDebounce)
           refreshDebounce = null
@@ -276,6 +303,7 @@ function registerTerminalHandlers({
   })
 
   ipcMain.on('terminal-write', (event, { id, data }) => {
+    codexSessionMonitor?.handleTerminalInput(id, data)
     void writeTerminalSession(id, data).catch(() => {})
   })
 
@@ -302,9 +330,37 @@ function registerTerminalHandlers({
         projectPath: cwd,
         cwd
       })
+      codexSessionMonitor?.updateTerminalProjectPath(terminalId, cwd)
       return { success: true, id: terminalId, cwd, projectPath: cwd }
     } catch (error) {
       return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('codex-session-monitor-get-snapshot', async () => {
+    return {
+      success: true,
+      snapshot: codexSessionMonitor?.getSnapshot() || { terminals: [], projects: [] }
+    }
+  })
+
+  ipcMain.handle('codex-session-monitor-get-terminal', async (event, { terminalId } = {}) => {
+    if (!terminalId) {
+      return { success: false, error: 'terminalId required', terminal: null }
+    }
+    return {
+      success: true,
+      terminal: codexSessionMonitor?.getTerminalSnapshot(terminalId) || null
+    }
+  })
+
+  ipcMain.handle('codex-session-monitor-get-project', async (event, { projectPath } = {}) => {
+    if (!projectPath) {
+      return { success: false, error: 'projectPath required', project: null }
+    }
+    return {
+      success: true,
+      project: codexSessionMonitor?.getProjectSnapshot(projectPath) || null
     }
   })
 
@@ -313,12 +369,18 @@ function registerTerminalHandlers({
     if (session?.ptyProcess) {
       try {
         session.ptyProcess.kill()
+        codexSessionMonitor?.handleTerminalExit(id, { exitCode: null, signal: 'manual-destroy' })
         terminalBuffers.removeTerminal(id)
         removeTerminalSession(id)
+        codexSessionMonitor?.removeTerminal(id)
         return { success: true }
       } catch (e) {
         return { success: false, error: e.message }
       }
+    }
+    const removed = codexSessionMonitor?.removeTerminal(id)
+    if (removed) {
+      return { success: true }
     }
     return { success: false, error: '终端不存在' }
   })
@@ -331,8 +393,11 @@ function registerTerminalHandlers({
         session.ptyProcess.kill()
       } catch {}
       terminalBuffers.removeTerminal(terminalId)
+      codexSessionMonitor?.handleTerminalExit(terminalId, { exitCode: null, signal: 'cleanup' })
+      codexSessionMonitor?.removeTerminal(terminalId)
     }
     clearTerminalSessions()
+    codexSessionMonitor?.clear()
   }
 
   return { cleanup }
