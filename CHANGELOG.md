@@ -12,11 +12,27 @@ From this file onward:
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Refactored
+
+### Docs
+
+### Build
+
+## [1.4.2] - 2026-05-16
+
+### Added
+
 - 新增项目根目录 `AGENT.md`，约束 agent 在 OpenGit 中的工作方式与发布流程。
 
 ### Changed
 
 ### Fixed
+
+- 修复内置浏览器标签切换时，网页内容可能被遮罩层错误隐藏的问题。
 
 ### Refactored
 
