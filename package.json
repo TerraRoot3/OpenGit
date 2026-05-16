@@ -20,6 +20,8 @@
     "release": "bash scripts/build-release.sh",
     "release:x64": "bash scripts/build-release-x64.sh",
     "release:all": "bash scripts/build-release-all.sh",
+    "release:prepare": "node scripts/release-manager.mjs prepare",
+    "release:notes": "node scripts/release-manager.mjs notes",
     "electron:clean-cache": "bash scripts/clear-electron-cache.sh",
     "generate-icon": "node scripts/generate-icon.js",
     "convert-icon": "bash scripts/convert-icon.sh"

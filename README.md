@@ -251,11 +251,46 @@ OpenGit/
 发布方式：
 
 ```bash
+npm run release:prepare -- 1.4.2
+npm run release
 git tag v2.0.1
 git push origin v2.0.1
 ```
 
 工作流会自动构建多平台产物并创建 GitHub Release。
+
+### Changelog 与版本维护
+
+从现在开始，版本发布按下面的规则维护：
+
+- 日常修改先写入根目录 `CHANGELOG.md` 的 `## [Unreleased]`
+- 发版前运行：
+
+```bash
+npm run release:prepare -- 1.4.2
+```
+
+这个命令会同时做两件事：
+
+- 更新 `package.json` 的 `version`
+- 把 `CHANGELOG.md` 里的 `Unreleased` 提升为 `1.4.2`
+
+如果要查看某个版本的 release notes，可执行：
+
+```bash
+npm run release:notes -- 1.4.2
+```
+
+建议的发版顺序：
+
+```bash
+npm run release:prepare -- 1.4.2
+npm run release
+git add package.json CHANGELOG.md
+git commit -m "chore: prepare release v1.4.2"
+git tag v1.4.2
+git push origin main --tags
+```
 
 ### 常见问题
 
