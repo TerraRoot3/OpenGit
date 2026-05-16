@@ -22,6 +22,26 @@ From this file onward:
 
 ### Build
 
+## [1.4.4] - 2026-05-17
+
+### Added
+
+### Changed
+
+- 调整 Codex 状态展示范围，终端状态改为显示在分屏 pane 顶栏和灵动终端 pane 顶栏，不再显示在终端 tab 上。
+- 对齐 Codex 会话记录来源与展示规则，优先按活跃会话展示，归档与孤儿线程过滤逻辑改为更接近 Codex App。
+
+### Fixed
+
+- 修复 Codex 会话在同一内部终端继续对话时，`running` 状态恢复过慢或掉成 `unknown` 后不能及时回来的问题。
+- 修复灵动终端 pane 顶栏 `running` 指示不转、主题外观读取报错，以及相关状态映射不稳定的问题。
+
+### Refactored
+
+### Docs
+
+### Build
+
 ## [1.4.3] - 2026-05-16
 
 ### Added

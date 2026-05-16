@@ -53,7 +53,10 @@
             @keydown.space.prevent="openSummaryDialog(session)"
           >
             <div class="session-row top">
-              <div class="session-title">{{ getSessionTitle(session) }}</div>
+              <div class="session-title-wrap">
+                <div class="session-title">{{ getSessionTitle(session) }}</div>
+                <span v-if="session.archived" class="session-archived-badge">已归档</span>
+              </div>
               <div class="session-time">{{ formatTime(session.updatedAt) }}</div>
             </div>
 
@@ -70,7 +73,7 @@
                 <button class="resume-btn" @click.stop="resumeSession(session)">恢复</button>
                 <template v-if="isCodexSession(session)">
                   <button class="rename-btn-inline" @click.stop="promptRenameSession(session)">重命名</button>
-                  <button class="archive-btn-inline" @click.stop="promptArchiveSession(session)">归档</button>
+                  <button v-if="!session.archived" class="archive-btn-inline" @click.stop="promptArchiveSession(session)">归档</button>
                 </template>
                 <button v-else class="delete-btn-inline" @click.stop="promptDeleteSession(session)">删除</button>
               </div>
@@ -139,7 +142,7 @@
           </button>
           <button class="confirm-btn-large" @click="resumeFromDialog">恢复会话</button>
           <button
-            v-if="isCodexSession(summaryDialogSession)"
+            v-if="isCodexSession(summaryDialogSession) && !summaryDialogSession.archived"
             class="archive-btn-large"
             :disabled="archiveLoading"
             @click="promptArchiveSession()"
@@ -192,7 +195,7 @@
           <div class="delete-session-summary">
             {{ getSessionSummary(archiveTargetSession) }}
           </div>
-          <p class="warning-text">归档后会移动到本机 Codex 的 archived_sessions，并且不再显示在这里。</p>
+          <p class="warning-text">归档后会移动到本机 Codex 的 archived_sessions，并在列表中标记为已归档。</p>
         </div>
         <div class="dialog-footer">
           <button class="cancel-btn-large" :disabled="archiveLoading" @click="closeArchiveConfirm">取消</button>
@@ -852,6 +855,14 @@ onUnmounted(() => {
   gap: 10px;
 }
 
+.session-title-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .provider-name,
 .session-title {
   font-size: 12px;
@@ -929,6 +940,18 @@ onUnmounted(() => {
 
 .session-summary.empty {
   color: var(--theme-sem-text-muted);
+}
+
+.session-archived-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-sem-bg-overlay) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-sem-border-default) 80%, transparent);
+  color: var(--theme-sem-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .session-row.bottom,

@@ -1,7 +1,7 @@
 {
   "name": "open-git",
   "private": true,
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "OpenGit - Git 项目管理桌面应用",
   "author": "OpenGit Team",
   "main": "electron/main.js",

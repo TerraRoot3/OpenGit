@@ -373,6 +373,15 @@ function createCodexSessionMonitor({
       for (const terminal of trackedTerminals) {
         const terminalId = terminal.terminalId
         if (!terminal.boundThreadId) {
+          const foregroundStillCodex = detectCodexProcess(terminal.lastForegroundProcess)
+          if (foregroundStillCodex) {
+            if (terminal.status !== CODEX_SESSION_STATUS.RUNNING) {
+              updateTerminalStatus(terminalId, CODEX_SESSION_STATUS.RUNNING, 'process.foreground_codex_fallback', {
+                isCodexSession: true
+              })
+            }
+            continue
+          }
           if (
             terminal.status === CODEX_SESSION_STATUS.RUNNING &&
             terminal.lastCodexLaunchAt > 0 &&
@@ -478,12 +487,13 @@ function createCodexSessionMonitor({
           if (
             command &&
             terminal.isCodexSession &&
-            terminal.status === CODEX_SESSION_STATUS.ENDED &&
-            detectCodexProcess(terminal.lastForegroundProcess)
+            detectCodexProcess(terminal.lastForegroundProcess) &&
+            terminal.status !== CODEX_SESSION_STATUS.RUNNING
           ) {
             return updateTerminalStatus(terminalId, CODEX_SESSION_STATUS.RUNNING, 'input.codex_resume', {
               isCodexSession: true,
-              lastSignalAt: Date.now()
+              lastSignalAt: Date.now(),
+              lastCodexLaunchAt: Date.now()
             })
           }
           if (terminal.status === CODEX_SESSION_STATUS.AWAITING_CONFIRMATION && terminal.isCodexSession) {

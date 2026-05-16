@@ -1,18 +1,28 @@
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
+const { execFileSync } = require('child_process')
 
 const SESSION_CACHE_TTL = 15 * 1000
 const SUMMARY_CACHE_VERSION = 1
+const SQLITE_BIN_CANDIDATES = process.platform === 'darwin'
+  ? ['/usr/bin/sqlite3', 'sqlite3']
+  : ['sqlite3', '/usr/bin/sqlite3']
+const SQLITE_SEPARATOR = '\u001f'
+const SQLITE_TIMEOUT_MS = 1500
+const SQLITE_MAX_BUFFER = 2 * 1024 * 1024
 
 let codexSessionsCache = { loadedAt: 0, sessions: [] }
 let claudeHistoryCache = { loadedAt: 0, entries: new Map() }
+let codexHistoryCache = { loadedAt: 0, entries: new Map() }
 let summaryCacheStore = { filePath: '', loaded: false, dirty: false, entries: new Map() }
 const summaryRefreshJobs = new Map()
+let sqliteBinary = null
 
 function resetSessionCaches() {
   codexSessionsCache = { loadedAt: 0, sessions: [] }
   claudeHistoryCache = { loadedAt: 0, entries: new Map() }
+  codexHistoryCache = { loadedAt: 0, entries: new Map() }
 }
 
 function configureSummaryCache(filePath = '') {
@@ -146,6 +156,41 @@ function readJsonlFileUntil(filePath, onItem, chunkSize = 64 * 1024) {
 function appendJsonlRecord(filePath, record) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   fs.appendFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8')
+}
+
+function sqlQuote(value) {
+  return `'${String(value || '').replace(/'/g, "''")}'`
+}
+
+function resolveCodexStateDbPath(homeDir = os.homedir()) {
+  const normalizedHomeDir = normalizeProjectPath(homeDir)
+  if (!normalizedHomeDir) return ''
+  return path.join(normalizedHomeDir, '.codex', 'state_5.sqlite')
+}
+
+function execSqlite(databasePath, sql, { readonly = true } = {}) {
+  if (!databasePath || !fs.existsSync(databasePath) || !sql) return ''
+  const candidates = sqliteBinary ? [sqliteBinary] : [...SQLITE_BIN_CANDIDATES]
+
+  for (const binary of candidates) {
+    try {
+      const args = []
+      if (readonly) args.push('-readonly')
+      args.push('-separator', SQLITE_SEPARATOR, databasePath, sql)
+      const stdout = execFileSync(binary, args, {
+        timeout: SQLITE_TIMEOUT_MS,
+        maxBuffer: SQLITE_MAX_BUFFER,
+        encoding: 'utf8'
+      })
+      sqliteBinary = binary
+      return stdout || ''
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue
+      return ''
+    }
+  }
+
+  return ''
 }
 
 function ensureSummaryCacheLoaded() {
@@ -630,6 +675,165 @@ function resolveAiSessionRoots(provider = '', homeDir = os.homedir()) {
   }
 }
 
+function loadCodexThreadRows(homeDir = os.homedir(), { archived = false } = {}) {
+  const stateDbPath = resolveCodexStateDbPath(homeDir)
+  const sql = [
+    'SELECT id, rollout_path, cwd, title, first_user_message, preview, created_at_ms, updated_at_ms, archived',
+    'FROM threads',
+    `WHERE archived = ${archived ? 1 : 0}`,
+    'ORDER BY updated_at_ms DESC, created_at_ms DESC'
+  ].join(' ')
+
+  const stdout = execSqlite(stateDbPath, sql, { readonly: true })
+  if (!stdout) return []
+
+  const rows = []
+  for (const rawLine of stdout.split('\n')) {
+    if (!rawLine) continue
+    const parts = rawLine.split(SQLITE_SEPARATOR)
+    if (parts.length < 9) continue
+    rows.push({
+      sessionId: String(parts[0] || '').trim(),
+      rolloutPath: String(parts[1] || '').trim(),
+      cwd: normalizeProjectPath(parts[2] || ''),
+      title: typeof parts[3] === 'string' ? parts[3].trim() : '',
+      firstUserMessage: typeof parts[4] === 'string' ? parts[4].trim() : '',
+      preview: typeof parts[5] === 'string' ? parts[5].trim() : '',
+      createdAtMs: Number(parts[6]) || 0,
+      updatedAtMs: Number(parts[7]) || 0,
+      archived: Number(parts[8]) === 1
+    })
+  }
+
+  return rows
+}
+
+function loadCodexHistory(homeDir = os.homedir()) {
+  const now = Date.now()
+  if ((now - codexHistoryCache.loadedAt) < SESSION_CACHE_TTL) {
+    return codexHistoryCache.entries
+  }
+
+  const historyPath = path.join(homeDir, '.codex', 'history.jsonl')
+  const historyMap = new Map()
+
+  readJsonlFile(historyPath, (item) => {
+    const sessionId = String(item?.session_id || '').trim()
+    const text = typeof item?.text === 'string' ? item.text.trim() : ''
+    if (!sessionId || !text) return
+
+    const timestamp = Number(item?.ts) || 0
+    const current = historyMap.get(sessionId)
+    if (!current) {
+      historyMap.set(sessionId, {
+        firstText: text,
+        firstTimestamp: timestamp,
+        lastTimestamp: timestamp,
+        count: 1
+      })
+      return
+    }
+
+    if (!current.firstText) {
+      current.firstText = text
+    }
+    if (timestamp > 0) {
+      if (!current.firstTimestamp || timestamp < current.firstTimestamp) {
+        current.firstTimestamp = timestamp
+      }
+      if (!current.lastTimestamp || timestamp > current.lastTimestamp) {
+        current.lastTimestamp = timestamp
+      }
+    }
+    current.count = (current.count || 1) + 1
+  })
+
+  codexHistoryCache = {
+    loadedAt: now,
+    entries: historyMap
+  }
+
+  return historyMap
+}
+
+function buildCodexIndex(homeDir) {
+  const { indexPath } = resolveAiSessionRoots('codex', homeDir)
+  const indexMap = new Map()
+
+  readJsonlFile(indexPath, (item) => {
+    if (!item?.id) return
+    indexMap.set(item.id, {
+      title: typeof item.thread_name === 'string' ? item.thread_name.trim() : '',
+      updatedAt: normalizeIsoString(item.updated_at)
+    })
+  })
+
+  return indexMap
+}
+
+function loadCodexSessionsFromFiles(homeDir) {
+  const { rootDir: sessionsRoot, archiveDir } = resolveAiSessionRoots('codex', homeDir)
+  const indexMap = buildCodexIndex(homeDir)
+  const historyMap = loadCodexHistory(homeDir)
+  const files = [
+    ...walkFiles(sessionsRoot, (fullPath) => fullPath.endsWith('.jsonl')),
+    ...walkFiles(archiveDir, (fullPath) => fullPath.endsWith('.jsonl'))
+  ]
+  const sessionMap = new Map()
+  let hasPendingSummaryRefresh = false
+
+  for (const filePath of files) {
+    const firstLine = safeReadFirstLine(filePath)
+    const record = safeReadJsonLine(firstLine)
+    if (!record || record.type !== 'session_meta' || !record.payload?.id) continue
+
+    const sessionId = String(record.payload.id).trim()
+    const cwd = normalizeProjectPath(record.payload.cwd || '')
+    if (!sessionId || !cwd) continue
+    const historyEntry = historyMap.get(sessionId)
+
+    let statTimestamp = 0
+    try {
+      statTimestamp = fs.statSync(filePath).mtimeMs
+    } catch (error) {}
+
+    const createdAtMs = toTimestamp(record.payload.timestamp)
+      || (historyEntry?.firstTimestamp ? historyEntry.firstTimestamp * 1000 : 0)
+      || statTimestamp
+    const indexed = indexMap.get(sessionId)
+    const updatedAt = indexed?.updatedAt
+      || normalizeIsoString(createdAtMs, statTimestamp)
+      || normalizeIsoString(statTimestamp)
+    const summaryState = resolveSessionSummary({
+      provider: 'codex',
+      sessionId,
+      sourcePath: filePath,
+      sourceMtimeMs: statTimestamp,
+      extractSummary: extractCodexSummary
+    })
+    hasPendingSummaryRefresh = hasPendingSummaryRefresh || summaryState.pendingRefresh
+    const fallbackTitle = extractCodexSummary(filePath)
+    const archived = isPathInsideRoot(filePath, archiveDir)
+
+    mergeSessionEntry(sessionMap, {
+      provider: 'codex',
+      sessionId,
+      title: indexed?.title || historyEntry?.firstText || fallbackTitle || path.basename(cwd) || sessionId,
+      cwd,
+      updatedAt,
+      summary: summaryState.summary,
+      sourcePath: filePath,
+      sourceMtimeMs: statTimestamp,
+      archived
+    })
+  }
+
+  return {
+    sessions: [...sessionMap.values()].sort((a, b) => toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt)),
+    hasPendingSummaryRefresh
+  }
+}
+
 function resolveUniqueArchivePath(archiveDir = '', fileName = '') {
   const parsed = path.parse(fileName || 'session.jsonl')
   let candidate = path.join(archiveDir, fileName)
@@ -654,6 +858,7 @@ function renameCodexSession({
   const normalizedSessionId = String(sessionId || '').trim()
   const normalizedSourcePath = normalizeProjectPath(sourcePath)
   const { rootDir, indexPath } = resolveAiSessionRoots('codex', homeDir)
+  const stateDbPath = resolveCodexStateDbPath(homeDir)
 
   if (!normalizedSessionId || !normalizedTitle) {
     throw new Error('invalid codex rename request')
@@ -673,6 +878,11 @@ function renameCodexSession({
     thread_name: normalizedTitle,
     updated_at: normalizedUpdatedAt
   })
+  execSqlite(
+    stateDbPath,
+    `UPDATE threads SET title = ${sqlQuote(normalizedTitle)} WHERE id = ${sqlQuote(normalizedSessionId)};`,
+    { readonly: false }
+  )
 
   resetSessionCaches()
 
@@ -689,6 +899,7 @@ function archiveCodexSessionSource({
 } = {}) {
   const normalizedSourcePath = normalizeProjectPath(sourcePath)
   const { rootDir, archiveDir } = resolveAiSessionRoots('codex', homeDir)
+  const stateDbPath = resolveCodexStateDbPath(homeDir)
 
   if (!rootDir || !archiveDir || !normalizedSourcePath || !isPathInsideRoot(normalizedSourcePath, rootDir)) {
     throw new Error('codex session source is not allowed')
@@ -704,8 +915,19 @@ function archiveCodexSessionSource({
   fs.mkdirSync(archiveDir, { recursive: true })
   const archivedPath = resolveUniqueArchivePath(archiveDir, path.basename(normalizedSourcePath))
   fs.renameSync(normalizedSourcePath, archivedPath)
+  const archivedAtMs = Date.now()
+  execSqlite(
+    stateDbPath,
+    [
+      'UPDATE threads',
+      `SET archived = 1, archived_at = ${Math.floor(archivedAtMs / 1000)}, rollout_path = ${sqlQuote(archivedPath)}`,
+      `WHERE rollout_path = ${sqlQuote(normalizedSourcePath)};`
+    ].join(' '),
+    { readonly: false }
+  )
   pruneEmptyDirectories(path.dirname(normalizedSourcePath), rootDir)
   deleteSessionSummaryCache({ provider: 'codex', sourcePath: normalizedSourcePath })
+  deleteSessionSummaryCache({ provider: 'codex', sourcePath: archivedPath })
   flushSummaryCache()
   resetSessionCaches()
 
@@ -752,21 +974,6 @@ function mergeSessionEntry(targetMap, entry) {
   }
 }
 
-function buildCodexIndex(homeDir) {
-  const { indexPath } = resolveAiSessionRoots('codex', homeDir)
-  const indexMap = new Map()
-
-  readJsonlFile(indexPath, (item) => {
-    if (!item?.id) return
-    indexMap.set(item.id, {
-      title: typeof item.thread_name === 'string' ? item.thread_name.trim() : '',
-      updatedAt: normalizeIsoString(item.updated_at)
-    })
-  })
-
-  return indexMap
-}
-
 function loadCodexSessions(homeDir) {
   const now = Date.now()
   if ((now - codexSessionsCache.loadedAt) < SESSION_CACHE_TTL) {
@@ -776,50 +983,70 @@ function loadCodexSessions(homeDir) {
     }
   }
 
-  const { rootDir: sessionsRoot } = resolveAiSessionRoots('codex', homeDir)
-  const indexMap = buildCodexIndex(homeDir)
-  const files = walkFiles(sessionsRoot, (fullPath) => fullPath.endsWith('.jsonl'))
+  const historyMap = loadCodexHistory(homeDir)
+  const threadRows = [
+    ...loadCodexThreadRows(homeDir, { archived: false }),
+    ...loadCodexThreadRows(homeDir, { archived: true })
+  ]
+  const fallbackResult = loadCodexSessionsFromFiles(homeDir)
   const sessionMap = new Map()
   let hasPendingSummaryRefresh = false
 
-  for (const filePath of files) {
-    const firstLine = safeReadFirstLine(filePath)
-    const record = safeReadJsonLine(firstLine)
-    if (!record || record.type !== 'session_meta' || !record.payload?.id) continue
-
-    const sessionId = String(record.payload.id).trim()
-    const cwd = normalizeProjectPath(record.payload.cwd || '')
+  for (const row of threadRows) {
+    const sessionId = row.sessionId
+    const cwd = row.cwd
     if (!sessionId || !cwd) continue
+    const historyEntry = historyMap.get(sessionId)
+    const hasHistoryTrace = Number(historyEntry?.count || 0) > 0
+    const rolloutExists = !!(row.rolloutPath && fs.existsSync(row.rolloutPath))
+    if (!rolloutExists && !hasHistoryTrace) continue
 
     let statTimestamp = 0
     try {
-      statTimestamp = fs.statSync(filePath).mtimeMs
+      statTimestamp = rolloutExists
+        ? fs.statSync(row.rolloutPath).mtimeMs
+        : 0
     } catch (error) {}
 
-    const indexed = indexMap.get(sessionId)
-    const updatedAt = indexed?.updatedAt
-      || normalizeIsoString(record.payload.timestamp, statTimestamp)
+    const updatedAt = normalizeIsoString(row.updatedAtMs || row.createdAtMs, statTimestamp)
       || normalizeIsoString(statTimestamp)
-    const summaryState = resolveSessionSummary({
-      provider: 'codex',
-      sessionId,
-      sourcePath: filePath,
-      sourceMtimeMs: statTimestamp,
-      extractSummary: extractCodexSummary
-    })
-    hasPendingSummaryRefresh = hasPendingSummaryRefresh || summaryState.pendingRefresh
-    const fallbackTitle = extractCodexSummary(filePath)
+    const primarySummary = truncateText(row.preview || row.firstUserMessage || '')
+    let summary = primarySummary
+    let pendingRefresh = false
+
+    if (!summary && row.rolloutPath) {
+      const summaryState = resolveSessionSummary({
+        provider: 'codex',
+        sessionId,
+        sourcePath: row.rolloutPath,
+        sourceMtimeMs: statTimestamp,
+        extractSummary: extractCodexSummary
+      })
+      summary = summaryState.summary
+      pendingRefresh = summaryState.pendingRefresh
+    }
+    hasPendingSummaryRefresh = hasPendingSummaryRefresh || pendingRefresh
 
     mergeSessionEntry(sessionMap, {
       provider: 'codex',
       sessionId,
-      title: indexed?.title || fallbackTitle || path.basename(cwd) || sessionId,
+      title: row.title || historyEntry?.firstText || path.basename(cwd) || sessionId,
       cwd,
       updatedAt,
-      summary: summaryState.summary,
-      sourcePath: filePath,
-      sourceMtimeMs: statTimestamp
+      summary,
+      sourcePath: row.rolloutPath,
+      sourceMtimeMs: statTimestamp,
+      archived: row.archived === true
     })
+  }
+
+  for (const session of fallbackResult.sessions) {
+    if (!session?.sessionId || sessionMap.has(session.sessionId)) continue
+    const historyEntry = historyMap.get(session.sessionId)
+    if (session.archived && (!historyEntry || Number(historyEntry.count || 0) < 2)) {
+      continue
+    }
+    mergeSessionEntry(sessionMap, session)
   }
 
   codexSessionsCache = {
@@ -829,7 +1056,7 @@ function loadCodexSessions(homeDir) {
 
   return {
     sessions: codexSessionsCache.sessions,
-    hasPendingSummaryRefresh
+    hasPendingSummaryRefresh: hasPendingSummaryRefresh || fallbackResult.hasPendingSummaryRefresh
   }
 }
 
@@ -965,8 +1192,11 @@ function registerAiSessionHandlers({
 
       const homeDir = os.homedir()
       const codexResult = loadCodexSessions(homeDir)
-      const codexSessions = codexResult.sessions
+      const projectCodexSessions = codexResult.sessions
         .filter((session) => isPathInsideProject(session.cwd, normalizedProjectPath))
+      const activeCodexSessions = projectCodexSessions.filter((session) => session.archived !== true)
+      const archivedCodexSessions = projectCodexSessions.filter((session) => session.archived === true)
+      const codexSessions = (activeCodexSessions.length > 0 ? activeCodexSessions : archivedCodexSessions)
         .slice(0, 100)
       const claudeResult = loadClaudeSessions(homeDir, normalizedProjectPath)
       const claudeSessions = claudeResult.sessions.slice(0, 100)

@@ -123,7 +123,7 @@
               <span
                 v-if="terminalCodexStatus"
                 class="codex-status-dot"
-                :class="`codex-status-dot--${terminalCodexStatus}`"
+                :class="terminalCodexStatusClasses"
                 :title="terminalCodexStatusLabel"
               />
             </div>
@@ -611,10 +611,16 @@ import {
   getProjectDetail,
   getBranchStatus as getStoreBranchStatus
 } from '../../stores/projectStore'
+import { useThemeStore } from '../../stores/themeStore.js'
 import { useCodexProjectStatusStore } from '../../stores/codexProjectStatusStore.js'
 import { removeProjectDetailDebugEntry, updateProjectDetailDebugEntry } from '../../debug/runtimeDebug.js'
 
 const ProjectWorkspace = defineAsyncComponent(() => import('./ProjectWorkspace.vue'))
+const themeStore = useThemeStore()
+const resolvedThemeAppearance = computed(() => {
+  const currentThemeDefinition = themeStore.themeDefinitions?.[themeStore.resolvedTheme.value]
+  return currentThemeDefinition?.appearance === 'light' ? 'light' : 'dark'
+})
 
 const isDev = import.meta.env.DEV
 const normalizeLogArg = (arg) => {
@@ -723,6 +729,16 @@ const terminalProjectPath = computed(() => {
   }
 })
 const terminalCodexStatus = computed(() => getProjectStatus(terminalProjectPath.value))
+const terminalCodexStatusClasses = computed(() => {
+  const status = terminalCodexStatus.value
+  if (!status) return []
+  return [
+    `codex-status-dot--${status}`,
+    status === 'running'
+      ? `codex-status-dot--running-${resolvedThemeAppearance.value}`
+      : ''
+  ].filter(Boolean)
+})
 const terminalCodexStatusLabel = computed(() => {
   switch (terminalCodexStatus.value) {
     case 'running':
@@ -4186,17 +4202,26 @@ defineExpose({
 
 .codex-status-dot--running {
   background: color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
+}
+
+.codex-status-dot--running-dark {
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 0 0 2px rgba(20, 23, 28, 0.9), 0 0 8px rgba(255, 255, 255, 0.28);
+}
+
+.codex-status-dot--running-light {
+  background: color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  box-shadow: 0 0 0 2px rgba(20, 23, 28, 0.9), 0 0 8px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
 }
 
 .codex-status-dot--awaiting_confirmation {
-  background: color-mix(in srgb, var(--theme-sem-accent-warning) 72%, var(--theme-sem-accent-danger) 28%);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--theme-sem-accent-danger) 42%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-accent-danger) 88%, #ff5a5f 12%);
+  box-shadow: 0 0 0 2px rgba(20, 23, 28, 0.9), 0 0 8px color-mix(in srgb, var(--theme-sem-accent-danger) 50%, transparent);
 }
 
 .codex-status-dot--ended {
-  background: var(--theme-sem-accent-success);
-  box-shadow: 0 0 7px color-mix(in srgb, var(--theme-sem-accent-success) 32%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-accent-success) 82%, #2ee680 18%);
+  box-shadow: 0 0 0 2px rgba(20, 23, 28, 0.9), 0 0 8px color-mix(in srgb, var(--theme-sem-accent-success) 42%, transparent);
 }
 
 .header-branch-status {

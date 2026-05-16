@@ -160,6 +160,12 @@
       </template>
       <template v-else>
         <div class="terminal-path terminal-path--single-pane" :title="singlePaneChromeTooltip">
+          <span
+            v-if="currentCodexStatus"
+            class="terminal-pane-codex-status"
+            :class="getPaneCodexStatusClasses(currentCodexStatus)"
+            :title="getCodexStatusTooltip(currentCodexStatus)"
+          />
           <span class="terminal-path__title">{{ tabTitlePart }}</span>
           <template v-if="pathDisplay">
             <span class="terminal-path__sep" aria-hidden="true">·</span>
@@ -202,6 +208,9 @@
         :active-term-id="activeTermId"
         :pane-title-resolver="getPaneTitle"
         :pane-cwd-resolver="getPaneCwd"
+        :pane-status-resolver="getCodexStatusForTermId"
+        :pane-status-class-resolver="getPaneCodexStatusClasses"
+        :pane-status-tooltip-resolver="getCodexStatusTooltip"
         :liquid-style="props.splitOnlyMode"
         :closable="activeTabTermIds.length > 1"
         :show-pane-topbar="props.splitOnlyMode ? true : activeTabTermIds.length > 1"
@@ -281,7 +290,12 @@ const terminals = ref([])
 const activeTermId = ref(null)
 const terminalCache = new Map()
 const themeStore = useThemeStore()
+const resolvedThemeAppearance = computed(() => {
+  const currentThemeDefinition = themeStore.themeDefinitions?.[themeStore.resolvedTheme.value]
+  return currentThemeDefinition?.appearance === 'light' ? 'light' : 'dark'
+})
 const paneElements = new Map()
+const codexTerminalStatuses = ref({})
 const showCwdMenu = ref(false)
 const cwdMenuRef = ref(null)
 const showSearchBar = ref(false)
@@ -327,6 +341,97 @@ const SPLIT_RATIO_MAX = 0.85
 const PROGRAMMATIC_FOCUS_SIGINT_GUARD_MS = 160
 let cachedTerminalScrollback = DEFAULT_TERMINAL_SCROLLBACK
 let terminalScrollbackLoaded = false
+let removeCodexTerminalStatusListener = null
+
+function normalizeCodexTerminalStatus(value = '') {
+  const normalized = typeof value === 'string' ? value.trim() : ''
+  return ['running', 'awaiting_confirmation', 'ended'].includes(normalized) ? normalized : ''
+}
+
+function applyCodexTerminalStatusPayload(payload) {
+  const entry = payload?.terminal || payload || {}
+  const terminalId = String(entry.terminalId || entry.id || '').trim()
+  if (!terminalId) return
+  const status = normalizeCodexTerminalStatus(entry.status || payload?.status || '')
+  if (!status) {
+    delete codexTerminalStatuses.value[terminalId]
+    return
+  }
+  codexTerminalStatuses.value[terminalId] = status
+}
+
+function replaceCodexTerminalStatuses(entries = []) {
+  const nextMap = {}
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const snapshot = entry?.terminal || entry || {}
+    const terminalId = String(snapshot.terminalId || snapshot.id || '').trim()
+    const status = normalizeCodexTerminalStatus(snapshot.status || '')
+    if (!terminalId || !status) continue
+    nextMap[terminalId] = status
+  }
+  codexTerminalStatuses.value = nextMap
+}
+
+async function hydrateCodexTerminalStatuses() {
+  try {
+    const api = window.electronAPI?.codexSessionMonitor
+    if (!api || typeof api.getSnapshot !== 'function') return
+    const result = await api.getSnapshot()
+    replaceCodexTerminalStatuses(result?.snapshot?.terminals || result?.terminals || [])
+  } catch (error) {
+    console.warn('获取 Codex 终端状态快照失败:', error)
+  }
+}
+
+function subscribeCodexTerminalStatuses() {
+  const api = window.electronAPI?.codexSessionMonitor
+  if (!api || typeof api.onTerminalStatusChanged !== 'function') return
+  removeCodexTerminalStatusListener = api.onTerminalStatusChanged((payload) => {
+    applyCodexTerminalStatusPayload(payload)
+  })
+}
+
+function resolveCodexStatusLookupId(termId = '') {
+  const normalizedId = String(termId || '').trim()
+  if (!normalizedId) return ''
+  const terminal = findTerminalById(normalizedId)
+  const ptyId = String(terminal?.ptyId || '').trim()
+  return ptyId || normalizedId
+}
+
+function getCodexStatusForTermId(termId = '') {
+  const lookupId = resolveCodexStatusLookupId(termId)
+  return lookupId ? codexTerminalStatuses.value[lookupId] || '' : ''
+}
+
+function getCodexStatusForCurrentTerminal() {
+  return getCodexStatusForTermId(activeTermId.value)
+}
+
+const currentCodexStatus = computed(() => getCodexStatusForCurrentTerminal())
+
+function getPaneCodexStatusClasses(status = '') {
+  if (!status) return []
+  return [
+    `terminal-pane-codex-status--${status}`,
+    status === 'running'
+      ? `terminal-pane-codex-status--running-${resolvedThemeAppearance.value}`
+      : ''
+  ].filter(Boolean)
+}
+
+function getCodexStatusTooltip(status = '') {
+  switch (status) {
+    case 'running':
+      return 'Codex 进行中'
+    case 'awaiting_confirmation':
+      return 'Codex 等待确认'
+    case 'ended':
+      return 'Codex 本次已结束'
+    default:
+      return ''
+  }
+}
 
 async function loadTerminalScrollbackSetting(force = false) {
   if (terminalScrollbackLoaded && !force) {
@@ -2530,6 +2635,8 @@ onMounted(() => {
   retainLiveTerminalPanel()
   syncTerminalDebugState()
   register(ipcHandler)
+  void hydrateCodexTerminalStatuses()
+  subscribeCodexTerminalStatuses()
 
   const ro = new ResizeObserver(() => {
     if (props.singlePaneChrome) {
@@ -2592,6 +2699,10 @@ onUnmounted(() => {
   terminalCache.clear()
   syncTerminalDebugState()
   unregister(ipcHandler)
+  if (typeof removeCodexTerminalStatusListener === 'function') {
+    removeCodexTerminalStatusListener()
+    removeCodexTerminalStatusListener = null
+  }
   releaseLiveTerminalPanel()
 })
 
@@ -2685,6 +2796,48 @@ defineExpose({
 
 .terminal-path--single-pane .terminal-path__cwd .terminal-path__ltr {
   color: var(--theme-sem-text-primary);
+}
+.terminal-pane-codex-status {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.terminal-pane-codex-status--running {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  border-top-color: transparent;
+  background: transparent;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
+  animation: spin 0.8s linear infinite;
+}
+.terminal-pane-codex-status--running-dark {
+  border-color: rgba(255, 255, 255, 0.96);
+  border-top-color: transparent;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.28);
+}
+.terminal-pane-codex-status--running-light {
+  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  border-top-color: transparent;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
+}
+.terminal-pane-codex-status--awaiting_confirmation {
+  background: color-mix(in srgb, var(--theme-sem-accent-danger) 88%, #ff5a5f 12%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-danger) 52%, transparent);
+}
+.terminal-pane-codex-status--ended {
+  background: color-mix(in srgb, var(--theme-sem-accent-success) 82%, #2ee680 18%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-success) 44%, transparent);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 /* 过长时省略左侧，保留末尾目录名可见（完整路径见 title） */
 .terminal-path--ellipsis-start {

@@ -20,6 +20,12 @@
       @mousedown.left.stop="handleDragMouseDown"
     >
       <div class="terminal-pane-meta">
+        <span
+          v-if="paneStatus"
+          class="terminal-pane-codex-status"
+          :class="paneStatusClasses"
+          :title="paneStatusTooltip"
+        />
         <span class="terminal-pane-title" :title="paneLabel">{{ paneLabel }}</span>
         <span v-if="paneCwd" class="terminal-pane-sep" aria-hidden="true">·</span>
         <span v-if="paneCwd" class="terminal-pane-cwd" :title="paneCwd">{{ paneCwd }}</span>
@@ -73,6 +79,9 @@
         :active-term-id="activeTermId"
         :pane-title-resolver="paneTitleResolver"
         :pane-cwd-resolver="paneCwdResolver"
+        :pane-status-resolver="paneStatusResolver"
+        :pane-status-class-resolver="paneStatusClassResolver"
+        :pane-status-tooltip-resolver="paneStatusTooltipResolver"
         :liquid-style="liquidStyle"
         :show-pane-topbar="showPaneTopbar"
         :closable="closable"
@@ -100,6 +109,9 @@
         :active-term-id="activeTermId"
         :pane-title-resolver="paneTitleResolver"
         :pane-cwd-resolver="paneCwdResolver"
+        :pane-status-resolver="paneStatusResolver"
+        :pane-status-class-resolver="paneStatusClassResolver"
+        :pane-status-tooltip-resolver="paneStatusTooltipResolver"
         :liquid-style="liquidStyle"
         :show-pane-topbar="showPaneTopbar"
         :closable="closable"
@@ -137,6 +149,18 @@ const props = defineProps({
     default: null
   },
   paneCwdResolver: {
+    type: Function,
+    default: null
+  },
+  paneStatusResolver: {
+    type: Function,
+    default: null
+  },
+  paneStatusClassResolver: {
+    type: Function,
+    default: null
+  },
+  paneStatusTooltipResolver: {
     type: Function,
     default: null
   },
@@ -189,6 +213,21 @@ const paneCwd = computed(() => {
   if (props.node?.type !== 'leaf') return ''
   const cwd = props.paneCwdResolver?.(props.node.termId)
   return typeof cwd === 'string' ? cwd : ''
+})
+const paneStatus = computed(() => {
+  if (props.node?.type !== 'leaf') return ''
+  const status = props.paneStatusResolver?.(props.node.termId)
+  return typeof status === 'string' ? status.trim() : ''
+})
+const paneStatusClasses = computed(() => {
+  if (!paneStatus.value) return []
+  const classes = props.paneStatusClassResolver?.(paneStatus.value)
+  return Array.isArray(classes) ? classes : []
+})
+const paneStatusTooltip = computed(() => {
+  if (!paneStatus.value) return ''
+  const tooltip = props.paneStatusTooltipResolver?.(paneStatus.value)
+  return typeof tooltip === 'string' ? tooltip : ''
 })
 const splitRatio = computed(() => {
   const ratio = Number(props.node?.ratio)
@@ -371,6 +410,45 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   -webkit-user-select: none;
 }
 
+.terminal-pane-codex-status {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.terminal-pane-codex-status--running {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  border-top-color: transparent;
+  background: transparent;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
+  animation: spin 0.8s linear infinite;
+}
+
+.terminal-pane-codex-status--running-dark {
+  border-color: rgba(255, 255, 255, 0.96);
+  border-top-color: transparent;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.28);
+}
+
+.terminal-pane-codex-status--running-light {
+  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  border-top-color: transparent;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
+}
+
+.terminal-pane-codex-status--awaiting_confirmation {
+  background: color-mix(in srgb, var(--theme-sem-accent-danger) 88%, #ff5a5f 12%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-danger) 52%, transparent);
+}
+
+.terminal-pane-codex-status--ended {
+  background: color-mix(in srgb, var(--theme-sem-accent-success) 82%, #2ee680 18%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-success) 44%, transparent);
+}
+
 .terminal-pane-title {
   flex-shrink: 0;
   max-width: 38%;
@@ -541,5 +619,14 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
 .terminal-split-divider:hover::before {
   background: color-mix(in srgb, var(--theme-sem-accent-primary) 68%, white 32%);
   opacity: 1;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

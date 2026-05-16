@@ -69,7 +69,7 @@
           <span
             v-if="getCodexStatusForTab(tab)"
             class="browser-tab-status-inline"
-            :class="`browser-tab-status-inline--${getCodexStatusForTab(tab)}`"
+            :class="getCodexStatusInlineClasses(tab)"
             @mouseenter.stop="(e) => showTooltip(e, getCodexStatusTooltip(getCodexStatusForTab(tab)))"
             @mouseleave="hideTooltip"
             aria-hidden="true"
@@ -394,6 +394,7 @@ import { updateBrowserDebugState } from '../../debug/runtimeDebug.js'
 import { clearProjectCache } from '../../stores/projectStore'
 import { clearFocusTerminalScope } from '../../stores/focusTerminalStore.js'
 import { useCodexProjectStatusStore } from '../../stores/codexProjectStatusStore.js'
+import { useThemeStore } from '../../stores/themeStore.js'
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -634,6 +635,11 @@ const isBrowserReady = ref(false) // 标记浏览器组件是否已准备好
 let nextBrowserTabId = 1
 const isRestoringTabs = ref(false) // 标记是否正在恢复标签页
 const { getProjectStatus } = useCodexProjectStatusStore()
+const themeStore = useThemeStore()
+const resolvedThemeAppearance = computed(() => {
+  const currentThemeDefinition = themeStore.themeDefinitions?.[themeStore.resolvedTheme.value]
+  return currentThemeDefinition?.appearance === 'light' ? 'light' : 'dark'
+})
 
 // 标签拖拽相关
 const draggingTabId = ref(null) // 正在拖拽的标签 ID
@@ -729,6 +735,17 @@ const isProjectBrowserTab = (tab) => {
 const getCodexStatusForTab = (tab) => {
   if (!isProjectBrowserTab(tab)) return ''
   return getProjectStatus(tab?.routeProps?.path || '')
+}
+
+const getCodexStatusInlineClasses = (tab) => {
+  const status = getCodexStatusForTab(tab)
+  if (!status) return []
+  return [
+    `browser-tab-status-inline--${status}`,
+    status === 'running'
+      ? `browser-tab-status-inline--running-${resolvedThemeAppearance.value}`
+      : ''
+  ].filter(Boolean)
 }
 
 const getCodexStatusTooltip = (status) => {
@@ -4642,18 +4659,30 @@ watch(() => props.initialUrl, (newUrl, oldUrl) => {
   animation: spin 0.8s linear infinite;
 }
 
+.browser-tab-status-inline--running-dark {
+  border-color: rgba(255, 255, 255, 0.96);
+  border-top-color: transparent;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.28);
+}
+
+.browser-tab-status-inline--running-light {
+  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  border-top-color: transparent;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
+}
+
 .browser-tab-status-inline--awaiting_confirmation {
   width: 10px;
   height: 10px;
-  background: color-mix(in srgb, var(--theme-sem-accent-warning) 72%, var(--theme-sem-accent-danger) 28%);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-danger) 42%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-accent-danger) 88%, #ff5a5f 12%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-danger) 52%, transparent);
 }
 
 .browser-tab-status-inline--ended {
   width: 10px;
   height: 10px;
-  background: var(--theme-sem-accent-success);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--theme-sem-accent-success) 32%, transparent);
+  background: color-mix(in srgb, var(--theme-sem-accent-success) 82%, #2ee680 18%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-success) 44%, transparent);
 }
 
 .browser-tab-item.active {
