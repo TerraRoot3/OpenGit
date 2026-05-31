@@ -2,6 +2,8 @@ const { CODEX_SESSION_STATUS } = require('./codex-session-types')
 
 const CODEX_COMMAND_PATTERN = /(^|[;&|]\s*)(?:env\s+[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|[^\s]+)\s+)*(?:\S+\/)?codex(?:\s|$)/i
 const CODEX_PROCESS_PATTERN = /(^|[\/\s_-])codex(?:$|[\s._-])/i
+const CODEX_SLASH_COMMAND_PATTERN = /^\/[A-Za-z][\w-]*(?:\s+.*)?$/
+const CODEX_STATUS_SESSION_PATTERN = /\bSession:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i
 const INTERACTIVE_SHELL_PROCESS_PATTERN = /(^|[\/\s_-])(zsh|bash|fish|nu|pwsh|powershell)(?:$|[\s._-])/i
 const AWAITING_CONFIRMATION_HEADLINE_PATTERNS = [
   /\bawaiting confirmation\b/i,
@@ -89,6 +91,22 @@ function detectCodexProcess(processName) {
   return CODEX_PROCESS_PATTERN.test(normalized)
 }
 
+function detectCodexSlashCommand(text) {
+  const normalized = normalizeMultilineText(text).trim()
+  if (!normalized) return false
+  return CODEX_SLASH_COMMAND_PATTERN.test(normalized)
+}
+
+function detectCodexStatusSnapshot(text) {
+  const normalized = normalizeMultilineText(text)
+  if (!normalized) return null
+  const match = normalized.match(CODEX_STATUS_SESSION_PATTERN)
+  if (!match?.[1]) return null
+  return {
+    threadId: match[1]
+  }
+}
+
 function detectInteractiveShellProcess(processName) {
   const normalized = String(processName || '').trim()
   if (!normalized) return false
@@ -121,5 +139,7 @@ module.exports = {
   detectCodexCommand,
   detectCodexOutputStatus,
   detectCodexProcess,
+  detectCodexSlashCommand,
+  detectCodexStatusSnapshot,
   detectInteractiveShellProcess
 }

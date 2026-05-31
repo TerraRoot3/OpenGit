@@ -111,6 +111,8 @@ function parseRolloutSignals(text) {
 
 function parseLogSignals(rows) {
   const signals = {
+    runningAt: 0,
+    runningReason: '',
     endedAt: 0,
     endedReason: ''
   }
@@ -120,6 +122,16 @@ function parseLogSignals(rows) {
     const at = parseMillis(row?.ts)
     if (!at || !body) continue
 
+    if (
+      !signals.runningAt &&
+      (
+        body.includes('event.kind=response.output') ||
+        body.includes('event.kind=response.function_call_arguments')
+      )
+    ) {
+      signals.runningAt = at
+      signals.runningReason = 'logs.response_output'
+    }
     if (!signals.endedAt && body.includes('Agent loop exited')) {
       signals.endedAt = at
       signals.endedReason = 'logs.agent_loop_exited'
@@ -129,7 +141,7 @@ function parseLogSignals(rows) {
       signals.endedReason = 'logs.shutdown'
     }
 
-    if (signals.endedAt) break
+    if (signals.runningAt && signals.endedAt) break
   }
 
   return signals
@@ -156,6 +168,13 @@ function resolveThreadStatusSignals(rolloutSignals, logSignals) {
       at: rolloutSignals.abortedAt,
       status: 'ended',
       reason: 'rollout.turn_aborted'
+    })
+  }
+  if (logSignals.runningAt) {
+    markers.push({
+      at: logSignals.runningAt,
+      status: 'running',
+      reason: logSignals.runningReason || 'logs.running'
     })
   }
   if (logSignals.endedAt) {
@@ -253,6 +272,36 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
     return rows
   }
 
+  const getThread = async (threadId = '') => {
+    const normalizedThreadId = typeof threadId === 'string' ? threadId.trim() : ''
+    if (!normalizedThreadId) return null
+
+    const sql = [
+      'SELECT id, cwd, created_at_ms, updated_at_ms, rollout_path',
+      'FROM threads',
+      `WHERE id = ${sqlQuote(normalizedThreadId)}`,
+      'LIMIT 1'
+    ].join(' ')
+
+    const stdout = await execSqlite(STATE_DB_PATH, sql)
+    if (!stdout) return null
+
+    for (const line of stdout.split('\n')) {
+      if (!line) continue
+      const parts = line.split(SQLITE_SEPARATOR)
+      if (parts.length < 5) continue
+      return {
+        id: parts[0] || '',
+        cwd: parts[1] || '',
+        createdAt: parseMillis(parts[2]),
+        updatedAt: parseMillis(parts[3]),
+        rolloutPath: parts[4] || ''
+      }
+    }
+
+    return null
+  }
+
   const getRolloutSignals = (rolloutPath) => {
     if (!rolloutPath) return { startedAt: 0, completedAt: 0, abortedAt: 0 }
     try {
@@ -281,7 +330,7 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
 
   const getLogSignals = async (threadId) => {
     const normalizedThreadId = typeof threadId === 'string' ? threadId.trim() : ''
-    if (!normalizedThreadId) return { endedAt: 0, endedReason: '' }
+    if (!normalizedThreadId) return { runningAt: 0, runningReason: '', endedAt: 0, endedReason: '' }
 
     const cached = logCache.get(normalizedThreadId)
     if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
@@ -294,9 +343,11 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
       `WHERE thread_id = ${sqlQuote(normalizedThreadId)}`,
       'AND feedback_log_body IS NOT NULL',
       "AND (instr(feedback_log_body, 'Agent loop exited') > 0",
-      "OR instr(feedback_log_body, 'Shutting down Codex instance') > 0)",
+      "OR instr(feedback_log_body, 'Shutting down Codex instance') > 0",
+      "OR instr(feedback_log_body, 'event.kind=response.output') > 0",
+      "OR instr(feedback_log_body, 'event.kind=response.function_call_arguments') > 0)",
       'ORDER BY id DESC',
-      'LIMIT 40'
+      'LIMIT 80'
     ].join(' ')
 
     const stdout = await execSqlite(LOGS_DB_PATH, sql)
@@ -332,6 +383,7 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
     stateDbPath: STATE_DB_PATH,
     logsDbPath: LOGS_DB_PATH,
     listActiveThreads,
+    getThread,
     resolveThreadStatus
   }
 }

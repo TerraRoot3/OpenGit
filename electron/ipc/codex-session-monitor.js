@@ -4,11 +4,14 @@ const { CODEX_SESSION_STATUS, PROJECT_STATUS_PRIORITY, isKnownCodexSessionStatus
 const {
   detectCodexCommand,
   detectCodexOutputStatus,
-  detectCodexProcess
+  detectCodexProcess,
+  detectCodexSlashCommand,
+  detectCodexStatusSnapshot
 } = require('./codex-session-patterns')
 const { createCodexSessionStateSource } = require('./codex-session-state-source')
 
 const MAX_COMMAND_BUFFER = 1024
+const MAX_OUTPUT_BUFFER = 8192
 const POLL_INTERVAL_MS = 1500
 const THREAD_MATCH_WINDOW_MS = 120000
 const THREAD_BIND_GRACE_MS = 30000
@@ -41,6 +44,7 @@ function createTerminalState({ terminalId, projectPath = '', mode = 'classic', c
     statusReason: 'terminal.created',
     lastForegroundProcess: '',
     inputBuffer: '',
+    outputBuffer: '',
     activeCommandBuffer: '',
     lastExit: null,
     lastCodexLaunchAt: 0,
@@ -397,6 +401,13 @@ function createCodexSessionMonitor({
           continue
         }
 
+        if (!terminal.boundRolloutPath && typeof stateSource.getThread === 'function') {
+          const candidate = await stateSource.getThread(terminal.boundThreadId)
+          if (candidate?.id === terminal.boundThreadId) {
+            bindThreadToTerminal(terminal, candidate)
+          }
+        }
+
         const signal = await stateSource.resolveThreadStatus({
           threadId: terminal.boundThreadId,
           rolloutPath: terminal.boundRolloutPath
@@ -405,7 +416,10 @@ function createCodexSessionMonitor({
         if (
           signal.at &&
           terminal.lastSignalAt &&
-          signal.at <= terminal.lastSignalAt
+          (
+            signal.at < terminal.lastSignalAt ||
+            (signal.at === terminal.lastSignalAt && signal.status === terminal.status)
+          )
         ) {
           continue
         }
@@ -497,19 +511,18 @@ function createCodexSessionMonitor({
           if (
             command &&
             terminal.isCodexSession &&
+            !detectCodexSlashCommand(command) &&
             detectCodexProcess(terminal.lastForegroundProcess) &&
             terminal.status !== CODEX_SESSION_STATUS.RUNNING
           ) {
             return updateTerminalStatus(terminalId, CODEX_SESSION_STATUS.RUNNING, 'input.codex_resume', {
               isCodexSession: true,
-              lastSignalAt: Date.now(),
               lastCodexLaunchAt: Date.now()
             })
           }
           if (terminal.status === CODEX_SESSION_STATUS.AWAITING_CONFIRMATION && terminal.isCodexSession) {
             updateTerminalStatus(terminalId, CODEX_SESSION_STATUS.RUNNING, 'input.confirmation_submitted', {
-              isCodexSession: true,
-              lastSignalAt: Date.now()
+              isCodexSession: true
             })
           }
           continue
@@ -530,17 +543,30 @@ function createCodexSessionMonitor({
 
       const text = String(data)
       terminal.updatedAt = Date.now()
+      terminal.outputBuffer = (terminal.outputBuffer + text).slice(-MAX_OUTPUT_BUFFER)
 
       if (!terminal.isCodexSession && detectCodexCommand(text)) {
         startCodexTracking(terminalId, 'output.command_echo', 'output.codex_command_echo')
+      }
+
+      const statusSnapshot = detectCodexStatusSnapshot(terminal.outputBuffer)
+      if (statusSnapshot?.threadId) {
+        const nextThreadId = statusSnapshot.threadId
+        if (terminal.boundThreadId !== nextThreadId) {
+          terminal.boundThreadId = nextThreadId
+          terminal.boundRolloutPath = ''
+          terminal.boundThreadUpdatedAt = 0
+          terminal.threadBoundAt = Date.now()
+          terminal.lastSignalAt = 0
+        }
+        terminal.isCodexSession = true
       }
 
       const outputMatch = detectCodexOutputStatus(text)
       if (outputMatch?.status === CODEX_SESSION_STATUS.AWAITING_CONFIRMATION) {
         return updateTerminalStatus(terminalId, CODEX_SESSION_STATUS.AWAITING_CONFIRMATION, outputMatch.reason, {
           isCodexSession: true,
-          detectionSource: terminal.detectionSource || 'output.pattern',
-          lastSignalAt: Date.now()
+          detectionSource: terminal.detectionSource || 'output.pattern'
         })
       }
 
