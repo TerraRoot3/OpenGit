@@ -1251,30 +1251,6 @@ const mainDiagnosticsItems = computed(() => {
   if (!main) return []
   return [
     {
-      key: 'web-tabs-views',
-      label: 'Web tab views',
-      value: formatDiagnosticValue(main.webTabs?.views),
-      description: '主进程仍持有的 WebContentsView 数量'
-    },
-    {
-      key: 'web-tabs-recovery',
-      label: 'Recovery meta',
-      value: formatDiagnosticValue(main.webTabs?.recoveryMeta),
-      description: 'tab 恢复元数据数量，关页后应回落'
-    },
-    {
-      key: 'web-tabs-contents',
-      label: 'Contents map',
-      value: formatDiagnosticValue(main.webTabs?.contentsToTab),
-      description: 'webContents.id 到 tabId 的映射数量'
-    },
-    {
-      key: 'web-tabs-lifecycle',
-      label: 'Lifecycle tracked',
-      value: formatDiagnosticValue(main.webTabs?.lifecycleTracked),
-      description: '生命周期控制器正在跟踪的 tab 数'
-    },
-    {
       key: 'permissions-callbacks',
       label: 'Pending callbacks',
       value: formatDiagnosticValue(main.permissions?.pendingCallbacks),
@@ -1285,18 +1261,6 @@ const mainDiagnosticsItems = computed(() => {
       label: 'Pending timeouts',
       value: formatDiagnosticValue(main.permissions?.pendingTimeouts),
       description: '待清理权限请求 timeout 数量'
-    },
-    {
-      key: 'floating-menu-resolvers',
-      label: 'Floating resolvers',
-      value: formatDiagnosticValue(main.floatingMenus?.resolvers),
-      description: '原生浮层菜单 Promise resolver 数量'
-    },
-    {
-      key: 'downloads-history',
-      label: 'Download history',
-      value: formatDiagnosticValue(main.downloads?.history),
-      description: '下载历史条目数，属于持久保留'
     }
   ]
 })

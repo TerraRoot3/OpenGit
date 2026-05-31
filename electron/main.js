@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Notification, shell, dialog, ipcMain, session, protocol, net, screen } = require('electron')
+const { app, BrowserWindow, Menu, Notification, shell, dialog, ipcMain, session, protocol, net } = require('electron')
 const path = require('path')
 const { exec, spawn, execFileSync } = require('child_process')
 const { promisify, format } = require('util')
@@ -36,7 +36,6 @@ const { createProjectsTools } = require('./mcp/tools/projects')
 const { createTerminalsTools } = require('./mcp/tools/terminals')
 const { createRemotesTools } = require('./mcp/tools/remotes')
 const { writeTerminalSession } = require('./ipc/terminal-runtime')
-const { WebTabManager } = require('./tab-manager/web-tab-manager')
 const { createSessionPartitionManager } = require('./tab-manager/session-partition-manager')
 const { decideWindowOpenAction } = require('./tab-manager/window-open-policy')
 const { createSitePermissionManager } = require('./permissions/site-permission-manager')
@@ -1111,63 +1110,10 @@ ipcMain.on('focus-project-terminal-ack', (event, payload = {}) => {
 
 // 开发环境判断
 const isDev = process.env.NODE_ENV === 'development'
-let webTabManager = null
 let sitePermissionManager = null
 let sessionPartitionManager = null
-let webTabLifecycleInterval = null
-const floatingMenuResolvers = new Map()
-let activeUrlSuggestionWindow = null
-
-function notifyUrlSuggestionResult(wc, payload) {
-  if (!wc || wc.isDestroyed()) return
-  try {
-    wc.send('browser-url-suggestion-result', payload)
-  } catch (error) {
-    // ignore
-  }
-}
-
-function destroyUrlSuggestionWindowSilent() {
-  const w = activeUrlSuggestionWindow
-  if (!w || w.isDestroyed()) {
-    activeUrlSuggestionWindow = null
-    return
-  }
-  w.__urlSuggestionNotified = true
-  try {
-    w.close()
-  } catch (error) {}
-  activeUrlSuggestionWindow = null
-}
-
-function closeUrlSuggestionWindowNotifyParent() {
-  const w = activeUrlSuggestionWindow
-  if (!w || w.isDestroyed()) {
-    activeUrlSuggestionWindow = null
-    return
-  }
-  const wc = w.__resultTargetWC
-  if (!w.__urlSuggestionNotified) {
-    w.__urlSuggestionNotified = true
-    notifyUrlSuggestionResult(wc, null)
-  }
-  try {
-    w.close()
-  } catch (error) {}
-  activeUrlSuggestionWindow = null
-}
-
-/** 点击/聚焦到网页区域（WebContentsView）时关闭地址栏联想：原生浮层 + 渲染进程内联列表 */
-function dismissBrowserUrlSuggestionsChrome() {
-  closeUrlSuggestionWindowNotifyParent()
-  if (!mainWindow || mainWindow.isDestroyed()) return
-  const wc = mainWindow.webContents
-  if (!wc || wc.isDestroyed()) return
-  notifyUrlSuggestionResult(wc, null)
-}
 const pendingPermissionCallbacks = new Map()
 const pendingPermissionTimeouts = new Map()
-const downloadHistory = new Map()
 const configuredBrowserPartitions = new Set()
 const SITE_PERMISSION_PARTITION = 'persist:main'
 const SITE_PERMISSION_REQUEST_TIMEOUT_MS = 30_000
@@ -1176,23 +1122,9 @@ let nextPermissionRequestId = 0
 function getDebugMemoryStats() {
   const codexSnapshot = codexSessionMonitor.getSnapshot()
   return {
-    webTabs: {
-      views: webTabManager?.views?.size || 0,
-      recoveryMeta: webTabManager?.recoveryMeta?.size || 0,
-      contentsToTab: webTabManager?.contentsToTab?.size || 0,
-      activeTabId: webTabManager?.activeTabId || '',
-      lifecycleTracked: webTabManager?.lifecycle?.getTrackedCount?.() || 0
-    },
     permissions: {
       pendingCallbacks: pendingPermissionCallbacks.size,
       pendingTimeouts: pendingPermissionTimeouts.size
-    },
-    floatingMenus: {
-      resolvers: floatingMenuResolvers.size,
-      hasActiveUrlSuggestionWindow: Boolean(activeUrlSuggestionWindow && !activeUrlSuggestionWindow.isDestroyed())
-    },
-    downloads: {
-      history: downloadHistory.size
     },
     codexSessions: {
       terminals: codexSnapshot.terminals.length,
@@ -1268,18 +1200,9 @@ function getPermissionOrigin(webContents, details = {}, requestingOrigin = '') {
   return sitePermissionManager ? sitePermissionManager.normalizeOrigin(rawOrigin) : ''
 }
 
-function emitDownloadState(payload = {}) {
-  if (!payload?.id) return
-  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
-    return
-  }
-  mainWindow.webContents.send('web-download-state-changed', payload)
-}
-
-function getTabPermissionContext({ tabId = '', origin = '', partition = '' } = {}) {
-  const snapshot = tabId && webTabManager?.createRecoverySnapshot ? webTabManager.createRecoverySnapshot(tabId) : null
-  const resolvedPartition = partition || snapshot?.partition || SITE_PERMISSION_PARTITION
-  const rawOrigin = origin || snapshot?.url || ''
+function getTabPermissionContext({ origin = '', partition = '' } = {}) {
+  const resolvedPartition = partition || SITE_PERMISSION_PARTITION
+  const rawOrigin = origin || ''
   const resolvedOrigin = sitePermissionManager?.normalizeOrigin(rawOrigin) || ''
   return {
     partition: resolvedPartition,
@@ -1328,15 +1251,9 @@ function configureBrowserSessionPartition(partition = SITE_PERMISSION_PARTITION)
       return
     }
 
-    const tabId = webTabManager?.getTabIdByWebContentsId(webContents?.id) || ''
+    const tabId = webContents?.id ? String(webContents.id) : ''
     if (!sitePermissionManager.shouldPromptRenderer({ tabId, defaultDecision })) {
       safeLog(`[Permission] deny ${permission}: unable to map tab for ${origin}`)
-      callback(false)
-      return
-    }
-
-    if (!webTabManager?.isActiveTab(tabId)) {
-      safeLog(`[Permission] deny ${permission}: tab not active for ${origin}`)
       callback(false)
       return
     }
@@ -1417,369 +1334,31 @@ function configureBrowserSessionPartition(partition = SITE_PERMISSION_PARTITION)
   })
 
   webviewSession.on('will-download', (event, item) => {
-    const downloadId = item.getGUID()
-    const sendDownloadState = (state) => {
-      const payload = {
-        id: downloadId,
-        state,
-        fileName: item.getFilename(),
-        totalBytes: item.getTotalBytes(),
-        receivedBytes: item.getReceivedBytes(),
-        url: item.getURL(),
-        savePath: item.getSavePath() || '',
-        partition
-      }
-      downloadHistory.set(downloadId, {
-        ...(downloadHistory.get(downloadId) || {}),
-        ...payload
-      })
-      emitDownloadState(payload)
-    }
-
-    sendDownloadState('started')
-    item.on('updated', () => {
-      sendDownloadState(item.isPaused() ? 'paused' : 'progress')
-    })
-    item.once('done', (e, state) => {
-      const finalPath = item.getSavePath() || ''
-      const current = downloadHistory.get(downloadId) || {}
-      downloadHistory.set(downloadId, {
-        ...current,
-        savePath: finalPath
-      })
-      sendDownloadState(state === 'completed' ? 'completed' : 'interrupted')
-    })
+    event.preventDefault()
+    safeLog(`[Download] blocked browser download for partition ${partition}: ${item.getURL() || item.getFilename() || 'unknown'}`)
   })
 
   configuredBrowserPartitions.add(partition)
 }
 
-ipcMain.on('browser-floating-menu-action', (event, payload) => {
-  const menuWindow = BrowserWindow.fromWebContents(event.sender)
-  if (!menuWindow) return
-  const resolve = floatingMenuResolvers.get(menuWindow.id)
-  if (resolve) {
-    const action = payload && typeof payload.action === 'string' ? payload.action : null
-    floatingMenuResolvers.delete(menuWindow.id)
-    resolve(action)
-  }
-  if (!menuWindow.isDestroyed()) {
-    menuWindow.close()
-  }
+ipcMain.handle('browser-ensure-session-partition', async (event, { partition = '' } = {}) => {
+  const resolvedPartition = typeof partition === 'string' && partition ? partition : SITE_PERMISSION_PARTITION
+  configureBrowserSessionPartition(resolvedPartition)
+  return { success: true, partition: resolvedPartition }
 })
 
-ipcMain.on('browser-url-suggestion-action', (event, payload = {}) => {
-  const w = BrowserWindow.fromWebContents(event.sender)
-  if (!w || w.isDestroyed()) return
-  const wc = w.__resultTargetWC
-  const type = payload && payload.type
-  w.__urlSuggestionNotified = true
-  if (type === 'pick' && payload.url) {
-    notifyUrlSuggestionResult(wc, {
-      url: String(payload.url),
-      title: String(payload.title || '')
-    })
-  } else {
-    notifyUrlSuggestionResult(wc, null)
+ipcMain.handle('browser-clear-session-partition', async (event, { partition = '' } = {}) => {
+  if (!partition || !sessionPartitionManager?.isPrivatePartition(partition)) {
+    return { success: false, error: 'invalid private partition' }
   }
-  if (activeUrlSuggestionWindow === w) {
-    activeUrlSuggestionWindow = null
-  }
+
   try {
-    w.close()
-  } catch (error) {}
-})
-
-ipcMain.handle('browser-close-url-suggestions', async () => {
-  closeUrlSuggestionWindowNotifyParent()
-  return { success: true }
-})
-
-ipcMain.handle('browser-url-suggestions-set-index', async (event, { index } = {}) => {
-  const w = activeUrlSuggestionWindow
-  if (!w || w.isDestroyed()) return { success: false }
-  const i = Math.max(0, Math.floor(Number(index) || 0))
-  try {
-    await w.webContents.executeJavaScript(
-      `typeof window.__urlSuggestionSetIndex === 'function' && window.__urlSuggestionSetIndex(${i})`
-    )
-    return { success: true }
+    const targetSession = session.fromPartition(partition)
+    await targetSession.clearStorageData()
+    configuredBrowserPartitions.delete(partition)
+    return { success: true, partition }
   } catch (error) {
-    return { success: false }
-  }
-})
-
-async function measureAndSetUrlSuggestionBounds(menuWindow, opts) {
-  const { targetX, screenY, panelWidth, workArea, panelMax } = opts
-  const pm = Number(panelMax) || 420
-  const measuredHeight = await menuWindow.webContents.executeJavaScript(`
-    (() => {
-      const el = document.getElementById('list')
-      if (!el) return ${pm}
-      return Math.ceil(el.getBoundingClientRect().height)
-    })()
-  `)
-  const finalHeight = Math.max(80, Math.min(Number(measuredHeight) || pm, pm))
-  const maxY = workArea.y + workArea.height - finalHeight
-  const finalY = Math.min(Math.max(workArea.y, screenY), maxY)
-  menuWindow.setBounds({
-    x: targetX,
-    y: finalY,
-    width: panelWidth,
-    height: finalHeight
-  })
-}
-
-ipcMain.handle('browser-show-url-suggestions', async (event, payload = {}) => {
-  try {
-    const items = Array.isArray(payload.items) ? payload.items : []
-    if (!items.length) {
-      destroyUrlSuggestionWindowSilent()
-      return { success: true }
-    }
-
-    const targetWindow = BrowserWindow.fromWebContents(event.sender)
-    if (!targetWindow || targetWindow.isDestroyed()) return { success: false }
-
-    const screenX = Math.round(Number(payload.x) || 0)
-    const screenY = Math.round(Number(payload.y) || 0)
-    let panelWidth = Math.round(Number(payload.width) || 400)
-    panelWidth = Math.max(320, Math.min(panelWidth, 720))
-
-    const display = screen.getDisplayNearestPoint({ x: screenX, y: screenY })
-    const { workArea } = display
-
-    const targetX = Math.min(
-      Math.max(workArea.x, screenX),
-      workArea.x + workArea.width - panelWidth
-    )
-
-    const itemsB64 = Buffer.from(JSON.stringify(items), 'utf8').toString('base64')
-    const b64Js = JSON.stringify(itemsB64)
-    const theme = (payload && typeof payload.theme === 'object' && payload.theme) || {}
-    const popupTheme = {
-      colorScheme: theme.colorScheme === 'light' ? 'light' : 'dark',
-      menuBg: typeof theme.menuBg === 'string' && theme.menuBg ? theme.menuBg : '#2a2b2f',
-      surface: typeof theme.surface === 'string' && theme.surface ? theme.surface : 'rgba(255,255,255,0.06)',
-      border: typeof theme.border === 'string' && theme.border ? theme.border : 'rgba(255,255,255,0.08)',
-      borderStrong: typeof theme.borderStrong === 'string' && theme.borderStrong ? theme.borderStrong : 'rgba(255,255,255,0.14)',
-      textPrimary: typeof theme.textPrimary === 'string' && theme.textPrimary ? theme.textPrimary : 'rgba(255,255,255,0.9)',
-      textSecondary: typeof theme.textSecondary === 'string' && theme.textSecondary ? theme.textSecondary : 'rgba(255,255,255,0.72)',
-      textMuted: typeof theme.textMuted === 'string' && theme.textMuted ? theme.textMuted : 'rgba(255,255,255,0.45)',
-      hover: typeof theme.hover === 'string' && theme.hover ? theme.hover : 'rgba(255,255,255,0.06)',
-      selectedBg: typeof theme.selectedBg === 'string' && theme.selectedBg ? theme.selectedBg : 'rgba(255,255,255,0.1)',
-      selectedBorder: typeof theme.selectedBorder === 'string' && theme.selectedBorder ? theme.selectedBorder : 'rgba(255,255,255,0.14)'
-    }
-    const themeB64 = Buffer.from(JSON.stringify(popupTheme), 'utf8').toString('base64')
-    let sel = Number(payload.selectedIndex) || 0
-    if (sel < 0) sel = 0
-    if (sel >= items.length) sel = 0
-
-    const panelMax = 420
-    const existing = activeUrlSuggestionWindow
-    if (existing && !existing.isDestroyed() && existing.__resultTargetWC === targetWindow.webContents) {
-      try {
-        const jsB64 = JSON.stringify(itemsB64)
-        const jsThemeB64 = JSON.stringify(themeB64)
-        await existing.webContents.executeJavaScript(
-          `typeof window.__urlSuggestionReplaceFromB64 === 'function' && window.__urlSuggestionReplaceFromB64(${jsB64}, ${sel}, ${jsThemeB64})`
-        )
-        await measureAndSetUrlSuggestionBounds(existing, {
-          targetX,
-          screenY,
-          panelWidth,
-          workArea,
-          panelMax
-        })
-        return { success: true, updated: true }
-      } catch (updateErr) {
-        destroyUrlSuggestionWindowSilent()
-      }
-    } else if (existing && !existing.isDestroyed()) {
-      destroyUrlSuggestionWindowSilent()
-    }
-
-    const menuWindow = new BrowserWindow({
-      width: panelWidth,
-      height: panelMax,
-      x: targetX,
-      y: screenY,
-      frame: false,
-      show: false,
-      transparent: true,
-      backgroundColor: '#00000000',
-      resizable: false,
-      movable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      alwaysOnTop: true,
-      parent: targetWindow,
-      webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
-        sandbox: false
-      }
-    })
-
-    const html = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<style>
-:root{
-  --popup-menu-bg:#2a2b2f;
-  --popup-surface:rgba(255,255,255,0.06);
-  --popup-border:rgba(255,255,255,0.08);
-  --popup-border-strong:rgba(255,255,255,0.14);
-  --popup-text-primary:rgba(255,255,255,0.9);
-  --popup-text-secondary:rgba(255,255,255,0.72);
-  --popup-text-muted:rgba(255,255,255,0.45);
-  --popup-hover:rgba(255,255,255,0.06);
-  --popup-selected-bg:rgba(255,255,255,0.1);
-  --popup-selected-border:rgba(255,255,255,0.14);
-}
-html,body{margin:0;padding:0;background:transparent;overflow:hidden;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
-  -webkit-font-smoothing:antialiased;}
-.list{
-  width:100%;box-sizing:border-box;max-height:${panelMax}px;overflow-x:hidden;overflow-y:auto;
-  background:var(--popup-menu-bg);border:1px solid var(--popup-border);border-radius:12px;
-  box-shadow:0 12px 28px rgba(0,0,0,0.32);padding:0;
-}
-.list::-webkit-scrollbar{width:8px;}
-.list::-webkit-scrollbar-thumb{background:var(--popup-border-strong);border-radius:4px;}
-.item{
-  display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;
-  color:var(--popup-text-primary);font-size:14px;line-height:1.35;
-  transition:background 0.12s ease;
-}
-.item:first-child{border-top-left-radius:11px;border-top-right-radius:11px;}
-.item:last-child{border-bottom-left-radius:11px;border-bottom-right-radius:11px;}
-.item:only-child{border-radius:11px;}
-.item:hover{background:var(--popup-hover);}
-.item.active{background:var(--popup-selected-bg);}
-.fav{width:16px;height:16px;flex-shrink:0;border-radius:3px;object-fit:contain;background:var(--popup-surface);}
-.fav-sp{width:16px;height:16px;flex-shrink:0;border-radius:3px;background:var(--popup-surface);}
-.txt{display:flex;flex-direction:column;min-width:0;flex:1;gap:2px;}
-.url{color:var(--popup-text-primary);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.title{color:var(--popup-text-muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-</style>
-</head>
-<body>
-<div class="list" id="list"></div>
-<script>
-const { ipcRenderer } = require('electron');
-let items = JSON.parse(Buffer.from(${b64Js}, 'base64').toString('utf8'));
-let theme = JSON.parse(Buffer.from(${JSON.stringify(themeB64)}, 'base64').toString('utf8'));
-let selectedIndex = ${sel};
-const list = document.getElementById('list');
-const root = document.documentElement;
-function send(t, extra) {
-  ipcRenderer.send('browser-url-suggestion-action', Object.assign({ type: t }, extra || {}));
-}
-function esc(s) {
-  return String(s || '')
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
-}
-function clampSel() {
-  if (selectedIndex < 0) selectedIndex = items.length - 1;
-  if (selectedIndex >= items.length) selectedIndex = 0;
-}
-function applyTheme(nextTheme) {
-  if (!nextTheme || typeof nextTheme !== 'object') return;
-  theme = nextTheme;
-  root.style.colorScheme = nextTheme.colorScheme === 'light' ? 'light' : 'dark';
-  root.style.setProperty('--popup-menu-bg', nextTheme.menuBg || '#2a2b2f');
-  root.style.setProperty('--popup-surface', nextTheme.surface || 'rgba(255,255,255,0.06)');
-  root.style.setProperty('--popup-border', nextTheme.border || 'rgba(255,255,255,0.08)');
-  root.style.setProperty('--popup-border-strong', nextTheme.borderStrong || 'rgba(255,255,255,0.14)');
-  root.style.setProperty('--popup-text-primary', nextTheme.textPrimary || 'rgba(255,255,255,0.9)');
-  root.style.setProperty('--popup-text-secondary', nextTheme.textSecondary || 'rgba(255,255,255,0.72)');
-  root.style.setProperty('--popup-text-muted', nextTheme.textMuted || 'rgba(255,255,255,0.45)');
-  root.style.setProperty('--popup-hover', nextTheme.hover || 'rgba(255,255,255,0.06)');
-  root.style.setProperty('--popup-selected-bg', nextTheme.selectedBg || 'rgba(255,255,255,0.1)');
-  root.style.setProperty('--popup-selected-border', nextTheme.selectedBorder || 'rgba(255,255,255,0.14)');
-}
-window.__urlSuggestionReplaceFromB64 = (b64, s, themeB64) => {
-  try {
-    items = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
-    selectedIndex = Math.max(0, Math.min(Math.floor(Number(s) || 0), items.length - 1));
-    if (themeB64) {
-      applyTheme(JSON.parse(Buffer.from(themeB64, 'base64').toString('utf8')));
-    }
-    clampSel();
-    render();
-  } catch (err) {}
-};
-function render() {
-  list.innerHTML = items.map((it, i) => {
-    const fav = it.favicon
-      ? '<img class="fav" src="' + esc(it.favicon) + '" alt="">'
-      : '<span class="fav-sp"></span>';
-    const du = esc(it.displayUrl || it.url || '');
-    const tt = esc(it.title || '');
-    return '<div class="item' + (i === selectedIndex ? ' active' : '') + '" data-i="' + i + '">' + fav +
-      '<div class="txt"><span class="url">' + du + '</span><span class="title">' + tt + '</span></div></div>';
-  }).join('');
-  list.querySelectorAll('.item').forEach((el) => {
-    el.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      const i = parseInt(el.getAttribute('data-i'), 10);
-      const it = items[i];
-      if (it) send('pick', { url: it.url, title: it.title || '' });
-    });
-  });
-  const act = list.querySelector('.item.active');
-  if (act) act.scrollIntoView({ block: 'nearest' });
-}
-window.__urlSuggestionSetIndex = (i) => {
-  selectedIndex = Math.max(0, Math.min(Math.floor(Number(i) || 0), items.length - 1));
-  clampSel();
-  render();
-};
-applyTheme(theme);
-render();
-</script>
-</body>
-</html>`
-
-    await menuWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-
-    await measureAndSetUrlSuggestionBounds(menuWindow, {
-      targetX,
-      screenY,
-      panelWidth,
-      workArea,
-      panelMax
-    })
-
-    menuWindow.__resultTargetWC = targetWindow.webContents
-    menuWindow.__urlSuggestionNotified = false
-    menuWindow.once('closed', () => {
-      if (activeUrlSuggestionWindow === menuWindow) {
-        activeUrlSuggestionWindow = null
-      }
-      if (!menuWindow.__urlSuggestionNotified && menuWindow.__resultTargetWC) {
-        menuWindow.__urlSuggestionNotified = true
-        notifyUrlSuggestionResult(menuWindow.__resultTargetWC, null)
-      }
-    })
-
-    activeUrlSuggestionWindow = menuWindow
-    if (process.platform === 'darwin' && typeof menuWindow.showInactive === 'function') {
-      menuWindow.showInactive()
-    } else {
-      menuWindow.show()
-    }
-
-    return { success: true }
-  } catch (error) {
-    safeError('❌ 打开地址栏联想浮层失败:', error.message)
+    safeError(`[Session] clear private partition failed: ${partition}`, error)
     return { success: false, error: error.message }
   }
 })
@@ -1810,10 +1389,6 @@ function createWindow() {
             trafficLightPosition: { x: 8, y: 8 },
             show: false
           })
-
-  if (webTabManager) {
-    webTabManager.attachWindow(mainWindow)
-  }
 
   if (isDev) {
     // 开发模式：加载 Vite 开发服务器
@@ -1944,179 +1519,6 @@ function handleWindowOpen({ url = '', disposition = '', frameName = '' } = {}) {
   return { action: 'deny' }
 }
 
-ipcMain.on('web-tab-password-captured', (event, payload = {}) => {
-  try {
-    if (!webTabManager || !mainWindow || mainWindow.isDestroyed()) {
-      return
-    }
-    const senderId = event?.sender?.id
-    const tabId = webTabManager.getTabIdByWebContentsId(senderId)
-    if (!tabId) {
-      return
-    }
-    mainWindow.webContents.send('web-tab-password-captured', {
-      tabId,
-      username: payload.username || '',
-      password: payload.password || '',
-      domain: payload.domain || '',
-      url: payload.url || '',
-      capturedAt: payload.capturedAt || Date.now()
-    })
-  } catch (error) {
-    safeError('[PasswordCapture] forward failed:', error)
-  }
-})
-
-ipcMain.handle('web-tab-create', async (event, { tabId, url, isPrivate = false, partition = '' } = {}) => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    const resolvedPartition = partition
-      || sessionPartitionManager?.getPartition({ isPrivate, tabId })
-      || SITE_PERMISSION_PARTITION
-    configureBrowserSessionPartition(resolvedPartition)
-    webTabManager.createWebTab(tabId, url || 'about:blank', { partition: resolvedPartition })
-    return { success: true, partition: resolvedPartition }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('web-tab-destroy', async (event, { tabId }) => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    const partition = webTabManager.getTabPartition(tabId)
-    const success = webTabManager.destroyWebTab(tabId)
-    if (success && sessionPartitionManager?.isPrivatePartition(partition)) {
-      try {
-        const targetSession = session.fromPartition(partition)
-        await targetSession.clearStorageData()
-      } catch (error) {
-        safeError(`[Session] clear private partition failed: ${partition}`, error)
-      }
-    }
-    return { success }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('web-tab-activate', async (event, { tabId, bounds }) => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    return { success: webTabManager.activateWebTab(tabId, bounds || null) }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('web-tab-navigate', async (event, { tabId, url }) => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    return { success: webTabManager.navigateWebTab(tabId, url) }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('web-tab-hide-all', async () => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    return { success: webTabManager.hideAllWebTabs() }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('web-tab-set-bounds', async (event, { bounds }) => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    return { success: webTabManager.setActiveBounds(bounds || null) }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('web-tab-reload', async (event, { tabId }) => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    return { success: webTabManager.reloadWebTab(tabId) }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('web-tab-go-back', async (event, { tabId }) => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    return { success: webTabManager.goBack(tabId) }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('web-tab-go-forward', async (event, { tabId }) => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    return { success: webTabManager.goForward(tabId) }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('web-tab-evaluate', async (event, { tabId, script } = {}) => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    return await webTabManager.evaluateWebTab(tabId, script || '')
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('web-tab-restore', async (event, { tabId, url } = {}) => {
-  try {
-    if (!webTabManager) throw new Error('webTabManager not initialized')
-    return webTabManager.restoreWebTab(tabId, url || '')
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('browser-open-download-folder', async (event, { id } = {}) => {
-  const record = downloadHistory.get(id)
-  if (!record?.savePath) {
-    return { success: false, error: 'download save path not found' }
-  }
-  try {
-    shell.showItemInFolder(record.savePath)
-    return { success: true }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('browser-retry-download', async (event, { id } = {}) => {
-  const record = downloadHistory.get(id)
-  if (!record?.url) {
-    return { success: false, error: 'download url not found' }
-  }
-  try {
-    const webviewSession = session.fromPartition(record.partition || SITE_PERMISSION_PARTITION)
-    webviewSession.downloadURL(record.url)
-    downloadHistory.set(id, {
-      ...record,
-      retryCount: (record.retryCount || 0) + 1
-    })
-    return { success: true }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('browser-clear-download-history', async () => {
-  downloadHistory.clear()
-  return { success: true }
-})
-
 ipcMain.handle('debug-memory-stats', async () => {
   return getDebugMemoryStats()
 })
@@ -2195,233 +1597,6 @@ ipcMain.handle('browser-permission-respond', async (event, payload = {}) => {
   } catch (error) {
     safeError('[Permission] browser-permission-respond failed:', error)
     return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('browser-show-native-menu', async (event) => {
-  try {
-    const targetWindow = BrowserWindow.fromWebContents(event.sender)
-    if (!targetWindow || targetWindow.isDestroyed()) return null
-
-    let selectedAction = null
-    const menu = Menu.buildFromTemplate([
-      { label: '远端仓库', click: () => { selectedAction = 'remote-repo' } },
-      { label: '收藏管理', click: () => { selectedAction = 'favorites-manager' } },
-      { label: '历史记录', click: () => { selectedAction = 'browsing-history' } },
-      { label: '密码管理', click: () => { selectedAction = 'password-manager' } },
-      { label: '下载管理', click: () => { selectedAction = 'download-panel' } },
-      { label: '灵动终端', click: () => { selectedAction = 'standalone-terminal' } },
-      { label: '分屏终端', click: () => { selectedAction = 'standalone-terminal-split' } },
-      { type: 'separator' },
-      { label: '备份管理', click: () => { selectedAction = 'backup-manager' } }
-    ])
-
-    return await new Promise((resolve) => {
-      menu.popup({
-        window: targetWindow,
-        callback: () => resolve(selectedAction)
-      })
-    })
-  } catch (error) {
-    safeError('❌ 打开原生浏览器菜单失败:', error.message)
-    return null
-  }
-})
-
-ipcMain.handle('browser-show-floating-menu', async (event, payload = {}) => {
-  try {
-    const targetWindow = BrowserWindow.fromWebContents(event.sender)
-    if (!targetWindow || targetWindow.isDestroyed()) return null
-
-    const { x, y } = payload || {}
-    const theme = (payload && typeof payload.theme === 'object' && payload.theme) || {}
-    const popupTheme = {
-      colorScheme: theme.colorScheme === 'light' ? 'light' : 'dark',
-      menuBg: typeof theme.menuBg === 'string' && theme.menuBg ? theme.menuBg : '#2d2d2d',
-      surface: typeof theme.surface === 'string' && theme.surface ? theme.surface : 'rgba(255,255,255,0.06)',
-      border: typeof theme.border === 'string' && theme.border ? theme.border : 'rgba(255,255,255,0.1)',
-      borderStrong: typeof theme.borderStrong === 'string' && theme.borderStrong ? theme.borderStrong : 'rgba(255,255,255,0.14)',
-      textPrimary: typeof theme.textPrimary === 'string' && theme.textPrimary ? theme.textPrimary : 'rgba(255,255,255,0.9)',
-      textSecondary: typeof theme.textSecondary === 'string' && theme.textSecondary ? theme.textSecondary : 'rgba(255,255,255,0.72)',
-      textMuted: typeof theme.textMuted === 'string' && theme.textMuted ? theme.textMuted : 'rgba(255,255,255,0.45)',
-      hover: typeof theme.hover === 'string' && theme.hover ? theme.hover : 'rgba(255,255,255,0.1)'
-    }
-    const themeB64 = Buffer.from(JSON.stringify(popupTheme), 'utf8').toString('base64')
-
-    const menuWidth = 168
-    const menuHeight = 320
-    const display = screen.getDisplayNearestPoint({ x: Math.round(x || 0), y: Math.round(y || 0) })
-    const workArea = display.workArea
-
-    const targetX = Math.min(
-      Math.max(workArea.x, Math.round((x || (workArea.x + menuWidth)) - menuWidth)),
-      workArea.x + workArea.width - menuWidth
-    )
-    const targetY = Math.min(
-      Math.max(workArea.y, Math.round(y || workArea.y)),
-      workArea.y + workArea.height - menuHeight
-    )
-
-    const menuWindow = new BrowserWindow({
-      width: menuWidth,
-      height: menuHeight,
-      x: targetX,
-      y: targetY,
-      frame: false,
-      show: false,
-      transparent: true,
-      backgroundColor: '#00000000',
-      resizable: false,
-      movable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      alwaysOnTop: true,
-      parent: targetWindow,
-      webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
-        sandbox: false
-      }
-    })
-
-    const html = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<style>
-  :root {
-    --popup-menu-bg: #2d2d2d;
-    --popup-surface: rgba(255,255,255,0.06);
-    --popup-border: rgba(255,255,255,0.1);
-    --popup-border-strong: rgba(255,255,255,0.14);
-    --popup-text-primary: rgba(255,255,255,0.9);
-    --popup-text-secondary: rgba(255,255,255,0.72);
-    --popup-text-muted: rgba(255,255,255,0.45);
-    --popup-hover: rgba(255,255,255,0.1);
-  }
-  html, body {
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    background: transparent;
-    overflow: hidden;
-    color-scheme: ${popupTheme.colorScheme};
-  }
-  .menu {
-    width: 100%;
-    box-sizing: border-box;
-    background: var(--popup-menu-bg);
-    border: 1px solid var(--popup-border);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    color: var(--popup-text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    user-select: none;
-    padding: 4px 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    font-size: 14px;
-    cursor: pointer;
-  }
-  .item:hover { background: var(--popup-hover); }
-  .icon {
-    width: 16px;
-    text-align: center;
-    opacity: 0.9;
-  }
-  .divider {
-    height: 1px;
-    margin: 4px 0;
-    background: var(--popup-border);
-  }
-</style>
-</head>
-<body>
-  <div class="menu">
-    <div class="item" data-action="remote-repo"><span class="icon">☁</span><span>远端仓库</span></div>
-    <div class="item" data-action="favorites-manager"><span class="icon">☆</span><span>收藏管理</span></div>
-    <div class="item" data-action="browsing-history"><span class="icon">◷</span><span>历史记录</span></div>
-    <div class="item" data-action="password-manager"><span class="icon">⌘</span><span>密码管理</span></div>
-    <div class="item" data-action="download-panel"><span class="icon">⇩</span><span>下载管理</span></div>
-    <div class="item" data-action="standalone-terminal"><span class="icon">⌨</span><span>灵动终端</span></div>
-    <div class="item" data-action="standalone-terminal-split"><span class="icon">⌨</span><span>分屏终端</span></div>
-    <div class="divider"></div>
-    <div class="item" data-action="backup-manager"><span class="icon">⬢</span><span>备份管理</span></div>
-  </div>
-  <script>
-    const { ipcRenderer } = require('electron');
-    const theme = JSON.parse(Buffer.from(${JSON.stringify(themeB64)}, 'base64').toString('utf8'));
-    const root = document.documentElement;
-    root.style.colorScheme = theme.colorScheme === 'light' ? 'light' : 'dark';
-    root.style.setProperty('--popup-menu-bg', theme.menuBg || '#2d2d2d');
-    root.style.setProperty('--popup-surface', theme.surface || 'rgba(255,255,255,0.06)');
-    root.style.setProperty('--popup-border', theme.border || 'rgba(255,255,255,0.1)');
-    root.style.setProperty('--popup-border-strong', theme.borderStrong || 'rgba(255,255,255,0.14)');
-    root.style.setProperty('--popup-text-primary', theme.textPrimary || 'rgba(255,255,255,0.9)');
-    root.style.setProperty('--popup-text-secondary', theme.textSecondary || 'rgba(255,255,255,0.72)');
-    root.style.setProperty('--popup-text-muted', theme.textMuted || 'rgba(255,255,255,0.45)');
-    root.style.setProperty('--popup-hover', theme.hover || 'rgba(255,255,255,0.1)');
-    const send = (action) => ipcRenderer.send('browser-floating-menu-action', { action });
-    document.querySelectorAll('.item').forEach(el => {
-      el.addEventListener('click', () => send(el.dataset.action || null));
-    });
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') send(null);
-    });
-    window.addEventListener('blur', () => send(null));
-  </script>
-</body>
-</html>`
-
-    await menuWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-
-    const measuredHeight = await menuWindow.webContents.executeJavaScript(`
-      (() => {
-        const menu = document.querySelector('.menu')
-        if (!menu) return ${menuHeight}
-        return Math.ceil(menu.getBoundingClientRect().height)
-      })()
-    `)
-
-    const finalHeight = Math.max(1, Number(measuredHeight) || menuHeight)
-    const finalY = Math.min(
-      Math.max(workArea.y, Math.round(y || workArea.y)),
-      workArea.y + workArea.height - finalHeight
-    )
-
-    menuWindow.setBounds({
-      x: targetX,
-      y: finalY,
-      width: menuWidth,
-      height: finalHeight
-    })
-
-    if (!menuWindow.isDestroyed()) {
-      menuWindow.show()
-      menuWindow.focus()
-    }
-
-    return await new Promise((resolve) => {
-      floatingMenuResolvers.set(menuWindow.id, resolve)
-      menuWindow.on('closed', () => {
-        const resolver = floatingMenuResolvers.get(menuWindow.id)
-        if (resolver) {
-          floatingMenuResolvers.delete(menuWindow.id)
-          resolver(null)
-        }
-      })
-    })
-  } catch (error) {
-    safeError('❌ 打开浮层菜单失败:', error.message)
-    return null
   }
 })
 
@@ -2867,35 +2042,8 @@ app.whenReady().then(async () => {
     safeLog,
     safeError
   })
-  webTabManager = new WebTabManager({
-    safeLog,
-    safeError,
-    lifecycleOptions: {
-      discardDelayMs: Number.POSITIVE_INFINITY
-    },
-    webTabPreloadPath: path.join(__dirname, 'web-tab-preload.js'),
-    onBrowserWebContentsFocused: dismissBrowserUrlSuggestionsChrome
-  })
   sitePermissionManager = createSitePermissionManager({ store })
   sessionPartitionManager = createSessionPartitionManager()
-
-  webTabLifecycleInterval = setInterval(() => {
-    if (!webTabManager) return
-    const transitions = webTabManager.advanceLifecycle(Date.now())
-    if (!Array.isArray(transitions) || transitions.length === 0) return
-
-    for (const transition of transitions) {
-      const [tabId, phase] = String(transition).split(':')
-      if (!tabId || !phase) continue
-      if (phase === 'discarded') {
-        webTabManager.discardWebTab(tabId)
-      }
-    }
-  }, 1000)
-
-  if (typeof webTabLifecycleInterval.unref === 'function') {
-    webTabLifecycleInterval.unref()
-  }
 
   // 注册 local-resource:// 协议：安全地将 ~/.gitManager/ 下的文件提供给渲染进程
   // URL 格式：local-resource://相对路径  例：local-resource://screenshots/screenshot-123.png
@@ -3006,13 +2154,6 @@ const { cleanup: cleanupTerminalSessions } = registerTerminalHandlers({
 app.on('will-quit', () => {
   if (embeddedMcpServer) {
     void embeddedMcpServer.stop()
-  }
-  if (webTabLifecycleInterval) {
-    clearInterval(webTabLifecycleInterval)
-    webTabLifecycleInterval = null
-  }
-  if (webTabManager) {
-    webTabManager.cleanup()
   }
   cleanupTerminalSessions()
   cleanupCommandProcesses()

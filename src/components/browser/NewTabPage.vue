@@ -14,10 +14,10 @@
     
     <!-- WebView 网页 -->
     <WebView
-      v-else-if="routeType === 'webview' && contentHost !== 'webcontentsview'"
+      v-else-if="routeType === 'webview'"
       :tab-id="tabId"
       :src="src"
-      :partition="routeProps?.sessionPartition || 'persist:main'"
+      :partition="sessionPartition"
       :user-agent="userAgent"
       :is-active="isActive"
       @did-start-loading="(e, id) => emit('did-start-loading', e, id)"
@@ -33,8 +33,6 @@
       @favicon-updated="(favicon, id) => emit('favicon-updated', favicon, id)"
     />
 
-    <div v-else-if="routeType === 'webview'" class="webcontentsview-placeholder"></div>
-    
     <!-- 收藏管理 -->
     <FavoritesManager 
       v-else-if="routeType === 'favorites-manager'"
@@ -143,9 +141,9 @@ const props = defineProps({
     type: String,
     default: ''
   },
-  contentHost: {
+  sessionPartition: {
     type: String,
-    default: 'webcontentsview'
+    default: 'persist:main'
   },
   userAgent: {
     type: String,
@@ -219,8 +217,4 @@ const handleNavigateCurrent = (url) => {
   z-index: 1;
 }
 
-.webcontentsview-placeholder {
-  width: 100%;
-  height: 100%;
-}
 </style>

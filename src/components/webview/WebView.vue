@@ -101,7 +101,7 @@ const props = defineProps({
     type: String,
     default: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   },
-  // Compatibility-only path. Main browser flow now uses WebContentsView.
+  // Main browser flow uses webview again; keep partition explicit for private tabs.
   partition: {
     type: String,
     default: 'persist:main'
@@ -1298,6 +1298,12 @@ const onLoadFail = (event) => {
 
 // 在组件挂载时，确保 ref 被正确设置
 onMounted(() => {
+  window.electronAPI?.browserEnsureSessionPartition?.({
+    partition: props.partition
+  }).catch((error) => {
+    console.warn('ensure browser session partition failed:', error)
+  })
+
   setTimeout(() => {
     if (!webviewRef.value) {
       const webviewElement = document.querySelector(`webview[data-tab-id="${props.tabId}"]`)

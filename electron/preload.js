@@ -320,76 +320,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeOpenWebviewDevToolsListener: () => {
     ipcRenderer.removeAllListeners('open-webview-devtools')
   },
-
-  // WebContentsView tabs
-  webTabCreate: (data) => ipcRenderer.invoke('web-tab-create', data),
-  webTabDestroy: (data) => ipcRenderer.invoke('web-tab-destroy', data),
-  webTabActivate: (data) => ipcRenderer.invoke('web-tab-activate', data),
-  webTabNavigate: (data) => ipcRenderer.invoke('web-tab-navigate', data),
-  webTabHideAll: () => ipcRenderer.invoke('web-tab-hide-all'),
-  webTabSetBounds: (data) => ipcRenderer.invoke('web-tab-set-bounds', data),
-  webTabReload: (data) => ipcRenderer.invoke('web-tab-reload', data),
-  webTabGoBack: (data) => ipcRenderer.invoke('web-tab-go-back', data),
-  webTabGoForward: (data) => ipcRenderer.invoke('web-tab-go-forward', data),
-  webTabEvaluate: (data) => ipcRenderer.invoke('web-tab-evaluate', data),
-  webTabRestore: (data) => ipcRenderer.invoke('web-tab-restore', data),
-  showBrowserFloatingMenu: (data) => ipcRenderer.invoke('browser-show-floating-menu', data),
-  showBrowserUrlSuggestions: (data) => ipcRenderer.invoke('browser-show-url-suggestions', data),
-  closeBrowserUrlSuggestions: () => ipcRenderer.invoke('browser-close-url-suggestions'),
-  setBrowserUrlSuggestionIndex: (data) => ipcRenderer.invoke('browser-url-suggestions-set-index', data),
-  onBrowserUrlSuggestionResult: (callback) => {
-    ipcRenderer.on('browser-url-suggestion-result', (event, payload) => callback(payload))
-  },
-  removeBrowserUrlSuggestionResultListener: () => {
-    ipcRenderer.removeAllListeners('browser-url-suggestion-result')
-  },
-  showBrowserNativeMenu: () => ipcRenderer.invoke('browser-show-native-menu'),
-  onWebTabStateChanged: (callback) => {
-    ipcRenderer.on('web-tab-state-changed', (event, data) => callback(data))
-  },
-  removeWebTabStateChangedListener: () => {
-    ipcRenderer.removeAllListeners('web-tab-state-changed')
-  },
-  onWebTabTitleUpdated: (callback) => {
-    ipcRenderer.on('web-tab-title-updated', (event, data) => callback(data))
-  },
-  removeWebTabTitleUpdatedListener: () => {
-    ipcRenderer.removeAllListeners('web-tab-title-updated')
-  },
-  onWebTabFaviconUpdated: (callback) => {
-    ipcRenderer.on('web-tab-favicon-updated', (event, data) => callback(data))
-  },
-  removeWebTabFaviconUpdatedListener: () => {
-    ipcRenderer.removeAllListeners('web-tab-favicon-updated')
-  },
-  onWebTabLoadFailed: (callback) => {
-    ipcRenderer.on('web-tab-load-failed', (event, data) => callback(data))
-  },
-  removeWebTabLoadFailedListener: () => {
-    ipcRenderer.removeAllListeners('web-tab-load-failed')
-  },
-  onWebTabPasswordCaptured: (callback) => {
-    ipcRenderer.on('web-tab-password-captured', (event, data) => callback(data))
-  },
-  removeWebTabPasswordCapturedListener: () => {
-    ipcRenderer.removeAllListeners('web-tab-password-captured')
-  },
-  onWebTabLifecycleChanged: (callback) => {
-    ipcRenderer.on('web-tab-lifecycle-changed', (event, data) => callback(data))
-  },
-  removeWebTabLifecycleChangedListener: () => {
-    ipcRenderer.removeAllListeners('web-tab-lifecycle-changed')
-  },
-  onWebDownloadStateChanged: (callback) => {
-    ipcRenderer.on('web-download-state-changed', (event, data) => callback(data))
-  },
-  removeWebDownloadStateChangedListener: () => {
-    ipcRenderer.removeAllListeners('web-download-state-changed')
-  },
-  browserOpenDownloadFolder: (data) => ipcRenderer.invoke('browser-open-download-folder', data),
-  browserRetryDownload: (data) => ipcRenderer.invoke('browser-retry-download', data),
-  browserClearDownloadHistory: () => ipcRenderer.invoke('browser-clear-download-history'),
   debugMemoryStats: () => ipcRenderer.invoke('debug-memory-stats'),
+  browserEnsureSessionPartition: (data) => ipcRenderer.invoke('browser-ensure-session-partition', data),
+  browserClearSessionPartition: (data) => ipcRenderer.invoke('browser-clear-session-partition', data),
   browserGetSitePermissions: (data) => ipcRenderer.invoke('browser-get-site-permissions', data),
   browserResetSitePermission: (data) => ipcRenderer.invoke('browser-reset-site-permission', data),
   browserResetAllSitePermissions: (data) => ipcRenderer.invoke('browser-reset-all-site-permissions', data),

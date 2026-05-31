@@ -102,7 +102,7 @@ export function useBrowserPersistence({
             tab.routeConfig = routeConfig['remote-repo']
           }
           tab.contentKind = tab.routeConfig.showWebview ? 'web' : 'builtin'
-          tab.contentHost = tab.routeConfig.showWebview ? 'webcontentsview' : 'builtin'
+          tab.contentHost = tab.routeConfig.showWebview ? 'webview' : 'builtin'
         }
       }
 
