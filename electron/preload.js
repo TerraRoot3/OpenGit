@@ -165,6 +165,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       focusProjectTerminalSubscribers.delete(callback)
     }
   },
+  ackFocusProjectTerminal: (payload) => {
+    ipcRenderer.send('focus-project-terminal-ack', payload)
+  },
   removeFocusProjectTerminalListener: (callback) => {
     if (typeof callback === 'function') {
       focusProjectTerminalSubscribers.delete(callback)

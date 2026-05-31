@@ -2185,7 +2185,7 @@ const scheduleDeferredProjectTerminalFocus = (projectPath, delayMs = 96) => {
   }, delayMs)
 }
 
-const focusProjectTerminal = async ({ projectPath = '', routeType = 'single-project' } = {}) => {
+const focusProjectTerminal = async ({ projectPath = '', routeType = 'single-project', requestId = '' } = {}) => {
   const normalizedPath = normalizeProjectTabPath(projectPath)
   if (!normalizedPath) return
 
@@ -2204,6 +2204,9 @@ const focusProjectTerminal = async ({ projectPath = '', routeType = 'single-proj
   await nextTick()
   dispatchProjectTerminalFocus(normalizedPath)
   scheduleDeferredProjectTerminalFocus(normalizedPath)
+  if (requestId && window.electronAPI?.ackFocusProjectTerminal) {
+    window.electronAPI.ackFocusProjectTerminal({ requestId })
+  }
 }
 
 /**

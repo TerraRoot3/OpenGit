@@ -25,6 +25,7 @@ const { registerExtensionHandlers } = require('./ipc/extensions')
 const { registerScmHandlers } = require('./ipc/scm')
 const { createCodexSessionMonitor, normalizeProjectPath } = require('./ipc/codex-session-monitor')
 const { createCodexNotificationBadgeState } = require('./ipc/codex-notification-badge-state')
+const { createFocusProjectTerminalState } = require('./ipc/focus-project-terminal-state')
 const { getDefaultMcpConfig, getMcpConfig, saveMcpConfig } = require('./mcp/config')
 const { createEmbeddedMcpServer } = require('./mcp/server')
 const { createProjectsService } = require('./mcp/services/projects')
@@ -790,38 +791,47 @@ function syncCodexUnreadBadge(count = 0) {
 const codexNotificationBadgeState = createCodexNotificationBadgeState({
   applyBadge: syncCodexUnreadBadge
 })
+const focusProjectTerminalState = createFocusProjectTerminalState()
+let focusProjectTerminalRetryTimer = null
 
-function isAppBackground() {
-  if (!mainWindow || mainWindow.isDestroyed()) return true
-  if (!mainWindow.isVisible()) return true
-  return !mainWindow.isFocused()
-}
-
-function getActiveProjectPath() {
-  return normalizeProjectPath(mcpRuntimeState?.browser?.activeProject?.path || '')
-}
-
-function getProjectRouteType(projectPath = '') {
-  const normalizedProjectPath = normalizeProjectPath(projectPath)
-  if (!normalizedProjectPath) return 'single-project'
-  const matchingTab = Array.isArray(mcpRuntimeState?.browser?.openProjectTabs)
-    ? mcpRuntimeState.browser.openProjectTabs.find((tab) => normalizeProjectPath(tab?.path || '') === normalizedProjectPath)
-    : null
-  return matchingTab?.routeType === 'clone-directory' ? 'clone-directory' : 'single-project'
-}
-
-function focusProjectTerminalInRenderer(projectPath = '', routeType = 'single-project') {
-  const normalizedProjectPath = normalizeProjectPath(projectPath)
-  if (!normalizedProjectPath || !mainWindow || mainWindow.isDestroyed()) return
-
-  const payload = {
-    projectPath: normalizedProjectPath,
-    routeType: routeType === 'clone-directory' ? 'clone-directory' : 'single-project'
+function clearFocusProjectTerminalRetryTimer() {
+  if (focusProjectTerminalRetryTimer) {
+    clearTimeout(focusProjectTerminalRetryTimer)
+    focusProjectTerminalRetryTimer = null
   }
+}
+
+function schedulePendingFocusProjectTerminalRetry() {
+  clearFocusProjectTerminalRetryTimer()
+  const delay = focusProjectTerminalState.getNextRetryDelay()
+  if (!Number.isFinite(delay) || delay <= 0) return
+
+  focusProjectTerminalRetryTimer = setTimeout(() => {
+    focusProjectTerminalRetryTimer = null
+    dispatchPendingFocusProjectTerminal('retry')
+  }, delay)
+}
+
+function dispatchPendingFocusProjectTerminal(reason = 'manual') {
+  const payload = focusProjectTerminalState.markDispatched()
+  if (!payload) return
+
+  if ((!mainWindow || mainWindow.isDestroyed()) && BrowserWindow.getAllWindows().length === 0) {
+    createWindow()
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return
 
   const sendFocusEvent = () => {
     try {
       mainWindow.webContents.send('focus-project-terminal', payload)
+      safeLog('📨 focus-project-terminal dispatched:', {
+        reason,
+        requestId: payload.requestId,
+        projectPath: payload.projectPath,
+        routeType: payload.routeType,
+        dispatchCount: payload.dispatchCount
+      })
+      schedulePendingFocusProjectTerminalRetry()
     } catch (error) {
       safeError('❌ 发送项目终端聚焦事件失败:', error.message)
     }
@@ -844,6 +854,38 @@ function focusProjectTerminalInRenderer(projectPath = '', routeType = 'single-pr
   } catch (error) {
     safeError('❌ 聚焦项目终端失败:', error.message)
   }
+}
+
+function isAppBackground() {
+  if (!mainWindow || mainWindow.isDestroyed()) return true
+  if (!mainWindow.isVisible()) return true
+  return !mainWindow.isFocused()
+}
+
+function getActiveProjectPath() {
+  return normalizeProjectPath(mcpRuntimeState?.browser?.activeProject?.path || '')
+}
+
+function getProjectRouteType(projectPath = '') {
+  const normalizedProjectPath = normalizeProjectPath(projectPath)
+  if (!normalizedProjectPath) return 'single-project'
+  const matchingTab = Array.isArray(mcpRuntimeState?.browser?.openProjectTabs)
+    ? mcpRuntimeState.browser.openProjectTabs.find((tab) => normalizeProjectPath(tab?.path || '') === normalizedProjectPath)
+    : null
+  return matchingTab?.routeType === 'clone-directory' ? 'clone-directory' : 'single-project'
+}
+
+function focusProjectTerminalInRenderer(projectPath = '', routeType = 'single-project') {
+  const normalizedProjectPath = normalizeProjectPath(projectPath)
+  if (!normalizedProjectPath) return
+
+  const pendingPayload = focusProjectTerminalState.begin({
+    projectPath: normalizedProjectPath,
+    routeType
+  })
+  if (!pendingPayload) return
+
+  dispatchPendingFocusProjectTerminal('notification-click')
 }
 
 const codexSessionMonitor = createCodexSessionMonitor({
@@ -1049,6 +1091,15 @@ ipcMain.on('mcp-runtime-state-update', (event, payload = {}) => {
         }
         : null
     }
+  }
+})
+
+ipcMain.on('focus-project-terminal-ack', (event, payload = {}) => {
+  const requestId = String(payload?.requestId || '').trim()
+  if (!requestId) return
+  if (focusProjectTerminalState.acknowledge(requestId)) {
+    clearFocusProjectTerminalRetryTimer()
+    safeLog('✅ focus-project-terminal acknowledged:', requestId)
   }
 })
 
@@ -1815,6 +1866,9 @@ function createWindow() {
   mainWindow.on('focus', () => {
     safeLog('🔄 窗口获得焦点，主动刷新待定文件检查')
     codexNotificationBadgeState.clear()
+    if (focusProjectTerminalState.hasPending()) {
+      dispatchPendingFocusProjectTerminal('window-focus')
+    }
     // 发送消息到渲染进程，触发刷新
     if (mainWindow.webContents) {
       mainWindow.webContents.send('refresh-on-focus')
@@ -2907,6 +2961,9 @@ app.on('activate', () => {
   } else if (BrowserWindow.getAllWindows().length === 0) {
     // 如果没有窗口，创建新窗口
     createWindow()
+  }
+  if (focusProjectTerminalState.hasPending()) {
+    dispatchPendingFocusProjectTerminal('app-activate')
   }
 })
 
