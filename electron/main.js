@@ -791,6 +791,7 @@ function syncCodexUnreadBadge(count = 0) {
 const codexNotificationBadgeState = createCodexNotificationBadgeState({
   applyBadge: syncCodexUnreadBadge
 })
+const activeCodexNotifications = new Map()
 const focusProjectTerminalState = createFocusProjectTerminalState()
 let focusProjectTerminalRetryTimer = null
 
@@ -925,9 +926,14 @@ const codexSessionMonitor = createCodexSessionMonitor({
         body,
         silent: false
       })
+      activeCodexNotifications.set(notificationId, notification)
       notification.on('click', () => {
         codexNotificationBadgeState.markRead(notificationId)
+        activeCodexNotifications.delete(notificationId)
         focusProjectTerminalInRenderer(projectPath, routeType)
+      })
+      notification.on('close', () => {
+        activeCodexNotifications.delete(notificationId)
       })
       notification.show()
       codexNotificationBadgeState.markUnread(notificationId)
