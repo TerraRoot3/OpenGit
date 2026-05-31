@@ -24,6 +24,7 @@ const { registerBranchHandlers } = require('./ipc/branch')
 const { registerExtensionHandlers } = require('./ipc/extensions')
 const { registerScmHandlers } = require('./ipc/scm')
 const { createCodexSessionMonitor, normalizeProjectPath } = require('./ipc/codex-session-monitor')
+const { createCodexNotificationBadgeState } = require('./ipc/codex-notification-badge-state')
 const { getDefaultMcpConfig, getMcpConfig, saveMcpConfig } = require('./mcp/config')
 const { createEmbeddedMcpServer } = require('./mcp/server')
 const { createProjectsService } = require('./mcp/services/projects')
@@ -764,6 +765,32 @@ let mcpRuntimeState = {
   }
 }
 
+function syncCodexUnreadBadge(count = 0) {
+  const normalizedCount = Math.max(0, Number(count) || 0)
+
+  try {
+    if (typeof app.setBadgeCount === 'function') {
+      app.setBadgeCount(normalizedCount)
+    }
+  } catch (error) {
+    safeError('❌ 更新应用 badge 数失败:', error.message)
+  }
+
+  if (process.platform !== 'darwin') return
+
+  try {
+    if (app.dock && typeof app.dock.setBadge === 'function') {
+      app.dock.setBadge(normalizedCount > 0 ? String(normalizedCount) : '')
+    }
+  } catch (error) {
+    safeError('❌ 更新 Dock badge 数失败:', error.message)
+  }
+}
+
+const codexNotificationBadgeState = createCodexNotificationBadgeState({
+  applyBadge: syncCodexUnreadBadge
+})
+
 function isAppBackground() {
   if (!mainWindow || mainWindow.isDestroyed()) return true
   if (!mainWindow.isVisible()) return true
@@ -848,6 +875,7 @@ const codexSessionMonitor = createCodexSessionMonitor({
     const body = awaitingConfirmation
       ? `项目 ${projectName} 的 Codex 会话正在等待你的确认`
       : `项目 ${projectName} 的 Codex 会话本次任务已结束`
+    const notificationId = `${Date.now()}:${projectPath}:${project?.status || 'unknown'}:${Math.random()}`
 
     try {
       const notification = new Notification({
@@ -856,10 +884,13 @@ const codexSessionMonitor = createCodexSessionMonitor({
         silent: false
       })
       notification.on('click', () => {
+        codexNotificationBadgeState.markRead(notificationId)
         focusProjectTerminalInRenderer(projectPath, routeType)
       })
       notification.show()
+      codexNotificationBadgeState.markUnread(notificationId)
       safeLog('🔔 Codex session notification sent:', {
+        notificationId,
         projectPath,
         status: project?.status,
         previousStatus: project?.previousStatus,
@@ -1783,6 +1814,7 @@ function createWindow() {
   // 当窗口从后台切换到前台时，主动刷新待定文件检查
   mainWindow.on('focus', () => {
     safeLog('🔄 窗口获得焦点，主动刷新待定文件检查')
+    codexNotificationBadgeState.clear()
     // 发送消息到渲染进程，触发刷新
     if (mainWindow.webContents) {
       mainWindow.webContents.send('refresh-on-focus')

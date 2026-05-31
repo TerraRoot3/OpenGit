@@ -422,6 +422,12 @@ import BackupManager from '../BackupManager.vue'
 import ExtensionManager from '../ExtensionManager.vue'
 import { createBrowserContentAdapter } from './browserContentAdapter'
 import {
+  buildProjectTerminalRouteUrl,
+  createProjectTerminalFocusRequest,
+  normalizeProjectTabPath,
+  resolveProjectTerminalTargetTab
+} from './projectTerminalNavigation.mjs'
+import {
   findBestMatchingPassword,
   buildPasswordSaveDecision
 } from '../../composables/webPasswordUtils.mjs'
@@ -2165,43 +2171,39 @@ const openProjectRoute = async (url) => {
   await openInNewTab(url)
 }
 
-const buildProjectRouteUrl = (projectPath, routeType = 'single-project') => {
-  const normalizedPath = String(projectPath || '').trim()
-  if (!normalizedPath) return ''
-  return routeType === 'clone-directory'
-    ? `git:clone:${normalizedPath}`
-    : `git:project:${normalizedPath}`
+const dispatchProjectTerminalFocus = (projectPath) => {
+  const request = createProjectTerminalFocusRequest(projectPath)
+  if (!request) return null
+  projectTerminalFocusRequest.value = request
+  return request
 }
 
-const dispatchProjectTerminalFocus = (projectPath) => {
-  const normalizedPath = String(projectPath || '').trim()
-  if (!normalizedPath) return
-  projectTerminalFocusRequest.value = {
-    path: normalizedPath,
-    nonce: Date.now() + Math.random()
-  }
+const scheduleDeferredProjectTerminalFocus = (projectPath, delayMs = 96) => {
+  if (typeof window === 'undefined') return
+  window.setTimeout(() => {
+    dispatchProjectTerminalFocus(projectPath)
+  }, delayMs)
 }
 
 const focusProjectTerminal = async ({ projectPath = '', routeType = 'single-project' } = {}) => {
-  const normalizedPath = String(projectPath || '').trim()
+  const normalizedPath = normalizeProjectTabPath(projectPath)
   if (!normalizedPath) return
 
-  const existingTab = browserTabs.value.find((tab) => {
-    const tabRouteType = tab?.routeType || ''
-    if (tabRouteType !== 'clone-directory' && tabRouteType !== 'single-project') return false
-    return String(tab?.routeProps?.path || '').trim() === normalizedPath
-  }) || null
-
-  const normalizedRouteType = existingTab?.routeType === 'clone-directory'
-    ? 'clone-directory'
-    : (routeType === 'clone-directory' ? 'clone-directory' : 'single-project')
-  const routeUrl = buildProjectRouteUrl(normalizedPath, normalizedRouteType)
+  const targetTab = resolveProjectTerminalTargetTab(browserTabs.value, {
+    projectPath: normalizedPath,
+    routeType,
+    activeTabId: activeBrowserTabId.value
+  })
+  const routeUrl = buildProjectTerminalRouteUrl(normalizedPath, targetTab?.routeType || routeType)
   if (!routeUrl) return
 
-  dispatchProjectTerminalFocus(normalizedPath)
+  if (targetTab) {
+    dispatchProjectTerminalFocus(normalizedPath)
+  }
   await openProjectRoute(routeUrl)
   await nextTick()
   dispatchProjectTerminalFocus(normalizedPath)
+  scheduleDeferredProjectTerminalFocus(normalizedPath)
 }
 
 /**

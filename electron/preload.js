@@ -2,7 +2,34 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const codexProjectStatusHandlers = new WeakMap()
 const codexTerminalStatusHandlers = new WeakMap()
-const focusProjectTerminalHandlers = new WeakMap()
+const focusProjectTerminalSubscribers = new Set()
+const pendingFocusProjectTerminalPayloads = []
+const MAX_PENDING_FOCUS_PROJECT_TERMINAL_PAYLOADS = 16
+
+const deliverFocusProjectTerminalPayload = (payload) => {
+  if (focusProjectTerminalSubscribers.size === 0) {
+    pendingFocusProjectTerminalPayloads.push(payload)
+    if (pendingFocusProjectTerminalPayloads.length > MAX_PENDING_FOCUS_PROJECT_TERMINAL_PAYLOADS) {
+      pendingFocusProjectTerminalPayloads.splice(
+        0,
+        pendingFocusProjectTerminalPayloads.length - MAX_PENDING_FOCUS_PROJECT_TERMINAL_PAYLOADS
+      )
+    }
+    return
+  }
+
+  for (const callback of Array.from(focusProjectTerminalSubscribers)) {
+    try {
+      callback(payload)
+    } catch (error) {
+      console.error('focus-project-terminal listener failed:', error)
+    }
+  }
+}
+
+ipcRenderer.on('focus-project-terminal', (event, payload) => {
+  deliverFocusProjectTerminalPayload(payload)
+})
 
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -120,22 +147,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('refresh-current-tab', callback)
   },
   onFocusProjectTerminal: (callback) => {
-    const handler = (event, payload) => callback(payload)
-    focusProjectTerminalHandlers.set(callback, handler)
-    ipcRenderer.on('focus-project-terminal', handler)
+    if (typeof callback !== 'function') return () => {}
+
+    focusProjectTerminalSubscribers.add(callback)
+    if (pendingFocusProjectTerminalPayloads.length > 0) {
+      const queuedPayloads = pendingFocusProjectTerminalPayloads.splice(0, pendingFocusProjectTerminalPayloads.length)
+      for (const payload of queuedPayloads) {
+        try {
+          callback(payload)
+        } catch (error) {
+          console.error('focus-project-terminal queued listener failed:', error)
+        }
+      }
+    }
+
     return () => {
-      ipcRenderer.removeListener('focus-project-terminal', handler)
-      focusProjectTerminalHandlers.delete(callback)
+      focusProjectTerminalSubscribers.delete(callback)
     }
   },
   removeFocusProjectTerminalListener: (callback) => {
     if (typeof callback === 'function') {
-      const handler = focusProjectTerminalHandlers.get(callback) || callback
-      ipcRenderer.removeListener('focus-project-terminal', handler)
-      focusProjectTerminalHandlers.delete(callback)
+      focusProjectTerminalSubscribers.delete(callback)
       return
     }
-    ipcRenderer.removeAllListeners('focus-project-terminal')
+    focusProjectTerminalSubscribers.clear()
   },
   removeRefreshCurrentTabListener: (callback) => {
     ipcRenderer.removeListener('refresh-current-tab', callback)

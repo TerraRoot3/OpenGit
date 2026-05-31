@@ -595,6 +595,7 @@ import {
   deriveBranchStatusState
 } from './projectDetailRefresh.mjs'
 import {
+  resolveProjectTerminalFocusRequest,
   resolveProjectTerminalFocusMode,
   shouldAutoFocusProjectTerminal
 } from './projectDetailTerminalFocus.mjs'
@@ -711,16 +712,6 @@ const terminalRef = ref(null)
 const liquidTerminalRef = ref(null)
 const newTagNameInputRef = ref(null)
 const lastHandledTerminalFocusNonce = ref(0)
-
-const normalizeFocusProjectPath = (value = '') => {
-  const rawValue = String(value || '').trim()
-  if (!rawValue) return ''
-  try {
-    return decodeURIComponent(rawValue)
-  } catch {
-    return rawValue
-  }
-}
 
 /** 传给嵌入式终端的项目根（解码 git: 路由里可能出现的 %20 等），保证主进程拿到真实绝对路径 */
 const terminalProjectPath = computed(() => {
@@ -1176,6 +1167,25 @@ const focusActiveTerminalView = async () => {
     return
   }
   terminalRef.value?.focusCurrentTerminal?.()
+}
+
+const queueTerminalFocusAfterRequest = async () => {
+  await focusActiveTerminalView()
+
+  if (typeof window === 'undefined') return
+
+  const rerunFocus = () => {
+    void focusActiveTerminalView()
+  }
+
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(rerunFocus)
+    })
+    return
+  }
+
+  window.setTimeout(rerunFocus, 32)
 }
 
 // ==================== 操作对话框 ====================
@@ -2241,13 +2251,18 @@ const selectWorkspace = () => {
 }
 
 const handleTerminalFocusRequest = (request) => {
-  const nonce = Number(request?.nonce) || 0
-  if (!nonce || nonce === lastHandledTerminalFocusNonce.value) return
-  const requestPath = normalizeFocusProjectPath(request?.path || '')
-  const currentPath = normalizeFocusProjectPath(props.path)
-  if (!requestPath || !currentPath || requestPath !== currentPath) return
-  lastHandledTerminalFocusNonce.value = nonce
+  const effect = resolveProjectTerminalFocusRequest({
+    request,
+    currentPath: props.path,
+    lastHandledNonce: lastHandledTerminalFocusNonce.value,
+    isActive: props.isActive
+  })
+  if (!effect) return
+  lastHandledTerminalFocusNonce.value = effect.nonce
   selectTerminal()
+  if (effect.shouldFocusNow) {
+    void queueTerminalFocusAfterRequest()
+  }
 }
 
 const handleResumeAiSession = async (session) => {
