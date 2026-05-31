@@ -2536,6 +2536,28 @@ const ipcHandler = {
 
 let resizeTimer = null
 let resizeRafId = null
+let singlePaneViewportRevealTimer = null
+
+const SINGLE_PANE_VIEWPORT_REVEAL_DEBOUNCE_MS = 180
+
+const clearSinglePaneViewportRevealTimer = () => {
+  if (singlePaneViewportRevealTimer) {
+    clearTimeout(singlePaneViewportRevealTimer)
+    singlePaneViewportRevealTimer = null
+  }
+}
+
+const scheduleSinglePaneViewportRevealAfterResize = () => {
+  clearSinglePaneViewportRevealTimer()
+  singlePaneViewportRevealTimer = window.setTimeout(() => {
+    singlePaneViewportRevealTimer = null
+    if (!props.singlePaneChrome || !props.isActive || !props.focusPaneFocused || props.suspendSinglePaneResize) {
+      return
+    }
+    revealCurrentTerminalAfterAnimation()
+  }, SINGLE_PANE_VIEWPORT_REVEAL_DEBOUNCE_MS)
+}
+
 watch(() => [props.isActive, props.focusPaneFocused], ([active, paneFocused]) => {
   if (active && paneFocused && terminals.value.length > 0) {
     for (const term of terminals.value) {
@@ -2543,6 +2565,7 @@ watch(() => [props.isActive, props.focusPaneFocused], ([active, paneFocused]) =>
     }
     if (props.singlePaneChrome) {
       clearDeferredSinglePanePtyResize()
+      clearSinglePaneViewportRevealTimer()
       return
     }
     applyLayout(true)
@@ -2645,11 +2668,16 @@ onMounted(() => {
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null
         applyLayout(false)
+        // 灵动终端在项目内导航开关这类宽度变化后，还需要在尺寸稳定后补一次 reveal，
+        // 否则长输出终端可能停在旧 viewport 顶部。
+        scheduleSinglePaneViewportRevealAfterResize()
       })
     } else {
       if (resizeTimer) clearTimeout(resizeTimer)
       resizeTimer = setTimeout(() => {
-        applyLayout(false)
+        // 终端视图可见时，导航开关/侧栏 resize 后需要把当前会话真正恢复回来，
+        // 否则 Codex 这类长输出终端容易停在旧 viewport 顶部。
+        applyLayout(!!props.isActive)
       }, 100)
     }
   })
@@ -2684,6 +2712,7 @@ onUnmounted(() => {
     clearTimeout(singlePanePtyResizeTimer)
     singlePanePtyResizeTimer = null
   }
+  clearSinglePaneViewportRevealTimer()
   clearDeferredSinglePanePtyResize()
   lastSinglePanePtyResizeAt = 0
   document.removeEventListener('click', handleDocumentClick)

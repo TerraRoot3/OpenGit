@@ -5,10 +5,7 @@ const isPositiveInteger = (value) => Number.isFinite(value) && value > 0
 export const runViewportSyncPass = ({
   term,
   resizePty,
-  reconcileViewport,
-  focus = false,
-  stickToBottom = false,
-  forceViewportReconcile = false
+  focus = false
 } = {}) => {
   if (!term?.fitAddon || !term?.xterm) return false
 
@@ -30,6 +27,23 @@ export const runViewportSyncPass = ({
     }
   } catch {}
 
+  if (focus) {
+    try {
+      term.xterm.focus()
+    } catch {}
+  }
+
+  return true
+}
+
+const runViewportRestorePass = ({
+  term,
+  reconcileViewport,
+  stickToBottom = false,
+  forceViewportReconcile = false
+} = {}) => {
+  if (!term?.xterm) return false
+
   if (stickToBottom) {
     try {
       term.xterm.scrollToBottom()
@@ -41,15 +55,9 @@ export const runViewportSyncPass = ({
     } catch {}
   }
 
-  if (forceViewportReconcile && typeof reconcileViewport === 'function') {
+  if ((stickToBottom || forceViewportReconcile) && typeof reconcileViewport === 'function') {
     try {
       reconcileViewport(true)
-    } catch {}
-  }
-
-  if (focus) {
-    try {
-      term.xterm.focus()
     } catch {}
   }
 
@@ -86,14 +94,28 @@ export const scheduleViewportRevealSync = ({
 
   const runPass = (shouldFocus = false) => {
     if (typeof canMeasure === 'function' && !canMeasure()) return false
-    return runViewportSyncPass({
+    const didFitPass = runViewportSyncPass({
       term,
       resizePty,
-      reconcileViewport,
-      focus: shouldFocus,
-      stickToBottom,
-      forceViewportReconcile
+      focus: shouldFocus
     })
+    if (!didFitPass) return false
+
+    if (!stickToBottom && !forceViewportReconcile) {
+      return true
+    }
+
+    requestFrame(() => {
+      if (typeof canMeasure === 'function' && !canMeasure()) return
+      runViewportRestorePass({
+        term,
+        reconcileViewport,
+        stickToBottom,
+        forceViewportReconcile
+      })
+    })
+
+    return true
   }
 
   requestFrame(() => {
