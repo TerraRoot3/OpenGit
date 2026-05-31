@@ -3,8 +3,211 @@ const path = require('path')
 const { dialog } = require('electron')
 const fsp = fs.promises
 
+const SEARCH_EXCLUDED_DIRS = new Set([
+  '.git',
+  'node_modules',
+  '.next',
+  '.nuxt',
+  '.turbo',
+  'coverage',
+  'dist',
+  'build',
+  'out'
+])
+
+const TEXT_SEARCH_EXTS = new Set([
+  '.txt', '.md', '.markdown', '.json', '.jsonc', '.js', '.jsx', '.mjs', '.cjs',
+  '.ts', '.tsx', '.vue', '.css', '.scss', '.sass', '.less', '.html', '.htm',
+  '.xml', '.svg', '.yml', '.yaml', '.toml', '.ini', '.conf', '.config',
+  '.env', '.sh', '.bash', '.zsh', '.fish', '.py', '.rb', '.php', '.java',
+  '.kt', '.swift', '.go', '.rs', '.c', '.cc', '.cpp', '.h', '.hpp', '.cs',
+  '.sql', '.csv', '.tsv', '.log', '.gitignore', '.gitattributes', '.editorconfig'
+])
+
+const TEXT_SEARCH_BASENAMES = new Set([
+  'Dockerfile',
+  'Makefile',
+  '.env',
+  '.env.local',
+  '.env.development',
+  '.env.production',
+  '.gitignore',
+  '.gitattributes',
+  '.editorconfig',
+  'README',
+  'README.md',
+  'LICENSE'
+])
+
+const MAX_TEXT_SEARCH_FILE_SIZE_BYTES = 1024 * 1024
+
 function sameFilesystemPath (a, b) {
   return path.normalize(a) === path.normalize(b)
+}
+
+function normalizeUiPath(value) {
+  return String(value || '').replace(/\\/g, '/')
+}
+
+function parseSearchMatcher(query) {
+  const raw = String(query || '').trim()
+  if (!raw) {
+    return { matcher: null, findFirst: null, error: '' }
+  }
+
+  const regexMatch = raw.match(/^\/(.+)\/([dgimsuvy]*)$/)
+  if (regexMatch) {
+    try {
+      const regex = new RegExp(regexMatch[1], regexMatch[2])
+      return {
+        matcher: (value) => {
+          regex.lastIndex = 0
+          return regex.test(String(value || ''))
+        },
+        findFirst: (value) => {
+          const text = String(value || '')
+          regex.lastIndex = 0
+          const match = regex.exec(text)
+          if (!match) return null
+          return {
+            index: match.index,
+            length: Math.max(String(match[0] || '').length, 1)
+          }
+        },
+        error: ''
+      }
+    } catch (error) {
+      return {
+        matcher: null,
+        findFirst: null,
+        error: '正则无效'
+      }
+    }
+  }
+
+  const needle = raw.toLowerCase()
+  return {
+    matcher: (value) => String(value || '').toLowerCase().includes(needle),
+    findFirst: (value) => {
+      const text = String(value || '')
+      const index = text.toLowerCase().indexOf(needle)
+      if (index === -1) return null
+      return {
+        index,
+        length: Math.max(raw.length, 1)
+      }
+    },
+    error: ''
+  }
+}
+
+function isLikelyTextSearchFile(filePath) {
+  const baseName = path.basename(filePath)
+  if (TEXT_SEARCH_BASENAMES.has(baseName)) return true
+  const ext = path.extname(baseName).toLowerCase()
+  if (!ext) return false
+  return TEXT_SEARCH_EXTS.has(ext)
+}
+
+function bufferLooksBinary(buffer) {
+  if (!buffer?.length) return false
+  const sample = buffer.subarray(0, Math.min(buffer.length, 2048))
+  for (const byte of sample) {
+    if (byte === 0) return true
+  }
+  return false
+}
+
+function buildContentMatchDetails(text, match) {
+  if (!match || !Number.isFinite(match.index)) return null
+  const safeText = String(text || '')
+  const lineStart = safeText.lastIndexOf('\n', match.index - 1) + 1
+  const lineEndRaw = safeText.indexOf('\n', match.index)
+  const lineEnd = lineEndRaw === -1 ? safeText.length : lineEndRaw
+  const lineText = safeText.slice(lineStart, lineEnd)
+  const beforeText = safeText.slice(0, lineStart)
+  const lineNumber = beforeText ? beforeText.split('\n').length : 1
+  const column = match.index - lineStart + 1
+  const previewRadius = 48
+  const previewStart = Math.max(0, column - 1 - previewRadius)
+  const previewEnd = Math.min(lineText.length, column - 1 + match.length + previewRadius)
+  const previewText = `${previewStart > 0 ? '…' : ''}${lineText.slice(previewStart, previewEnd)}${previewEnd < lineText.length ? '…' : ''}`
+
+  return {
+    lineNumber,
+    column,
+    length: match.length,
+    previewText
+  }
+}
+
+async function searchProjectEntries(repoPath, matcher, findFirst) {
+  const rootPath = path.resolve(repoPath)
+  const queue = [rootPath]
+  const matches = []
+  const seenPaths = new Set()
+
+  while (queue.length) {
+    const currentDir = queue.shift()
+    let entries = []
+    try {
+      entries = await fsp.readdir(currentDir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+
+    entries.sort((left, right) => left.name.localeCompare(right.name))
+
+    for (const entry of entries) {
+      if (entry.name === '.DS_Store') continue
+      if (entry.isDirectory() && SEARCH_EXCLUDED_DIRS.has(entry.name)) continue
+
+      const fullPath = path.join(currentDir, entry.name)
+      const relativePath = normalizeUiPath(path.relative(rootPath, fullPath))
+      const normalizedFullPath = normalizeUiPath(fullPath)
+      const nameMatched = matcher(entry.name) || matcher(relativePath)
+
+      if (entry.isDirectory()) {
+        queue.push(fullPath)
+        continue
+      }
+
+      let contentMatched = false
+      let contentMatch = null
+      if (isLikelyTextSearchFile(fullPath)) {
+        try {
+          const stats = await fsp.stat(fullPath)
+          if (stats.size <= MAX_TEXT_SEARCH_FILE_SIZE_BYTES) {
+            const buffer = await fsp.readFile(fullPath)
+            if (!bufferLooksBinary(buffer)) {
+              const text = buffer.toString('utf8')
+              contentMatch = findFirst ? findFirst(text) : null
+              contentMatched = Boolean(contentMatch)
+              if (contentMatched) {
+                contentMatch = buildContentMatchDetails(text, contentMatch)
+              }
+            }
+          }
+        } catch {
+          contentMatched = false
+          contentMatch = null
+        }
+      }
+
+      if ((nameMatched || contentMatched) && !seenPaths.has(normalizedFullPath)) {
+        seenPaths.add(normalizedFullPath)
+        matches.push({
+          path: normalizedFullPath,
+          relativePath,
+          isDirectory: false,
+          matchType: nameMatched && contentMatched ? 'name+content' : (contentMatched ? 'content' : 'name'),
+          contentMatch
+        })
+      }
+    }
+  }
+
+  return matches
 }
 
 async function copyEntry (sourcePath, targetPath, overwrite = false) {
@@ -145,6 +348,31 @@ function registerFilesystemHandlers({
     } catch (error) {
       safeError('读取文件失败:', error)
       throw error
+    }
+  })
+
+  ipcMain.handle('search-project-files', async (event, { repoPath, query }) => {
+    try {
+      if (!repoPath) {
+        return { success: false, error: '缺少 repoPath 参数', matches: [] }
+      }
+      if (!fs.existsSync(repoPath)) {
+        return { success: false, error: `目录不存在: ${repoPath}`, matches: [] }
+      }
+
+      const { matcher, findFirst, error } = parseSearchMatcher(query)
+      if (error) {
+        return { success: false, error, matches: [] }
+      }
+      if (!matcher) {
+        return { success: true, matches: [] }
+      }
+
+      const matches = await searchProjectEntries(repoPath, matcher, findFirst)
+      return { success: true, matches }
+    } catch (error) {
+      safeError('搜索项目文件失败:', error)
+      return { success: false, error: error.message, matches: [] }
     }
   })
 

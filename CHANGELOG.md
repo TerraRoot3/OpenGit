@@ -12,6 +12,9 @@ From this file onward:
 
 ### Added
 
+- 工作区文本预览支持直接编辑、未保存状态提示，以及 `Cmd/Ctrl+S` 保存到原文件。
+- 工作区搜索支持同时匹配文件名和文本文件内容。
+
 ### Changed
 
 ### Fixed

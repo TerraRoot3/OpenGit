@@ -1,5 +1,18 @@
 <template>
   <div class="workspace-text-editor">
+    <div class="editor-save-bar">
+      <span class="editor-save-bar__status" :class="{ dirty: isDirty }">
+        {{ isDirty ? '未保存' : '已保存' }}
+      </span>
+      <button
+        type="button"
+        class="editor-save-bar__btn"
+        :disabled="!isDirty || isSaving"
+        @click="emitSaveRequest"
+      >
+        {{ isSaving ? '保存中...' : '保存' }}
+      </button>
+    </div>
     <div v-if="changeNavigationLines.length" class="editor-change-nav">
       <button type="button" class="editor-change-nav__btn" @click="goToPreviousChange">上一个</button>
       <span class="editor-change-nav__meta">{{ currentChangeIndexLabel }}</span>
@@ -25,8 +38,12 @@ const props = defineProps({
   tabs: { type: Array, default: () => [] },
   activeTab: { type: Object, default: null },
   modifiedFileEntries: { type: Array, default: () => [] },
-  isActive: { type: Boolean, default: true }
+  isActive: { type: Boolean, default: true },
+  isDirty: { type: Boolean, default: false },
+  isSaving: { type: Boolean, default: false },
+  revealTarget: { type: Object, default: null }
 })
+const emit = defineEmits(['change-content', 'save-request'])
 
 const editorContainerRef = ref(null)
 const changeNavigationLines = ref([])
@@ -37,6 +54,7 @@ let layoutObserver = null
 let gitDiffDecorationIds = []
 let currentModelPath = ''
 let releaseEditorTimer = null
+let suppressContentChangeEvent = false
 const themeStore = useThemeStore()
 const workspaceSession = computed(() => getWorkspaceEditorSession(props.projectPath))
 
@@ -412,6 +430,30 @@ const currentChangeIndexLabel = computed(() => {
   return `${index + 1}/${lines.length}`
 })
 
+function emitSaveRequest () {
+  if (!props.activeTab?.path) return
+  emit('save-request', props.activeTab.path)
+}
+
+function revealSearchTarget () {
+  const target = props.revealTarget
+  if (!editor || !target?.path || normalizePath(target.path) !== normalizePath(props.activeTab?.path)) return
+  const model = editor.getModel()
+  if (!model) return
+
+  const lineNumber = Math.max(1, Math.min(Number(target.lineNumber) || 1, model.getLineCount()))
+  const maxColumn = model.getLineMaxColumn(lineNumber)
+  const startColumn = Math.max(1, Math.min(Number(target.column) || 1, maxColumn))
+  const length = Math.max(Number(target.length) || 1, 1)
+  const endColumn = Math.max(startColumn + length, startColumn + 1)
+  const safeEndColumn = Math.min(endColumn, Math.max(maxColumn, startColumn + 1))
+  const range = new monaco.Range(lineNumber, startColumn, lineNumber, safeEndColumn)
+
+  editor.setSelection(range)
+  editor.revealRangeInCenter(range)
+  editor.focus()
+}
+
 function disposeStaleModels () {
   const pathToModel = getSessionModels()
   const pathToViewState = getSessionViewStates()
@@ -448,7 +490,9 @@ async function syncEditorContent () {
   if (model) {
     if (typeof tab.content === 'string' && model.getValue() !== tab.content) {
       const existingViewState = currentModelPath === tab.path ? editor.saveViewState() : pathToViewState.get(tab.path) || null
+      suppressContentChangeEvent = true
       model.setValue(tab.content)
+      suppressContentChangeEvent = false
       pathToViewState.set(tab.path, existingViewState)
     }
     monaco.editor.setModelLanguage(model, lang)
@@ -462,6 +506,7 @@ async function syncEditorContent () {
   restoreViewState(tab.path)
   editor.layout()
   await loadFileDiffMetadata(tab.path, model)
+  revealSearchTarget()
 }
 
 function clearReleaseEditorTimer () {
@@ -497,7 +542,7 @@ async function createEditorInstance () {
 
   applyWorkspaceEditorTheme()
   editor = monaco.editor.create(editorContainerRef.value, {
-    readOnly: true,
+    readOnly: false,
     theme: 'workspace-dark',
     automaticLayout: true,
     minimap: { enabled: true },
@@ -516,6 +561,20 @@ async function createEditorInstance () {
 
   editor.onDidChangeCursorPosition(() => {
     saveCurrentViewState()
+  })
+
+  editor.onDidChangeModelContent(() => {
+    if (suppressContentChangeEvent) return
+    const model = editor?.getModel()
+    if (!model || !props.activeTab?.path) return
+    emit('change-content', {
+      path: props.activeTab.path,
+      content: model.getValue()
+    })
+  })
+
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+    emitSaveRequest()
   })
 
   layoutObserver = new ResizeObserver(() => {
@@ -550,7 +609,7 @@ watch(
 )
 
 watch(
-  () => [props.activeTab?.path || '', props.activeTab?.content || '', props.isActive],
+  () => [props.activeTab?.path || '', props.activeTab?.savedContent || '', props.isActive],
   async () => {
     if (!editor && props.isActive) {
       await createEditorInstance()
@@ -572,6 +631,18 @@ watch(
     await loadFileDiffMetadata(props.activeTab.path, model)
   },
   { deep: true }
+)
+
+watch(
+  () => props.revealTarget?.token,
+  async () => {
+    if (!props.revealTarget?.token) return
+    if (!editor && props.isActive) {
+      await createEditorInstance()
+    }
+    await nextTick()
+    revealSearchTarget()
+  }
 )
 
 watch(
@@ -606,10 +677,54 @@ watch(
   background: var(--theme-sem-bg-project);
 }
 
+.editor-save-bar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 9;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 90%, black 10%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.editor-save-bar__status {
+  color: var(--theme-sem-text-muted);
+  font-size: 12px;
+}
+
+.editor-save-bar__status.dirty {
+  color: #ffb857;
+}
+
+.editor-save-bar__btn {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--theme-sem-hover) 82%, transparent);
+  color: var(--theme-sem-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.editor-save-bar__btn:hover:not(:disabled) {
+  background: var(--theme-sem-hover);
+}
+
+.editor-save-bar__btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .editor-change-nav {
   position: absolute;
   top: 10px;
-  right: 112px;
+  right: 124px;
   z-index: 8;
   display: inline-flex;
   align-items: center;

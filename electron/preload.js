@@ -266,6 +266,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 读取文件
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
+  searchProjectFiles: (data) => ipcRenderer.invoke('search-project-files', data),
   createFile: (data) => ipcRenderer.invoke('create-file', data),
   createDirectory: (data) => ipcRenderer.invoke('create-directory', data),
   renameFilesystemItem: (data) => ipcRenderer.invoke('rename-filesystem-item', data),

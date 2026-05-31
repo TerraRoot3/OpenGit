@@ -15,6 +15,14 @@
               <span class="tree-toolbar__title">项目文件</span>
               <div class="tree-toolbar__actions">
                 <button
+                  type="button"
+                  class="tree-toolbar__action tree-toolbar__action--search"
+                  title="全文搜索"
+                  @click="openContentSearch"
+                >
+                  <Search :size="14" />
+                </button>
+                <button
                   v-if="!isModifiedFilterMode"
                   type="button"
                   class="tree-toolbar__action"
@@ -127,77 +135,82 @@
                 </div>
               </template>
               <div v-else class="workspace-modified-empty">
-                {{ fileSearchQuery.trim() ? '没有匹配的修改文件' : '暂无修改文件' }}
+                {{ modifiedEmptyText }}
               </div>
             </div>
             <div v-else class="workspace-tree-list">
-              <template v-for="item in visibleTreeNodes" :key="item.key">
-                <div
-                  v-if="item.kind === 'draft'"
-                  class="workspace-tree-row workspace-tree-row--draft"
-                  :class="{ selected: true }"
-                  @dragover="handleWorkspaceTreeDragOver"
-                  @drop.stop.prevent="suppressWorkspaceTreeDraftDrop"
-                >
-                  <span class="workspace-tree-row__indent" :style="{ width: `${item.depth * 16}px` }"></span>
-                  <span class="workspace-tree-row__toggle placeholder"></span>
-                  <component :is="item.type === 'directory' ? FolderPlus : FilePlus2" :size="15" class="workspace-tree-row__icon" />
-                  <input
-                    v-model="draftName"
-                    class="workspace-tree-row__input"
-                    :placeholder="item.type === 'directory' ? '输入文件夹名称' : '输入文件名称'"
-                    @keydown.enter.prevent="commitCreateDraft"
-                    @keydown.esc.prevent="cancelCreateDraft"
-                    @blur="handleDraftBlur"
-                  />
-                </div>
-                <button
-                  v-else
-                  type="button"
-                  class="workspace-tree-row"
-                  :class="[
-                    getNodeStatusClass(item.node),
-                    {
-                      selected: selectedKeys.includes(item.node.key),
-                      'workspace-tree-row--drop-target': treeDragHoverKey === item.node.key
-                    }
-                  ]"
-                  :draggable="!isRenamingNode(item.node)"
-                  @click="handleTreeRowClick(item.node, $event)"
-                  @dblclick="handleTreeRowDoubleClick(item.node)"
-                  @contextmenu.prevent="openTreeContextMenu($event, item.node)"
-                  @dragstart="handleTreeRowDragStart($event, item.node)"
-                  @dragend="handleTreeRowDragEnd"
-                  @dragover.stop="handleWorkspaceTreeRowDragOver($event, item.node)"
-                  @dragleave="handleWorkspaceTreeRowDragLeave($event, item.node)"
-                  @drop.stop.prevent="handleWorkspaceTreeRowDrop($event, item.node)"
-                >
-                  <span class="workspace-tree-row__indent" :style="{ width: `${item.depth * 16}px` }"></span>
-                  <span
-                    class="workspace-tree-row__toggle"
-                    :class="{ placeholder: !item.node.isDirectory }"
-                    @click.stop="item.node.isDirectory ? toggleDirectory(item.node) : null"
+              <div v-if="!visibleTreeNodes.length" class="workspace-tree-empty">
+                {{ treeEmptyText }}
+              </div>
+              <template v-else>
+                <template v-for="item in visibleTreeNodes" :key="item.key">
+                  <div
+                    v-if="item.kind === 'draft'"
+                    class="workspace-tree-row workspace-tree-row--draft"
+                    :class="{ selected: true }"
+                    @dragover="handleWorkspaceTreeDragOver"
+                    @drop.stop.prevent="suppressWorkspaceTreeDraftDrop"
                   >
-                    <component
-                      :is="isExpanded(item.node.key) ? ChevronDown : ChevronRight"
-                      v-if="item.node.isDirectory"
-                      :size="14"
+                    <span class="workspace-tree-row__indent" :style="{ width: `${item.depth * 16}px` }"></span>
+                    <span class="workspace-tree-row__toggle placeholder"></span>
+                    <component :is="item.type === 'directory' ? FolderPlus : FilePlus2" :size="15" class="workspace-tree-row__icon" />
+                    <input
+                      v-model="draftName"
+                      class="workspace-tree-row__input"
+                      :placeholder="item.type === 'directory' ? '输入文件夹名称' : '输入文件名称'"
+                      @keydown.enter.prevent="commitCreateDraft"
+                      @keydown.esc.prevent="cancelCreateDraft"
+                      @blur="handleDraftBlur"
                     />
-                  </span>
-                  <component :is="getNodeIconComponent(item.node)" :size="15" class="workspace-tree-row__icon" :class="getNodeIconClass(item.node)" />
-                  <input
-                    v-if="isRenamingNode(item.node)"
-                    v-model="renameName"
-                    class="workspace-tree-row__input workspace-tree-row__rename-input"
-                    @keydown.enter.prevent="commitRenameDraft"
-                    @keydown.esc.prevent="cancelRenameDraft"
-                    @blur="handleRenameBlur"
-                  />
-                  <span v-else class="workspace-tree-row__name" :title="item.node.label">{{ item.node.label }}</span>
-                  <span v-if="!isRenamingNode(item.node) && getNodeStatus(item.node)" class="workspace-tree-row__status" :title="`Git 状态 ${getNodeStatusLabel(item.node)}`">
-                    {{ getNodeStatusLabel(item.node) }}
-                  </span>
-                </button>
+                  </div>
+                  <button
+                    v-else
+                    type="button"
+                    class="workspace-tree-row"
+                    :class="[
+                      getNodeStatusClass(item.node),
+                      {
+                        selected: selectedKeys.includes(item.node.key),
+                        'workspace-tree-row--drop-target': treeDragHoverKey === item.node.key
+                      }
+                    ]"
+                    :draggable="!isRenamingNode(item.node)"
+                    @click="handleTreeRowClick(item.node, $event)"
+                    @dblclick="handleTreeRowDoubleClick(item.node)"
+                    @contextmenu.prevent="openTreeContextMenu($event, item.node)"
+                    @dragstart="handleTreeRowDragStart($event, item.node)"
+                    @dragend="handleTreeRowDragEnd"
+                    @dragover.stop="handleWorkspaceTreeRowDragOver($event, item.node)"
+                    @dragleave="handleWorkspaceTreeRowDragLeave($event, item.node)"
+                    @drop.stop.prevent="handleWorkspaceTreeRowDrop($event, item.node)"
+                  >
+                    <span class="workspace-tree-row__indent" :style="{ width: `${item.depth * 16}px` }"></span>
+                    <span
+                      class="workspace-tree-row__toggle"
+                      :class="{ placeholder: !item.node.isDirectory }"
+                      @click.stop="item.node.isDirectory ? toggleDirectory(item.node) : null"
+                    >
+                      <component
+                        :is="isExpanded(item.node.key) ? ChevronDown : ChevronRight"
+                        v-if="item.node.isDirectory"
+                        :size="14"
+                      />
+                    </span>
+                    <component :is="getNodeIconComponent(item.node)" :size="15" class="workspace-tree-row__icon" :class="getNodeIconClass(item.node)" />
+                    <input
+                      v-if="isRenamingNode(item.node)"
+                      v-model="renameName"
+                      class="workspace-tree-row__input workspace-tree-row__rename-input"
+                      @keydown.enter.prevent="commitRenameDraft"
+                      @keydown.esc.prevent="cancelRenameDraft"
+                      @blur="handleRenameBlur"
+                    />
+                    <span v-else class="workspace-tree-row__name" :title="item.node.label">{{ item.node.label }}</span>
+                    <span v-if="!isRenamingNode(item.node) && getNodeStatus(item.node)" class="workspace-tree-row__status" :title="`Git 状态 ${getNodeStatusLabel(item.node)}`">
+                      {{ getNodeStatusLabel(item.node) }}
+                    </span>
+                  </button>
+                </template>
               </template>
             </div>
           </div>
@@ -280,6 +293,7 @@
               @contextmenu.prevent="openTabContextMenu($event, tab)"
             >
               <span class="tab-title" :title="tab.path">{{ tab.title }}</span>
+              <span v-if="tab.kind === 'text' && tab.isDirty" class="tab-dirty-dot" title="未保存">•</span>
               <span class="tab-close" @click.stop="closeTab(tab.id)">×</span>
             </button>
           </div>
@@ -304,6 +318,11 @@
               :active-tab="activeTab"
               :modified-file-entries="modifiedFileEntries"
               :is-active="isActive"
+              :is-dirty="Boolean(activeTab?.isDirty)"
+              :is-saving="Boolean(activeTab?.isSaving)"
+              :reveal-target="activeTextRevealTarget"
+              @change-content="handleTextTabContentChange"
+              @save-request="saveTextTab"
             />
             <div v-if="!tabs.length" class="preview-empty">在左侧选择文件预览</div>
             <template v-else-if="activeTab">
@@ -324,6 +343,99 @@
             </template>
           </div>
       </main>
+    </div>
+    <div
+      v-if="contentSearchVisible"
+      class="workspace-search-overlay"
+      @click.self="closeContentSearch"
+      @keydown.esc.prevent="closeContentSearch"
+    >
+      <div class="workspace-search-panel">
+        <div class="workspace-search-panel__header">
+          <div class="workspace-search-panel__title-wrap">
+            <span class="workspace-search-panel__title">全文搜索</span>
+            <span class="workspace-search-panel__meta">
+              {{ contentSearchLoading ? '搜索中...' : `结果 ${contentSearchResults.length}` }}
+            </span>
+          </div>
+          <button
+            type="button"
+            class="workspace-search-panel__close"
+            title="关闭"
+            @click="closeContentSearch"
+          >
+            <X :size="16" />
+          </button>
+        </div>
+        <div class="workspace-search-panel__input-wrap" :class="{ 'workspace-search-panel__input-wrap--invalid': Boolean(contentSearchPatternError) }">
+          <Search :size="16" class="workspace-search-panel__input-icon" />
+          <input
+            ref="contentSearchInputRef"
+            v-model="contentSearchQuery"
+            type="text"
+            class="workspace-search-panel__input"
+            placeholder="搜索文本内容，支持 /regex/i"
+          />
+        </div>
+        <div v-if="contentSearchPatternError" class="workspace-search-panel__hint workspace-search-panel__hint--error">
+          {{ contentSearchPatternError }}
+        </div>
+        <div v-else class="workspace-search-panel__hint">
+          支持项目级文本匹配，点击结果后直接打开文件。
+        </div>
+        <div class="workspace-search-panel__results">
+          <div v-if="!contentSearchQuery.trim()" class="workspace-search-panel__empty">
+            输入关键字开始全文搜索
+          </div>
+          <div v-else-if="contentSearchLoading" class="workspace-search-panel__empty">
+            正在搜索...
+          </div>
+          <div v-else-if="!contentSearchResults.length" class="workspace-search-panel__empty">
+            没有匹配结果
+          </div>
+          <template v-else>
+            <button
+              v-for="entry in contentSearchResults"
+              :key="entry.path"
+              type="button"
+              class="workspace-search-result"
+              @click="openContentSearchResult(entry)"
+            >
+              <div class="workspace-search-result__main">
+                <span class="workspace-search-result__name">
+                  <template v-for="(part, index) in buildHighlightParts(basename(entry.relativePath), contentSearchState.raw)" :key="`name:${entry.path}:${index}`">
+                    <span v-if="!part.match">{{ part.text }}</span>
+                    <mark v-else class="workspace-search-result__mark workspace-search-result__mark--name">{{ part.text }}</mark>
+                  </template>
+                </span>
+                <span class="workspace-search-result__path">
+                  <template v-for="(part, index) in buildHighlightParts(entry.relativePath, contentSearchState.raw)" :key="`path:${entry.path}:${index}`">
+                    <span v-if="!part.match">{{ part.text }}</span>
+                    <mark v-else class="workspace-search-result__mark workspace-search-result__mark--path">{{ part.text }}</mark>
+                  </template>
+                </span>
+                <div v-if="entry.contentMatch?.previewText" class="workspace-search-result__snippet">
+                  <span class="workspace-search-result__line">{{ entry.contentMatch.lineNumber }}</span>
+                  <span class="workspace-search-result__snippet-text">
+                    <template v-for="(part, index) in buildHighlightParts(entry.contentMatch.previewText, contentSearchState.raw)" :key="`snippet:${entry.path}:${index}`">
+                      <span v-if="!part.match">{{ part.text }}</span>
+                      <mark v-else class="workspace-search-result__mark workspace-search-result__mark--content">{{ part.text }}</mark>
+                    </template>
+                  </span>
+                </div>
+              </div>
+              <div class="workspace-search-result__badges">
+                <span v-if="entry.matchType === 'name' || entry.matchType === 'name+content'" class="workspace-search-result__badge workspace-search-result__badge--name">
+                  文件名
+                </span>
+                <span v-if="entry.matchType === 'content' || entry.matchType === 'name+content'" class="workspace-search-result__badge workspace-search-result__badge--content">
+                  内容
+                </span>
+              </div>
+            </button>
+          </template>
+        </div>
+      </div>
     </div>
     <OperationDialog
       :show="showOperationDialog"
@@ -352,7 +464,9 @@ import {
   FolderOpen,
   FolderPlus,
   FilePlus2,
-  RefreshCw
+  RefreshCw,
+  Search,
+  X
 } from 'lucide-vue-next'
 import OperationDialog from '../dialog/OperationDialog.vue'
 import { useConfirm } from '../../composables/useConfirm'
@@ -374,6 +488,7 @@ const selectedKeys = ref([])
 const treePaneRef = ref(null)
 const tabBarRef = ref(null)
 const commitMessageRef = ref(null)
+const contentSearchInputRef = ref(null)
 const contextMenuRef = ref(null)
 const tabContextMenuRef = ref(null)
 const filterMenuRef = ref(null)
@@ -391,6 +506,11 @@ let treeDragPreviewEl = null
 const treeFilterMode = ref('modified')
 const fileSearchQuery = ref('')
 const searchPatternError = ref('')
+const contentSearchVisible = ref(false)
+const contentSearchQuery = ref('')
+const contentSearchPatternError = ref('')
+const contentSearchResults = ref([])
+const contentSearchLoading = ref(false)
 const commitMessage = ref('')
 const gitActionLoading = ref(false)
 const showOperationDialog = ref(false)
@@ -415,6 +535,7 @@ const { confirm } = useConfirm()
 const tabs = ref([])
 const activeTabId = ref(null)
 const imageDataUrl = ref('')
+const activeTextRevealTarget = ref(null)
 
 const WORKSPACE_HEADER_HEIGHT = '37px'
 const STATUS_PRIORITY = ['U', 'D', 'R', 'C', 'T', 'A', 'M', '?']
@@ -428,6 +549,8 @@ const platform = window.electronAPI?.platform || 'darwin'
 const isRestoringWorkspaceState = ref(false)
 const isWorkspaceStatePersistenceSuspended = ref(false)
 const lastAppliedGitSignature = ref('')
+let contentSearchRequestToken = 0
+let contentSearchDebounceTimer = null
 
 const systemFileManagerLabel = computed(() => {
   if (platform === 'win32') return '资源管理器'
@@ -778,10 +901,20 @@ async function refreshOpenTabsContent() {
     }
 
     if (tab.kind === 'text') {
+      if (tab.isDirty) {
+        nextTabs.push(tab)
+        continue
+      }
       try {
         const content = await window.electronAPI.readFile(tab.path)
-        if (tab.content !== content) {
-          nextTabs.push({ ...tab, content })
+        if (tab.content !== content || tab.savedContent !== content) {
+          nextTabs.push({
+            ...tab,
+            content,
+            savedContent: content,
+            isDirty: false,
+            isSaving: false
+          })
           tabChanged = true
         } else {
           nextTabs.push(tab)
@@ -876,7 +1009,7 @@ const visibleTreeNodes = computed(() => {
   const output = []
   const expandedSet = new Set(expandedKeys.value)
   const nodes = filteredTreeRoots.value
-  const shouldExpandAll = Boolean(fileSearchQuery.value.trim())
+  const shouldExpandAll = Boolean(searchState.value.query)
 
   const appendNodes = (nodes, depth) => {
     for (const node of nodes) {
@@ -956,19 +1089,26 @@ const modifiedTreeData = computed(() => {
   return [root]
 })
 
-const searchState = computed(() => {
-  const raw = fileSearchQuery.value.trim()
-  if (!raw) return { matcher: null, error: '' }
+function createSearchMatcher(rawValue) {
+  const raw = String(rawValue || '').trim()
+  if (!raw) return { raw: '', query: '', matcher: null, error: '' }
   const regexMatch = raw.match(/^\/(.+)\/([dgimsuvy]*)$/)
   if (regexMatch) {
     try {
       const regex = new RegExp(regexMatch[1], regexMatch[2])
       return {
-        matcher: (value) => regex.test(value),
+        raw,
+        query: raw,
+        matcher: (value) => {
+          regex.lastIndex = 0
+          return regex.test(String(value || ''))
+        },
         error: ''
       }
     } catch (error) {
       return {
+        raw,
+        query: '',
         matcher: () => false,
         error: '正则无效'
       }
@@ -976,10 +1116,14 @@ const searchState = computed(() => {
   }
   const needle = raw.toLowerCase()
   return {
+    raw,
+    query: raw,
     matcher: (value) => String(value || '').toLowerCase().includes(needle),
     error: ''
   }
-})
+}
+
+const searchState = computed(() => createSearchMatcher(fileSearchQuery.value))
 
 watch(
   searchState,
@@ -1014,12 +1158,40 @@ const filteredTreeRoots = computed(() => {
 
 const filteredModifiedEntries = computed(() => {
   const matcher = searchState.value.matcher
-  return modifiedFileEntries.value
-    .filter((entry) => {
-      if (!matcher) return true
-      return matcher(basename(entry.relativePath)) || matcher(entry.relativePath)
-    })
+  return modifiedFileEntries.value.filter((entry) => {
+    if (!matcher) return true
+    return matcher(basename(entry.relativePath)) || matcher(entry.relativePath)
+  })
 })
+
+const modifiedEmptyText = computed(() => {
+  if (searchPatternError.value) return searchPatternError.value
+  return fileSearchQuery.value.trim() ? '没有匹配的修改文件' : '暂无修改文件'
+})
+
+const treeEmptyText = computed(() => {
+  if (searchPatternError.value) return searchPatternError.value
+  return fileSearchQuery.value.trim() ? '没有匹配的文件' : '暂无文件'
+})
+
+const contentSearchState = computed(() => createSearchMatcher(contentSearchQuery.value))
+
+watch(
+  contentSearchState,
+  (state) => {
+    contentSearchPatternError.value = state.error
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [props.projectPath, contentSearchState.value.query, contentSearchState.value.error],
+  () => {
+    if (!contentSearchVisible.value && !contentSearchState.value.query) return
+    void triggerContentSearch()
+  },
+  { immediate: true }
+)
 
 const actionableModifiedPaths = computed(() => (
   selectedModifiedPaths.value.filter((path) => filteredModifiedEntries.value.some((entry) => entry.path === path))
@@ -1179,6 +1351,156 @@ function selectFilterMode(mode) {
   treeFilterMode.value = mode
   closeFilterMenu()
   saveWorkspaceState()
+}
+
+function clearContentSearchDebounceTimer() {
+  if (contentSearchDebounceTimer == null || typeof window === 'undefined') return
+  window.clearTimeout(contentSearchDebounceTimer)
+  contentSearchDebounceTimer = null
+}
+
+async function runContentSearch(query, requestId) {
+  if (!props.projectPath || !query || !window.electronAPI?.searchProjectFiles) {
+    if (requestId === contentSearchRequestToken) {
+      contentSearchResults.value = []
+      contentSearchLoading.value = false
+    }
+    return
+  }
+
+  try {
+    const result = await window.electronAPI.searchProjectFiles({
+      repoPath: props.projectPath,
+      query
+    })
+    if (requestId !== contentSearchRequestToken) return
+    contentSearchResults.value = result?.success && Array.isArray(result.matches)
+      ? result.matches.filter((entry) => !entry.isDirectory)
+      : []
+  } catch (error) {
+    if (requestId !== contentSearchRequestToken) return
+    console.warn('全文搜索失败:', error)
+    contentSearchResults.value = []
+  } finally {
+    if (requestId === contentSearchRequestToken) {
+      contentSearchLoading.value = false
+    }
+  }
+}
+
+async function triggerContentSearch({ immediate = false } = {}) {
+  clearContentSearchDebounceTimer()
+  const query = contentSearchState.value.query
+  if (!query || contentSearchState.value.error) {
+    contentSearchRequestToken += 1
+    contentSearchResults.value = []
+    contentSearchLoading.value = false
+    return
+  }
+
+  const requestId = ++contentSearchRequestToken
+  contentSearchLoading.value = true
+  if (immediate || typeof window === 'undefined') {
+    await runContentSearch(query, requestId)
+    return
+  }
+
+  contentSearchDebounceTimer = window.setTimeout(() => {
+    contentSearchDebounceTimer = null
+    void runContentSearch(query, requestId)
+  }, 180)
+}
+
+async function openContentSearch() {
+  contentSearchVisible.value = true
+  await nextTick()
+  contentSearchInputRef.value?.focus?.()
+  contentSearchInputRef.value?.select?.()
+  if (contentSearchState.value.query) {
+    await triggerContentSearch({ immediate: true })
+  }
+}
+
+function closeContentSearch() {
+  contentSearchVisible.value = false
+}
+
+function buildHighlightParts(text, rawQuery) {
+  const source = String(text || '')
+  const raw = String(rawQuery || '').trim()
+  if (!source) return [{ text: '', match: false }]
+  if (!raw) return [{ text: source, match: false }]
+
+  const regexMatch = raw.match(/^\/(.+)\/([dgimsuvy]*)$/)
+  if (regexMatch) {
+    try {
+      const flags = regexMatch[2].includes('g') ? regexMatch[2] : `${regexMatch[2]}g`
+      const regex = new RegExp(regexMatch[1], flags)
+      const parts = []
+      let lastIndex = 0
+      let match = regex.exec(source)
+      while (match) {
+        const matchedText = String(match[0] || '')
+        const matchIndex = match.index
+        if (matchIndex > lastIndex) {
+          parts.push({ text: source.slice(lastIndex, matchIndex), match: false })
+        }
+        if (matchedText) {
+          parts.push({ text: matchedText, match: true })
+          lastIndex = matchIndex + matchedText.length
+        } else {
+          lastIndex = matchIndex + 1
+        }
+        if (regex.lastIndex <= matchIndex) {
+          regex.lastIndex = matchIndex + 1
+        }
+        match = regex.exec(source)
+      }
+      if (lastIndex < source.length) {
+        parts.push({ text: source.slice(lastIndex), match: false })
+      }
+      return parts.length ? parts : [{ text: source, match: false }]
+    } catch {
+      return [{ text: source, match: false }]
+    }
+  }
+
+  const needle = raw.toLowerCase()
+  const haystack = source.toLowerCase()
+  const parts = []
+  let cursor = 0
+  while (cursor < source.length) {
+    const matchIndex = haystack.indexOf(needle, cursor)
+    if (matchIndex === -1) {
+      parts.push({ text: source.slice(cursor), match: false })
+      break
+    }
+    if (matchIndex > cursor) {
+      parts.push({ text: source.slice(cursor, matchIndex), match: false })
+    }
+    parts.push({ text: source.slice(matchIndex, matchIndex + raw.length), match: true })
+    cursor = matchIndex + raw.length
+  }
+  return parts.length ? parts : [{ text: source, match: false }]
+}
+
+async function openContentSearchResult(entry) {
+  if (!entry?.path) return
+  await ensurePathChainReady(entry.path, { expandTarget: false, expandAncestors: true })
+  selectedKeys.value = [entry.path]
+  await openFile(entry.path)
+  if (entry.contentMatch?.lineNumber && entry.contentMatch?.column) {
+    activeTextRevealTarget.value = {
+      token: `search-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      path: entry.path,
+      lineNumber: entry.contentMatch.lineNumber,
+      column: entry.contentMatch.column,
+      length: entry.contentMatch.length || 1
+    }
+  } else {
+    activeTextRevealTarget.value = null
+  }
+  closeContentSearch()
 }
 
 async function focusDraftInput() {
@@ -1386,6 +1708,9 @@ async function refreshTree() {
   await preloadExpandedDirectories(previousExpandedKeys.filter(key => key !== props.projectPath))
   if (previousSelectedKey) {
     selectedKeys.value = [previousSelectedKey]
+  }
+  if (contentSearchState.value.query) {
+    await triggerContentSearch({ immediate: true })
   }
   saveWorkspaceState()
 }
@@ -1888,6 +2213,13 @@ async function openFile (filePath) {
     return
   }
 
+  const existing = tabs.value.find((t) => t.path === filePath)
+  if (existing?.kind === 'text' && existing.isDirty) {
+    activeTabId.value = existing.id
+    saveWorkspaceState()
+    return
+  }
+
   let content
   try {
     content = await window.electronAPI.readFile(filePath)
@@ -1906,7 +2238,6 @@ async function openFile (filePath) {
     return
   }
 
-  const existing = tabs.value.find((t) => t.path === filePath)
   const id = existing ? existing.id : `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   if (!existing) {
     tabs.value = [
@@ -1916,13 +2247,22 @@ async function openFile (filePath) {
         path: filePath,
         title: basename(filePath),
         kind: 'text',
-        content
+        content,
+        savedContent: content,
+        isDirty: false,
+        isSaving: false
       }
     ]
   } else {
     tabs.value = tabs.value.map((tab) => (
       tab.id === existing.id
-        ? { ...tab, content }
+        ? {
+            ...tab,
+            content,
+            savedContent: content,
+            isDirty: false,
+            isSaving: false
+          }
         : tab
     ))
   }
@@ -2239,7 +2579,93 @@ function activateTab (id) {
   saveWorkspaceState()
 }
 
-function closeTab (id) {
+function updateTextTab(path, updater) {
+  const normalizedPath = normalizePath(path)
+  let changed = false
+  const nextTabs = tabs.value.map((tab) => {
+    if (tab.kind !== 'text' || normalizePath(tab.path) !== normalizedPath) {
+      return tab
+    }
+    const nextTab = updater(tab)
+    changed = changed || nextTab !== tab
+    return nextTab
+  })
+  if (changed) {
+    tabs.value = nextTabs
+  }
+}
+
+function handleTextTabContentChange({ path, content }) {
+  updateTextTab(path, (tab) => {
+    const nextContent = typeof content === 'string' ? content : ''
+    const savedContent = typeof tab.savedContent === 'string' ? tab.savedContent : ''
+    if (tab.content === nextContent && tab.isDirty === (nextContent !== savedContent)) {
+      return tab
+    }
+    return {
+      ...tab,
+      content: nextContent,
+      isDirty: nextContent !== savedContent
+    }
+  })
+}
+
+async function saveTextTab(targetPath = activeTab.value?.path) {
+  const normalizedTargetPath = normalizePath(targetPath)
+  const tab = tabs.value.find((item) => item.kind === 'text' && normalizePath(item.path) === normalizedTargetPath)
+  if (!tab || !tab.isDirty || tab.isSaving || !window.electronAPI?.saveFile) return
+
+  updateTextTab(tab.path, (currentTab) => ({ ...currentTab, isSaving: true }))
+  const result = await window.electronAPI.saveFile({
+    filePath: tab.path,
+    content: tab.content || ''
+  })
+
+  if (!result?.success) {
+    updateTextTab(tab.path, (currentTab) => ({ ...currentTab, isSaving: false }))
+    console.warn('保存文件失败:', result?.error)
+    return
+  }
+
+  updateTextTab(tab.path, (currentTab) => ({
+    ...currentTab,
+    savedContent: currentTab.content || '',
+    isDirty: false,
+    isSaving: false
+  }))
+  await refreshGitStatuses()
+  if (contentSearchState.value.query) {
+    await triggerContentSearch({ immediate: true })
+  }
+  emit('status-changed', { type: 'edit-save', path: tab.path })
+}
+
+async function confirmDiscardDirtyTabs(ids) {
+  const uniqueIds = Array.from(new Set(ids))
+  const dirtyTabs = tabs.value.filter((tab) => (
+    uniqueIds.includes(tab.id) &&
+    tab.kind === 'text' &&
+    tab.isDirty
+  ))
+  if (!dirtyTabs.length) return true
+
+  const detail = dirtyTabs
+    .slice(0, 6)
+    .map((tab) => tab.title)
+    .join('\n')
+
+  return confirm({
+    title: '关闭未保存标签',
+    message: `有 ${dirtyTabs.length} 个标签尚未保存，确认关闭并丢弃修改？`,
+    detail,
+    type: 'warning',
+    confirmText: '关闭并丢弃'
+  })
+}
+
+async function closeTab (id) {
+  const canClose = await confirmDiscardDirtyTabs([id])
+  if (!canClose) return
   tabs.value = tabs.value.filter((t) => t.id !== id)
   if (activeTabId.value === id) {
     activeTabId.value = tabs.value.length ? tabs.value[tabs.value.length - 1].id : null
@@ -2247,39 +2673,44 @@ function closeTab (id) {
   saveWorkspaceState()
 }
 
-function closeTabsByIds(ids) {
+async function closeTabsByIds(ids) {
   const uniqueIds = Array.from(new Set(ids))
-  for (const id of uniqueIds) {
-    closeTab(id)
+  const canClose = await confirmDiscardDirtyTabs(uniqueIds)
+  if (!canClose) return
+  const idSet = new Set(uniqueIds)
+  tabs.value = tabs.value.filter((tab) => !idSet.has(tab.id))
+  if (activeTabId.value && !tabs.value.some((tab) => tab.id === activeTabId.value)) {
+    activeTabId.value = tabs.value.length ? tabs.value[tabs.value.length - 1].id : null
   }
+  saveWorkspaceState()
 }
 
-function closeTabsToLeft() {
+async function closeTabsToLeft() {
   const targetId = tabContextMenu.value.tabId
   const targetIndex = tabs.value.findIndex((tab) => tab.id === targetId)
   closeTabContextMenu()
   if (targetIndex <= 0) return
-  closeTabsByIds(tabs.value.slice(0, targetIndex).map((tab) => tab.id))
+  await closeTabsByIds(tabs.value.slice(0, targetIndex).map((tab) => tab.id))
 }
 
-function closeTabsToRight() {
+async function closeTabsToRight() {
   const targetId = tabContextMenu.value.tabId
   const targetIndex = tabs.value.findIndex((tab) => tab.id === targetId)
   closeTabContextMenu()
   if (targetIndex === -1 || targetIndex >= tabs.value.length - 1) return
-  closeTabsByIds(tabs.value.slice(targetIndex + 1).map((tab) => tab.id))
+  await closeTabsByIds(tabs.value.slice(targetIndex + 1).map((tab) => tab.id))
 }
 
-function closeOtherTabs() {
+async function closeOtherTabs() {
   const targetId = tabContextMenu.value.tabId
   closeTabContextMenu()
   if (!targetId) return
-  closeTabsByIds(tabs.value.filter((tab) => tab.id !== targetId).map((tab) => tab.id))
+  await closeTabsByIds(tabs.value.filter((tab) => tab.id !== targetId).map((tab) => tab.id))
 }
 
-function closeAllTabs() {
+async function closeAllTabs() {
   closeTabContextMenu()
-  closeTabsByIds(tabs.value.map((tab) => tab.id))
+  await closeTabsByIds(tabs.value.map((tab) => tab.id))
 }
 
 function onSplitterPointerDown (e) {
@@ -2605,6 +3036,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   saveWorkspaceState()
   document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
+  clearContentSearchDebounceTimer()
   clearWorkspaceEditorSession(props.projectPath)
 })
 
@@ -2746,6 +3178,7 @@ watch(
 
 <style scoped>
 .project-workspace {
+  position: relative;
   flex: 1 1 0%;
   min-height: 0;
   min-width: 0;
@@ -2845,6 +3278,10 @@ watch(
 .tree-toolbar__action:hover {
   background: var(--theme-sem-hover);
   color: var(--theme-sem-text-primary);
+}
+
+.tree-toolbar__action--search {
+  margin-right: 2px;
 }
 
 .tree-filter-wrap {
@@ -2968,6 +3405,12 @@ watch(
   display: flex;
   flex-direction: column;
   min-width: max-content;
+}
+
+.workspace-tree-empty {
+  padding: 6px 12px;
+  color: var(--theme-sem-text-muted);
+  font-size: 12px;
 }
 
 .workspace-modified-list {
@@ -3495,6 +3938,13 @@ watch(
   font-weight: 500;
 }
 
+.tab-dirty-dot {
+  flex-shrink: 0;
+  color: #ffb857;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .tab-close {
   flex-shrink: 0;
   display: inline-flex;
@@ -3530,6 +3980,264 @@ watch(
   position: relative;
   overflow: hidden;
   background: var(--theme-sem-bg-project);
+}
+
+.workspace-search-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(7, 10, 16, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.workspace-search-panel {
+  width: min(980px, 100%);
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 94%, black 6%);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42);
+}
+
+.workspace-search-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-search-panel__title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.workspace-search-panel__title {
+  color: var(--theme-sem-text-primary);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.workspace-search-panel__meta {
+  color: var(--theme-sem-text-muted);
+  font-size: 12px;
+}
+
+.workspace-search-panel__close {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theme-sem-text-muted);
+  cursor: pointer;
+}
+
+.workspace-search-panel__close:hover {
+  background: var(--theme-sem-hover);
+  color: var(--theme-sem-text-primary);
+}
+
+.workspace-search-panel__input-wrap {
+  height: 46px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
+}
+
+.workspace-search-panel__input-wrap:focus-within {
+  border-color: var(--theme-sem-border-strong);
+}
+
+.workspace-search-panel__input-wrap--invalid {
+  border-color: rgba(255, 123, 123, 0.7);
+}
+
+.workspace-search-panel__input-icon {
+  color: var(--theme-sem-text-muted);
+}
+
+.workspace-search-panel__input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--theme-sem-text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.workspace-search-panel__input::placeholder {
+  color: var(--theme-sem-text-muted);
+}
+
+.workspace-search-panel__hint {
+  color: var(--theme-sem-text-muted);
+  font-size: 12px;
+}
+
+.workspace-search-panel__hint--error {
+  color: #ff8d8d;
+}
+
+.workspace-search-panel__results {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.workspace-search-panel__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  color: var(--theme-sem-text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.workspace-search-result {
+  width: 100%;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--theme-sem-hover) 34%, transparent);
+  color: var(--theme-sem-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-search-result:hover {
+  border-color: var(--theme-sem-border-strong);
+  background: color-mix(in srgb, var(--theme-sem-hover) 64%, transparent);
+}
+
+.workspace-search-result__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workspace-search-result__name {
+  min-width: 0;
+  color: var(--theme-sem-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-search-result__path {
+  min-width: 0;
+  color: var(--theme-sem-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-search-result__snippet {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.workspace-search-result__line {
+  flex-shrink: 0;
+  min-width: 28px;
+  color: var(--theme-sem-text-muted);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.workspace-search-result__snippet-text {
+  min-width: 0;
+  color: var(--theme-sem-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.workspace-search-result__mark {
+  padding: 0 2px;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.workspace-search-result__mark--name {
+  color: #ffd47d;
+  background: rgba(255, 196, 87, 0.18);
+}
+
+.workspace-search-result__mark--path {
+  color: #92c5ff;
+  background: rgba(108, 179, 255, 0.16);
+}
+
+.workspace-search-result__mark--content {
+  color: #9ff0b6;
+  background: rgba(74, 196, 110, 0.18);
+}
+
+.workspace-search-result__badges {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workspace-search-result__badge {
+  flex-shrink: 0;
+  padding: 0 8px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-sem-hover) 82%, transparent);
+  color: var(--theme-sem-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.workspace-search-result__badge--name {
+  color: #ffd47d;
+}
+
+.workspace-search-result__badge--content {
+  color: #98e9ae;
 }
 
 .preview-empty {
