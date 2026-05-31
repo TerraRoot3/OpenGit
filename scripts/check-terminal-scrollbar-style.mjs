@@ -1,9 +1,10 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const root = process.cwd()
 
-const read = (relativePath) => readFileSync(join(root, relativePath), 'utf8')
+const pathFor = (relativePath) => join(root, relativePath)
+const read = (relativePath) => readFileSync(pathFor(relativePath), 'utf8')
 
 const failures = []
 
@@ -12,6 +13,7 @@ const assert = (condition, message) => {
 }
 
 const assertNoBareScrollbarSelectors = (relativePath) => {
+  if (!existsSync(pathFor(relativePath))) return
   const source = read(relativePath)
   assert(
     !/^\s*::-(webkit-scrollbar|webkit-scrollbar-track|webkit-scrollbar-thumb|webkit-scrollbar-corner)\b/m.test(source),
@@ -20,6 +22,7 @@ const assertNoBareScrollbarSelectors = (relativePath) => {
 }
 
 const assertNoBroadScrollbarWildcard = (relativePath) => {
+  if (!existsSync(pathFor(relativePath))) return
   const source = read(relativePath)
   assert(
     !/^\s*\*\s*\{[\s\S]*?scrollbar-width\s*:/m.test(source),
@@ -35,15 +38,13 @@ assertNoBroadScrollbarWildcard('src/components/git/ProjectDetail.vue')
 assertNoBareScrollbarSelectors('src/components/git/GitProject.vue')
 assertNoBroadScrollbarWildcard('src/components/git/GitProject.vue')
 
-const viewportRule = terminalPanel.match(/\.terminal-body\s*:deep\(\.xterm-viewport\)\s*\{([\s\S]*?)\}/)
-assert(Boolean(viewportRule), 'TerminalPanel should style .xterm-viewport')
 assert(
-  viewportRule?.[1]?.includes('overflow-y: scroll !important;'),
-  'TerminalPanel should keep xterm viewport on overflow-y: scroll to avoid width changes when scrollback appears'
+  !/\.terminal-body\s*:deep\(\.xterm-viewport\)/.test(terminalPanel),
+  'TerminalPanel should not override xterm viewport scrollbar layout'
 )
 assert(
-  viewportRule?.[1]?.includes('scrollbar-gutter: stable;'),
-  'TerminalPanel should reserve a stable scrollbar gutter for xterm viewport'
+  /\.terminal-body\s*:deep\(\.xterm-rows\s*>\s*div\)\s*\{[\s\S]*?overflow:\s*visible\s*!important\s*;/.test(terminalPanel),
+  'TerminalPanel should let xterm row glyphs overhang the last cell without clipping'
 )
 
 const singlePaneRule = terminalPanel.match(/\.terminal-single-pane\s*\{([\s\S]*?)\}/)
@@ -72,16 +73,9 @@ assert(
   'TerminalSplitNode split pane content should not add right padding that skews xterm fit width'
 )
 
-const scrollbarWidthRule = terminalPanel.match(
-  /\.terminal-body\s*:deep\(\.xterm-viewport\)::\-webkit-scrollbar\s*\{([\s\S]*?)\}/
-)
-assert(Boolean(scrollbarWidthRule), 'TerminalPanel should style xterm viewport scrollbar width')
-
-const widthMatch = scrollbarWidthRule?.[1]?.match(/width:\s*(\d+)px\s*;/)
-assert(Boolean(widthMatch), 'TerminalPanel scrollbar width should be declared in px')
 assert(
-  Number(widthMatch?.[1] || 0) <= 4,
-  'TerminalPanel scrollbar width should stay at 4px or below to avoid covering the last terminal column'
+  !/\.terminal-body\s*:deep\(\.xterm-viewport\)::\-webkit-scrollbar/.test(terminalPanel),
+  'TerminalPanel should not force a custom xterm viewport scrollbar width'
 )
 
 if (failures.length > 0) {

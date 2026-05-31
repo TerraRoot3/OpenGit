@@ -344,6 +344,10 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   transition: border-color 0.22s ease, box-shadow 0.22s ease;
 }
 
+.terminal-pane:not(.inactive) {
+  overflow: visible;
+}
+
 .terminal-pane.liquid-style {
   border: none;
   border-radius: var(--theme-comp-radius-selected);
@@ -559,17 +563,11 @@ const forwardPaneDragEnd = () => emit('pane-drag-end')
   min-height: 0;
   flex-grow: 0;
   flex-shrink: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .terminal-split-tree.is-row > .terminal-split-child {
   height: 100%;
-}
-
-/* 最右侧 pane 右描边安全区，避免贴边时被父容器裁切 */
-.terminal-split-tree.is-row > .terminal-split-child:last-child {
-  padding-right: 3px;
-  box-sizing: border-box;
 }
 
 .terminal-split-tree.is-column > .terminal-split-child {

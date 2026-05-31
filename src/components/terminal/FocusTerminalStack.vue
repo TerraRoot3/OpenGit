@@ -1078,6 +1078,8 @@ onUnmounted(() => {
   animation: none;
   border-color: transparent;
   box-shadow: none;
+  contain: layout;
+  overflow: visible;
 }
 
 .focus-terminal-pane.is-drop-target {

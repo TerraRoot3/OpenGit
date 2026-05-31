@@ -814,7 +814,7 @@ const armProgrammaticFocusSigintGuard = (term) => {
 
 const createXterm = async () => {
   const el = document.createElement('div')
-  el.style.cssText = 'width:100%;height:100%;display:none;overflow:hidden;'
+  el.style.cssText = 'width:100%;height:100%;display:none;overflow:visible;'
 
   const scrollback = await loadTerminalScrollbackSetting()
   const xterm = new Terminal({
@@ -2774,7 +2774,7 @@ defineExpose({
   height: 100%;
   background: var(--theme-sem-bg-project);
   border-radius: var(--theme-comp-radius-selected);
-  overflow: hidden;
+  overflow: visible;
   border: none;
 }
 .terminal-header {
@@ -3074,7 +3074,7 @@ defineExpose({
 .terminal-body {
   flex: 1;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   background: var(--theme-sem-bg-project);
 }
@@ -3105,7 +3105,7 @@ defineExpose({
   position: relative;
   box-sizing: border-box;
   border-radius: inherit;
-  overflow: hidden;
+  overflow: visible;
 }
 .terminal-pane.inactive .terminal-pane-content::after {
   content: '';
@@ -3140,22 +3140,20 @@ defineExpose({
 .pane-close-btn:hover {
   background: rgba(220, 80, 80, 0.85);
 }
-.terminal-body :deep(.xterm) { height: 100%; }
+.terminal-body :deep(.xterm) {
+  height: 100%;
+  overflow: visible;
+}
 .terminal-body :deep(.xterm-screen),
 .terminal-body :deep(.xterm-rows) {
   margin-top: 0 !important;
   padding-top: 0 !important;
+  overflow: visible !important;
 }
-.terminal-body :deep(.xterm-viewport) {
-  overflow-y: scroll !important;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: var(--theme-sem-border-strong) transparent;
+/* xterm's DOM renderer sets row overflow inline; CJK glyphs can overhang the last cell by subpixels. */
+.terminal-body :deep(.xterm-rows > div) {
+  overflow: visible !important;
 }
-.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar { width: 4px; }
-.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-track { background: transparent; }
-.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb { background: var(--theme-sem-border-strong); border-radius: 4px; }
-.terminal-body :deep(.xterm-viewport)::-webkit-scrollbar-thumb:hover { background: var(--theme-sem-border-strong); }
 .terminal-cwd-picker {
   position: relative;
 }

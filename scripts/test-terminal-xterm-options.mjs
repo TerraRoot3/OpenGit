@@ -6,8 +6,8 @@ import {
 
 assert.equal(
   XTERM_OPTS.rescaleOverlappingGlyphs,
-  true,
-  'xterm should rescale overlapping glyphs to avoid right-edge clipping for ambiguous-width characters'
+  false,
+  'terminal should stay on xterm default glyph scaling path to avoid custom rendering drift'
 )
 
 assert.equal(
@@ -20,6 +20,12 @@ assert.match(
   TERMINAL_FONT_FAMILY,
   /Sarasa Mono SC|Noto Sans Mono CJK SC|Source Han Mono SC/,
   'terminal font stack should include a CJK-oriented mono fallback for Codex output'
+)
+
+assert.doesNotMatch(
+  TERMINAL_FONT_FAMILY,
+  /PingFang SC/,
+  'terminal font stack should avoid non-monospace CJK fallbacks that can overhang the last cell'
 )
 
 assert.match(

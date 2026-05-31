@@ -9,7 +9,6 @@ export const TERMINAL_FONT_FAMILY = [
   "'Noto Sans Mono CJK SC'",
   "'Source Han Mono SC'",
   "'Microsoft YaHei Mono'",
-  "'PingFang SC'",
   'monospace'
 ].join(', ')
 
@@ -31,7 +30,7 @@ export const XTERM_OPTS = {
   cursorStyle: 'block',
   fontSize: 13,
   fontFamily: TERMINAL_FONT_FAMILY,
-  rescaleOverlappingGlyphs: true,
+  rescaleOverlappingGlyphs: false,
   theme: null,
   allowProposedApi: true,
   // Codex / Claude 这类长对话会迅速放大 xterm buffer 的内存占用。
