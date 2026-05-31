@@ -25,7 +25,10 @@ function parseMillis(value) {
   if (!raw) return 0
   if (/^\d+$/.test(raw)) {
     const numeric = Number(raw)
-    return Number.isFinite(numeric) ? numeric : 0
+    if (!Number.isFinite(numeric)) return 0
+    // Codex sqlite logs use second-level unix timestamps, while rollout/state files use milliseconds.
+    // Normalize everything to milliseconds before ordering status markers.
+    return numeric > 0 && numeric < 1e11 ? numeric * 1000 : numeric
   }
   const timestamp = Date.parse(raw)
   return Number.isFinite(timestamp) ? timestamp : 0
@@ -334,5 +337,11 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
 }
 
 module.exports = {
-  createCodexSessionStateSource
+  createCodexSessionStateSource,
+  __testables: {
+    parseMillis,
+    parseLogSignals,
+    parseRolloutSignals,
+    resolveThreadStatusSignals
+  }
 }

@@ -16,6 +16,8 @@ From this file onward:
 
 ### Fixed
 
+- 修复 Codex 结束日志使用秒级时间戳时，项目和终端状态可能一直停留在进行中的问题。
+
 ### Refactored
 
 ### Docs
