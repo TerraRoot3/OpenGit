@@ -16,6 +16,8 @@ From this file onward:
 
 ### Fixed
 
+- 修复悬浮项目侧边栏打开时，内置浏览器原生网页层压住侧边栏的问题。
+
 ### Refactored
 
 ### Docs

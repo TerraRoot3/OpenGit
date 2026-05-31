@@ -97,6 +97,7 @@
       <Browser
         ref="browserRef"
         :leading-tab-inset="browserLeadingTabInset"
+        :force-hide-web-contents-view="isFloatingDrawerVisible"
         :favorite-project-paths="favoriteProjectPaths"
         @project-context-changed="handleProjectContextChanged"
         @project-branch-changed="handleProjectBranchChanged"

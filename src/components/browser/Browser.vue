@@ -443,6 +443,10 @@ const props = defineProps({
     type: Number,
     default: 0
   },
+  forceHideWebContentsView: {
+    type: Boolean,
+    default: false
+  },
   favoriteProjectPaths: {
     type: Array,
     default: () => []
@@ -1633,6 +1637,7 @@ const aboutSuggestionIndex = suggestionIndex
 
 const shouldHideWebContentsViewForOverlay = computed(() => {
   return Boolean(
+    props.forceHideWebContentsView ||
     showMenu.value ||
     showDownloadPanel.value ||
     sitePermissionPanelView.value?.isOpen ||
