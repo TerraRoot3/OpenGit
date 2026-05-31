@@ -786,6 +786,12 @@ async function runCommand(command, options = {}) {
   return panel.runCommand(command, options)
 }
 
+function focusCurrentTerminal() {
+  const targetId = focusedId.value || sessions.value[0]?.id
+  if (!targetId) return
+  panelRefById.get(targetId)?.focusCurrentTerminal?.()
+}
+
 const clearLayoutCache = () => {
   resetLayout({ clearCache: true })
 }
@@ -796,7 +802,7 @@ function updateScrollback(scrollback) {
   }
 }
 
-defineExpose({ runCommand, clearLayoutCache, updateScrollback })
+defineExpose({ runCommand, focusCurrentTerminal, clearLayoutCache, updateScrollback })
 
 onUnmounted(() => {
   clearPendingActivationWait()

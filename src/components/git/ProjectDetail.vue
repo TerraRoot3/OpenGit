@@ -595,6 +595,10 @@ import {
   deriveBranchStatusState
 } from './projectDetailRefresh.mjs'
 import {
+  resolveProjectTerminalFocusMode,
+  shouldAutoFocusProjectTerminal
+} from './projectDetailTerminalFocus.mjs'
+import {
   buildBranchDeleteCommands,
   buildBranchDeleteDialogPlan
 } from './projectDetailBranchDelete.mjs'
@@ -1161,6 +1165,17 @@ const scheduleWorkspacePreload = () => {
   }
 
   workspacePreloadHandle = window.setTimeout(mountWorkspace, 0)
+}
+
+const focusActiveTerminalView = async () => {
+  await nextTick()
+  if (!props.isActive || currentView.value !== 'terminal') return
+  const terminalFocusMode = resolveProjectTerminalFocusMode(terminalMode.value)
+  if (terminalFocusMode === 'liquid') {
+    liquidTerminalRef.value?.focusCurrentTerminal?.()
+    return
+  }
+  terminalRef.value?.focusCurrentTerminal?.()
 }
 
 // ==================== 操作对话框 ====================
@@ -3447,6 +3462,13 @@ watch(() => props.isActive, (newIsActive, oldIsActive) => {
   if (newIsActive && !oldIsActive && props.path && isGitRepository.value !== false) {
     debugLog('🔄 [ProjectDetailNew] 标签激活，刷新状态...')
     refreshCurrentProject()
+  }
+  if (shouldAutoFocusProjectTerminal({
+    newIsActive,
+    oldIsActive,
+    currentView: currentView.value
+  })) {
+    void focusActiveTerminalView()
   }
 })
 
