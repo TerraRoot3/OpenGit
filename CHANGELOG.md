@@ -12,6 +12,20 @@ From this file onward:
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Refactored
+
+### Docs
+
+### Build
+
+## [1.4.6] - 2026-05-31
+
+### Added
+
 - 工作区文本预览支持直接编辑、未保存状态提示，以及 `Cmd/Ctrl+S` 保存到原文件。
 - 工作区搜索支持同时匹配文件名和文本文件内容。
 
