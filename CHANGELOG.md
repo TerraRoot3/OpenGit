@@ -16,7 +16,21 @@ From this file onward:
 
 ### Fixed
 
-- 修复 Codex 结束日志使用秒级时间戳时，项目和终端状态可能一直停留在进行中的问题。
+### Refactored
+
+### Docs
+
+### Build
+
+## [1.4.7] - 2026-05-31
+
+### Added
+
+### Changed
+
+### Fixed
+
+- 修复 Codex 状态判断不稳定的问题，包括结束日志时间戳归一化错误、`/status` 等本地 slash 命令后的状态漂移，以及同一时刻的真实结束信号未能覆盖本地进行中状态的问题。
 
 ### Refactored
 
