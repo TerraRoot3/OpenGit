@@ -794,6 +794,13 @@ const activeCodexNotifications = new Map()
 const focusProjectTerminalState = createFocusProjectTerminalState()
 let focusProjectTerminalRetryTimer = null
 
+function clearCodexUnreadBadge(reason = 'manual') {
+  const previousCount = codexNotificationBadgeState.getCount()
+  if (previousCount <= 0) return
+  codexNotificationBadgeState.clear()
+  safeLog('🔕 Cleared Codex unread badge:', { reason, previousCount })
+}
+
 function clearFocusProjectTerminalRetryTimer() {
   if (focusProjectTerminalRetryTimer) {
     clearTimeout(focusProjectTerminalRetryTimer)
@@ -935,7 +942,9 @@ const codexSessionMonitor = createCodexSessionMonitor({
         activeCodexNotifications.delete(notificationId)
       })
       notification.show()
-      codexNotificationBadgeState.markUnread(notificationId)
+      if (context?.appBackground) {
+        codexNotificationBadgeState.markUnread(notificationId)
+      }
       safeLog('🔔 Codex session notification sent:', {
         notificationId,
         projectPath,
@@ -944,7 +953,8 @@ const codexSessionMonitor = createCodexSessionMonitor({
         terminalIds: project?.terminalIds || [],
         routeType,
         appBackground: context?.appBackground,
-        activeProjectPath: context?.activeProjectPath
+        activeProjectPath: context?.activeProjectPath,
+        markUnread: Boolean(context?.appBackground)
       })
     } catch (error) {
       safeError('❌ Codex session notification failed:', error.message)
@@ -1446,7 +1456,7 @@ function createWindow() {
   // 当窗口从后台切换到前台时，主动刷新待定文件检查
   mainWindow.on('focus', () => {
     safeLog('🔄 窗口获得焦点，主动刷新待定文件检查')
-    codexNotificationBadgeState.clear()
+    clearCodexUnreadBadge('window-focus')
     if (focusProjectTerminalState.hasPending()) {
       dispatchPendingFocusProjectTerminal('window-focus')
     }
@@ -2119,6 +2129,7 @@ app.on('activate', () => {
   if (focusProjectTerminalState.hasPending()) {
     dispatchPendingFocusProjectTerminal('app-activate')
   }
+  clearCodexUnreadBadge('app-activate')
 })
 
 registerScmHandlers({
