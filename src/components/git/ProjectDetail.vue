@@ -266,7 +266,7 @@
                   v-for="branch in remoteBranches" 
                   :key="branch"
                   class="branch-item remote-branch"
-                  @dblclick="switchToRemoteBranch(branch.replace('origin/', ''))"
+                  @dblclick="switchToRemoteBranch(branch)"
                   @contextmenu.prevent="showBranchContextMenu($event, branch, 'remote')"
                 >
                   <span class="branch-name">{{ branch }}</span>
@@ -603,6 +603,10 @@ import {
   buildBranchDeleteCommands,
   buildBranchDeleteDialogPlan
 } from './projectDetailBranchDelete.mjs'
+import {
+  getRemoteBranchLocalName,
+  resolveRemoteBranchTarget
+} from './projectDetailBranchRefs.mjs'
 import {
   deriveProjectGitMonitorRefreshRequest,
   shouldRunProjectGitMonitor
@@ -1200,6 +1204,7 @@ const newBranchName = ref('')
 // ==================== 删除分支对话框 ====================
 const showDeleteBranchDialog = ref(false)
 const branchToDelete = ref('')
+const branchToDeleteRemoteRef = ref('')
 const deleteLocalBranch = ref(true)
 const deleteRemoteBranch = ref(false)
 const deleteBranchMessage = ref('')
@@ -1231,6 +1236,7 @@ const tagContextMenuTag = ref(null)
 const showBranchContextMenuModal = ref(false)
 const branchContextMenuPosition = ref({ x: 0, y: 0 })
 const branchContextMenuBranch = ref('')
+const branchContextMenuRemoteRef = ref('')
 const branchContextMenuType = ref('local')
 
 const resolveContextMenuPosition = (event, menuWidth = 220, menuHeight = 220) => {
@@ -1270,7 +1276,7 @@ const pushTitle = computed(() => {
 
 const mrBranchOptions = computed(() => {
   const branches = [...allBranches.value]
-  const remote = remoteBranches.value.map(b => b.replace('origin/', ''))
+  const remote = remoteBranches.value.map(getRemoteBranchLocalName)
   return [...new Set([...branches, ...remote])]
 })
 
@@ -2354,20 +2360,30 @@ const switchBranch = async (branchName) => {
 
 const switchToRemoteBranch = async (branchName) => {
   if (!props.path) return
-  
-  openOperationDialog('切换远程分支', `正在切换到远程分支 "${branchName}"...\n`)
+
+  const remoteTarget = resolveRemoteBranchTarget(branchName)
+  if (!remoteTarget) {
+    return
+  }
+
+  openOperationDialog(
+    '切换远程分支',
+    `正在检出远程分支 "${remoteTarget.remoteRef}" 为本地分支 "${remoteTarget.localBranchName}"...\n`
+  )
   
   // 检查本地分支是否存在
-  const checkResult = await executeCommand(`cd "${props.path}" && git show-ref --verify --quiet refs/heads/"${branchName}"`)
+  const checkResult = await executeCommand(
+    `cd "${props.path}" && git show-ref --verify --quiet refs/heads/"${remoteTarget.localBranchName}"`
+  )
   
   if (checkResult.success) {
     finishOperation()
-    operationOutput.value = `❌ 本地分支 "${branchName}" 已存在\n请双击本地分支列表中的 "${branchName}" 来切换`
+    operationOutput.value = `❌ 本地分支 "${remoteTarget.localBranchName}" 已存在\n请双击本地分支列表中的 "${remoteTarget.localBranchName}" 来切换`
     return
   }
   
   try {
-    const command = `cd "${props.path}" && git checkout -b "${branchName}" origin/"${branchName}"`
+    const command = `cd "${props.path}" && git checkout --track -b "${remoteTarget.localBranchName}" "${remoteTarget.remoteRef}"`
     const result = await executeCommandWithProgress(command, appendProgressOutput)
     
     if (result.success) {
@@ -2612,7 +2628,13 @@ const createBranch = async () => {
 
 // ==================== 分支右键菜单 ====================
 const showBranchContextMenu = (event, branch, type) => {
-  branchContextMenuBranch.value = type === 'remote' ? branch.replace('origin/', '') : branch
+  if (type === 'remote') {
+    branchContextMenuRemoteRef.value = branch
+    branchContextMenuBranch.value = getRemoteBranchLocalName(branch)
+  } else {
+    branchContextMenuRemoteRef.value = ''
+    branchContextMenuBranch.value = branch
+  }
   branchContextMenuType.value = type
   branchContextMenuPosition.value = resolveContextMenuPosition(
     event,
@@ -2633,7 +2655,7 @@ const checkoutBranchAction = () => {
   if (branchContextMenuType.value === 'local') {
     switchBranch(branchContextMenuBranch.value)
   } else {
-    switchToRemoteBranch(branchContextMenuBranch.value)
+    switchToRemoteBranch(branchContextMenuRemoteRef.value || branchContextMenuBranch.value)
   }
 }
 
@@ -2645,9 +2667,10 @@ const createBranchFromContext = () => {
 }
 
 const createTagFromRemoteBranch = async () => {
-  if (!branchContextMenuBranch.value) return
+  const remoteRef = branchContextMenuRemoteRef.value || branchContextMenuBranch.value
+  if (!remoteRef) return
   showBranchContextMenuModal.value = false
-  await openCreateTagDialog(`origin/${branchContextMenuBranch.value}`)
+  await openCreateTagDialog(remoteRef)
 }
 
 const mergeBranchAction = () => {
@@ -2671,7 +2694,9 @@ const copyBranchName = async () => {
 
 const openDeleteBranchDialog = (contextType = 'local') => {
   const deletePlan = buildBranchDeleteDialogPlan({
-    branch: branchContextMenuBranch.value,
+    branch: contextType === 'remote'
+      ? (branchContextMenuRemoteRef.value || branchContextMenuBranch.value)
+      : branchContextMenuBranch.value,
     contextType,
     currentBranch: currentBranch.value
   })
@@ -2680,6 +2705,9 @@ const openDeleteBranchDialog = (contextType = 'local') => {
   if (!deletePlan) return
 
   branchToDelete.value = deletePlan.branch
+  branchToDeleteRemoteRef.value = contextType === 'remote'
+    ? (branchContextMenuRemoteRef.value || '')
+    : ''
   deleteLocalBranch.value = deletePlan.deleteLocal
   deleteRemoteBranch.value = deletePlan.deleteRemote
   deleteBranchMessage.value = deletePlan.message
@@ -2709,6 +2737,7 @@ const createMergeRequestFromBranch = () => {
 const closeDeleteBranchDialog = () => {
   showDeleteBranchDialog.value = false
   branchToDelete.value = ''
+  branchToDeleteRemoteRef.value = ''
   deleteLocalBranch.value = true
   deleteRemoteBranch.value = false
   deleteBranchMessage.value = ''
@@ -2726,7 +2755,8 @@ const confirmDeleteBranch = async () => {
     projectPath: props.path,
     branch,
     deleteLocal,
-    deleteRemote
+    deleteRemote,
+    remoteBranchRef: branchToDeleteRemoteRef.value
   })
 
   if (commands.length === 0) {

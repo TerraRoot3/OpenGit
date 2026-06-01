@@ -2,26 +2,47 @@ import { ref } from 'vue'
 
 // 单例状态，所有组件共享
 const savedPasswords = ref([])
+let hasLoadedSavedPasswords = false
+let loadSavedPasswordsPromise = null
 
 export function usePasswords() {
 
   // 加载保存的密码
-  const loadSavedPasswords = async () => {
-    try {
-      if (window.electronAPI && window.electronAPI.getBrowserPasswords) {
-        const result = await window.electronAPI.getBrowserPasswords()
-        if (result.success) {
-          savedPasswords.value = result.passwords || []
-          console.log('🔐 已加载保存的密码数量:', savedPasswords.value.length)
-          return { success: true }
-        }
-        return { success: false, message: result.message }
-      }
-      return { success: false, message: 'electronAPI 不可用' }
-    } catch (error) {
-      console.error('加载保存的密码失败:', error)
-      return { success: false, message: error.message }
+  const loadSavedPasswords = async ({ force = false } = {}) => {
+    if (!force && hasLoadedSavedPasswords) {
+      return { success: true, passwords: savedPasswords.value }
     }
+
+    if (loadSavedPasswordsPromise) {
+      if (!force) {
+        return loadSavedPasswordsPromise
+      }
+
+      await loadSavedPasswordsPromise
+    }
+
+    loadSavedPasswordsPromise = (async () => {
+      try {
+        if (window.electronAPI && window.electronAPI.getBrowserPasswords) {
+          const result = await window.electronAPI.getBrowserPasswords()
+          if (result.success) {
+            savedPasswords.value = result.passwords || []
+            hasLoadedSavedPasswords = true
+            console.log('🔐 已加载保存的密码数量:', savedPasswords.value.length)
+            return { success: true, passwords: savedPasswords.value }
+          }
+          return { success: false, message: result.message }
+        }
+        return { success: false, message: 'electronAPI 不可用' }
+      } catch (error) {
+        console.error('加载保存的密码失败:', error)
+        return { success: false, message: error.message }
+      } finally {
+        loadSavedPasswordsPromise = null
+      }
+    })()
+
+    return loadSavedPasswordsPromise
   }
 
   // 保存密码
@@ -35,7 +56,7 @@ export function usePasswords() {
         })
         
         if (result.success) {
-          await loadSavedPasswords()
+          await loadSavedPasswords({ force: true })
           console.log('密码已保存')
           return { success: true }
         }
@@ -60,7 +81,7 @@ export function usePasswords() {
         })
         
         if (result.success) {
-          await loadSavedPasswords()
+          await loadSavedPasswords({ force: true })
           console.log('密码已更新')
           return { success: true }
         }
@@ -80,7 +101,7 @@ export function usePasswords() {
         const result = await window.electronAPI.deleteBrowserPassword({ id })
         
         if (result.success) {
-          await loadSavedPasswords()
+          await loadSavedPasswords({ force: true })
           console.log('密码已删除')
           return { success: true }
         }
@@ -123,7 +144,7 @@ export function usePasswords() {
       if (window.electronAPI && window.electronAPI.deleteBrowserPasswordByDomain) {
         const result = await window.electronAPI.deleteBrowserPasswordByDomain({ domain })
         if (result.success) {
-          await loadSavedPasswords()
+          await loadSavedPasswords({ force: true })
           console.log(`✅ 已删除域名 ${domain} 的密码: ${result.deletedCount} 个`)
           alert(`已删除域名 ${domain} 的密码: ${result.deletedCount} 个`)
           return { success: true, deletedCount: result.deletedCount }
@@ -159,6 +180,15 @@ export function usePasswords() {
     )
   }
 
+  if (typeof window !== 'undefined' &&
+      window.electronAPI &&
+      !hasLoadedSavedPasswords &&
+      !loadSavedPasswordsPromise) {
+    loadSavedPasswords().catch(error => {
+      console.warn('初始化浏览器密码缓存失败:', error)
+    })
+  }
+
   return {
     savedPasswords,
     loadSavedPasswords,
@@ -171,4 +201,3 @@ export function usePasswords() {
     findPassword
   }
 }
-

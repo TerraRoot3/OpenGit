@@ -1,3 +1,5 @@
+import { parseRemoteBranchRef } from './projectDetailBranchRefs.mjs'
+
 export const buildBranchDeleteDialogPlan = ({
   branch = '',
   contextType = 'local',
@@ -29,7 +31,8 @@ export const buildBranchDeleteCommands = ({
   projectPath = '',
   branch = '',
   deleteLocal = false,
-  deleteRemote = false
+  deleteRemote = false,
+  remoteBranchRef = ''
 } = {}) => {
   if (!projectPath || !branch) return []
 
@@ -40,7 +43,12 @@ export const buildBranchDeleteCommands = ({
   }
 
   if (deleteRemote) {
-    commands.push(`cd "${projectPath}" && git push origin --delete "${branch}"`)
+    const parsedRemoteBranch = parseRemoteBranchRef(remoteBranchRef)
+    if (parsedRemoteBranch) {
+      commands.push(`cd "${projectPath}" && git push ${parsedRemoteBranch.remoteName} --delete "${parsedRemoteBranch.branchName}"`)
+    } else {
+      commands.push(`cd "${projectPath}" && git push origin --delete "${branch}"`)
+    }
   }
 
   return commands

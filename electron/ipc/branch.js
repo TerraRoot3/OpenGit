@@ -1,6 +1,11 @@
 const fs = require('node:fs')
 const path = require('node:path')
+const { pathToFileURL } = require('node:url')
 const { buildProjectGitMonitorSnapshot } = require('./projectGitMonitor')
+
+const branchRefUtilsModulePromise = import(
+  pathToFileURL(path.join(__dirname, '../shared/projectDetailBranchRefs.mjs')).href
+)
 
 function registerBranchHandlers({
   ipcMain,
@@ -181,11 +186,18 @@ function registerBranchHandlers({
     const remoteBranchResult = await executeGitCommand(['git', 'branch', '-r'], repoPath)
     const remoteBranches = []
     if (remoteBranchResult.success && remoteBranchResult.stdout) {
+      const { parseRemoteBranchRef } = await branchRefUtilsModulePromise
       const branches = remoteBranchResult.stdout
         .split('\n')
-        .map(line => line.replace(/^\s*origin\//, '').trim())
+        .map(line => line.trim())
         .filter(line => line.length > 0 && !line.includes('->') && line !== 'HEAD')
-      remoteBranches.push(...branches)
+
+      for (const branch of branches) {
+        const parsedRemoteBranch = parseRemoteBranchRef(branch)
+        if (parsedRemoteBranch) {
+          remoteBranches.push(parsedRemoteBranch.remoteRef)
+        }
+      }
     }
 
     let currentBranchStatus = { localAhead: 0, remoteAhead: 0, hasNewCommits: false }
@@ -340,16 +352,13 @@ function registerBranchHandlers({
       safeLog(`🌿 获取分支列表: ${data.path}`)
       const result = await executeGitCommand(['git', 'branch', '-a'], data.path)
       if (result.success && result.stdout) {
-        const branches = result.stdout.trim().split('\n')
-        const localBranches = branches
-          .filter(branch => !branch.includes('->') && !branch.includes('remotes/origin'))
-          .map(branch => branch.replace(/^\*\s*/, '').trim())
-          .filter(Boolean)
-        const remoteBranches = branches
-          .filter(branch => branch.includes('remotes/origin') && !branch.includes('HEAD'))
-          .map(branch => branch.replace(/remotes\/origin\//, '').trim())
-          .filter(Boolean)
-        let currentBranch = branches.find(branch => branch.startsWith('*'))?.replace(/^\*\s*/, '').trim() || ''
+        const { buildBranchListFromGitBranchAllOutput } = await branchRefUtilsModulePromise
+        const {
+          currentBranch: parsedCurrentBranch,
+          localBranches,
+          remoteBranches
+        } = buildBranchListFromGitBranchAllOutput(result.stdout)
+        let currentBranch = parsedCurrentBranch || ''
 
         if (!currentBranch || currentBranch === '') {
           const tagResult = await executeGitCommand(['git', 'describe', '--tags', '--exact-match', 'HEAD'], data.path)
