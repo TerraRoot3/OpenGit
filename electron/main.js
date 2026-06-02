@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Notification, shell, dialog, ipcMain, session, protocol, net } = require('electron')
+const { app, BrowserWindow, Menu, Notification, shell, dialog, ipcMain, session, protocol, net, screen } = require('electron')
 const path = require('path')
 const { exec, spawn, execFileSync } = require('child_process')
 const { promisify, format } = require('util')
@@ -793,6 +793,8 @@ const codexNotificationBadgeState = createCodexNotificationBadgeState({
 const activeCodexNotifications = new Map()
 const focusProjectTerminalState = createFocusProjectTerminalState()
 let focusProjectTerminalRetryTimer = null
+let windowGeometryBroadcastTimer = null
+let removeWindowGeometryScreenListeners = null
 
 function clearCodexUnreadBadge(reason = 'manual') {
   const previousCount = codexNotificationBadgeState.getCount()
@@ -805,6 +807,81 @@ function clearFocusProjectTerminalRetryTimer() {
   if (focusProjectTerminalRetryTimer) {
     clearTimeout(focusProjectTerminalRetryTimer)
     focusProjectTerminalRetryTimer = null
+  }
+}
+
+function clearWindowGeometryBroadcastTimer() {
+  if (windowGeometryBroadcastTimer) {
+    clearTimeout(windowGeometryBroadcastTimer)
+    windowGeometryBroadcastTimer = null
+  }
+}
+
+function buildWindowGeometryPayload(reason = 'unknown') {
+  const targetWindow = mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow
+    : BrowserWindow.getAllWindows().find((win) => !win.isDestroyed())
+
+  if (!targetWindow || targetWindow.isDestroyed()) return null
+
+  const bounds = targetWindow.getBounds()
+  let scaleFactor = null
+  try {
+    scaleFactor = screen.getDisplayMatching(bounds)?.scaleFactor ?? null
+  } catch {}
+
+  return {
+    reason,
+    timestamp: Date.now(),
+    bounds,
+    scaleFactor
+  }
+}
+
+function dispatchWindowGeometryChanged(reason = 'unknown') {
+  const payload = buildWindowGeometryPayload(reason)
+  if (!payload) return
+  const targetWindow = mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow
+    : BrowserWindow.getAllWindows().find((win) => !win.isDestroyed())
+  if (!targetWindow || targetWindow.isDestroyed()) return
+  try {
+    targetWindow.webContents.send('window-geometry-changed', payload)
+  } catch (error) {
+    safeError('❌ 发送窗口几何事件失败:', error.message)
+  }
+}
+
+function scheduleWindowGeometryChanged(reason = 'unknown', delay = 60) {
+  clearWindowGeometryBroadcastTimer()
+  windowGeometryBroadcastTimer = setTimeout(() => {
+    windowGeometryBroadcastTimer = null
+    dispatchWindowGeometryChanged(reason)
+  }, Math.max(0, Number(delay) || 0))
+}
+
+function ensureWindowGeometryScreenListeners() {
+  if (typeof removeWindowGeometryScreenListeners === 'function') return
+
+  const handleDisplayMetricsChanged = () => {
+    scheduleWindowGeometryChanged('display-metrics-changed', 80)
+  }
+  const handleDisplayAdded = () => {
+    scheduleWindowGeometryChanged('display-added', 80)
+  }
+  const handleDisplayRemoved = () => {
+    scheduleWindowGeometryChanged('display-removed', 80)
+  }
+
+  screen.on('display-metrics-changed', handleDisplayMetricsChanged)
+  screen.on('display-added', handleDisplayAdded)
+  screen.on('display-removed', handleDisplayRemoved)
+
+  removeWindowGeometryScreenListeners = () => {
+    screen.removeListener('display-metrics-changed', handleDisplayMetricsChanged)
+    screen.removeListener('display-added', handleDisplayAdded)
+    screen.removeListener('display-removed', handleDisplayRemoved)
+    removeWindowGeometryScreenListeners = null
   }
 }
 
@@ -1415,6 +1492,7 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     safeLog('Window ready to show, showing window...')
     mainWindow.show()
+    scheduleWindowGeometryChanged('ready-to-show', 0)
   })
 
 
@@ -1450,6 +1528,7 @@ function createWindow() {
 
   // 当窗口确实被关闭时（如强制退出）
   mainWindow.on('closed', () => {
+    clearWindowGeometryBroadcastTimer()
     mainWindow = null
   })
 
@@ -1457,6 +1536,7 @@ function createWindow() {
   mainWindow.on('focus', () => {
     safeLog('🔄 窗口获得焦点，主动刷新待定文件检查')
     clearCodexUnreadBadge('window-focus')
+    scheduleWindowGeometryChanged('focus', 0)
     if (focusProjectTerminalState.hasPending()) {
       dispatchPendingFocusProjectTerminal('window-focus')
     }
@@ -1466,6 +1546,16 @@ function createWindow() {
       safeLog('📡 [主进程] 已发送 refresh-on-focus 事件到前端')
     }
   })
+
+  mainWindow.on('move', () => {
+    scheduleWindowGeometryChanged('move')
+  })
+
+  mainWindow.on('resize', () => {
+    scheduleWindowGeometryChanged('resize')
+  })
+
+  ensureWindowGeometryScreenListeners()
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     return handleWindowOpen(details)

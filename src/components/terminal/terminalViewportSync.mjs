@@ -2,12 +2,76 @@ export const TERMINAL_VIEWPORT_SYNC_DELAY_MS = 120
 
 const isPositiveInteger = (value) => Number.isFinite(value) && value > 0
 
+export const forceTerminalRenderGeometrySync = (term) => {
+  const xterm = term?.xterm
+  const core = xterm?._core
+  const renderService = core?._renderService
+  if (!xterm || !renderService) return false
+
+  let synced = false
+
+  if (typeof core?._charSizeService?.measure === 'function') {
+    try {
+      core._charSizeService.measure()
+      synced = true
+    } catch {}
+  }
+
+  if (typeof renderService.handleCharSizeChanged === 'function') {
+    try {
+      renderService.handleCharSizeChanged()
+      synced = true
+    } catch {}
+  }
+
+  if (
+    typeof renderService.handleResize === 'function' &&
+    isPositiveInteger(xterm.cols) &&
+    isPositiveInteger(xterm.rows)
+  ) {
+    try {
+      renderService.handleResize(xterm.cols, xterm.rows)
+      synced = true
+    } catch {}
+  }
+
+  return synced
+}
+
+export const forceViewportScrollAreaSync = (term, immediate = true) => {
+  const viewport = term?.xterm?._core?.viewport
+  if (!viewport) return false
+
+  let synced = false
+
+  if (typeof viewport.syncScrollArea === 'function') {
+    try {
+      viewport.syncScrollArea(immediate)
+      synced = true
+    } catch {}
+  }
+
+  // `syncScrollArea()` updates buffer-length bookkeeping, but it does not detect a pure
+  // viewport-element height change when rows/cols stay the same. Follow with a direct refresh
+  // so cross-screen moves still remeasure the real viewport height.
+  if (typeof viewport._refresh === 'function') {
+    try {
+      viewport._refresh(immediate)
+      synced = true
+    } catch {}
+  }
+
+  return synced
+}
+
 export const runViewportSyncPass = ({
   term,
   resizePty,
   focus = false
 } = {}) => {
   if (!term?.fitAddon || !term?.xterm) return false
+
+  forceTerminalRenderGeometrySync(term)
 
   try {
     term.fitAddon.fit()

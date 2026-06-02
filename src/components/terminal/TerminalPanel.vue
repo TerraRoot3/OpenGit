@@ -248,7 +248,16 @@ import {
   sanitizeTerminalScrollback
 } from './terminalXtermOptions.mjs'
 import { isBufferViewportAtBottom } from './terminalViewportState.mjs'
-import { scheduleViewportRevealSync, cancelViewportRevealSync } from './terminalViewportSync.mjs'
+import {
+  scheduleViewportRevealSync,
+  cancelViewportRevealSync,
+  forceTerminalRenderGeometrySync,
+  forceViewportScrollAreaSync
+} from './terminalViewportSync.mjs'
+import {
+  resolveSinglePaneResizeRecoveryAction,
+  shouldRestoreViewportToBottom
+} from './terminalSinglePaneRecovery.mjs'
 import TerminalSplitNode from './TerminalSplitNode.vue'
 import { useThemeStore } from '../../stores/themeStore.js'
 import {
@@ -1390,12 +1399,61 @@ const SINGLE_PANE_PTY_RESIZE_MIN_GAP_MS = 90
 /** 非聚焦面板：不向 PTY 每帧打 resize（Vim 会刷满 ~）。仅在尺寸稳定后补一次，窗口缩放也能跟上 */
 let deferredSinglePanePtyTimer = null
 const SINGLE_PANE_UNFOCUSED_PTY_DEBOUNCE_MS = 340
+let lastSinglePaneExplicitRevealAt = 0
+let singlePaneViewportRecoveryPending = false
+let removeDevicePixelRatioChangeListener = null
+let removeWindowGeometryChangeListener = null
+let singlePaneResizeRestoreToBottomLatched = false
+let singlePaneResizeRestoreLatchTimer = null
+let singlePaneResizeFollowupTimer = null
+let singlePaneOutputBottomRecoveryTimer = null
+let singlePaneOutputBottomRecoveryUntil = 0
+const SINGLE_PANE_RESIZE_RESTORE_LATCH_MS = 820
+const SINGLE_PANE_RESIZE_FOLLOWUP_MS = 260
+const WINDOW_GEOMETRY_RECOVERY_DELAYS_MS = [0, 80, 220, 420, 760]
+const SINGLE_PANE_OUTPUT_BOTTOM_RECOVERY_WINDOW_MS = 3600
+const SINGLE_PANE_OUTPUT_BOTTOM_RECOVERY_DEBOUNCE_MS = 40
+let windowGeometryRecoveryTimerIds = []
 
 const clearDeferredSinglePanePtyResize = () => {
   if (deferredSinglePanePtyTimer) {
     clearTimeout(deferredSinglePanePtyTimer)
     deferredSinglePanePtyTimer = null
   }
+}
+
+const clearSinglePaneResizeRestoreLatchTimer = () => {
+  if (singlePaneResizeRestoreLatchTimer) {
+    clearTimeout(singlePaneResizeRestoreLatchTimer)
+    singlePaneResizeRestoreLatchTimer = null
+  }
+}
+
+const clearSinglePaneResizeFollowupTimer = () => {
+  if (singlePaneResizeFollowupTimer) {
+    clearTimeout(singlePaneResizeFollowupTimer)
+    singlePaneResizeFollowupTimer = null
+  }
+}
+
+const clearWindowGeometryRecoveryTimers = () => {
+  for (const timerId of windowGeometryRecoveryTimerIds) {
+    clearTimeout(timerId)
+  }
+  windowGeometryRecoveryTimerIds = []
+}
+
+const clearSinglePaneOutputBottomRecoveryTimer = () => {
+  if (singlePaneOutputBottomRecoveryTimer) {
+    clearTimeout(singlePaneOutputBottomRecoveryTimer)
+    singlePaneOutputBottomRecoveryTimer = null
+  }
+}
+
+const armSinglePaneOutputBottomRecoveryWindow = (durationMs = SINGLE_PANE_OUTPUT_BOTTOM_RECOVERY_WINDOW_MS) => {
+  const duration = Math.max(0, Number(durationMs) || 0)
+  if (duration <= 0) return
+  singlePaneOutputBottomRecoveryUntil = Math.max(singlePaneOutputBottomRecoveryUntil, Date.now() + duration)
 }
 
 /** 与上次发给 PTY 的尺寸相同则跳过，避免重复 SIGWINCH / Vim 刷 ~ */
@@ -1439,11 +1497,45 @@ const throttleSinglePanePtyResize = (term) => {
   }, SINGLE_PANE_PTY_RESIZE_MIN_GAP_MS - (now - lastSinglePanePtyResizeAt))
 }
 
+const markSinglePaneViewportRecoveryNeeded = (term = currentTerminal.value || terminals.value[0]) => {
+  if (!term?.xterm) {
+    singlePaneViewportRecoveryPending = true
+    return
+  }
+  singlePaneViewportRecoveryPending = true
+  term.restoreViewportToBottom = shouldRestoreViewportToBottom({
+    restoreViewportToBottom: term.restoreViewportToBottom,
+    bufferAtBottom: isBufferViewportAtBottom(term.xterm?.buffer)
+  })
+  term.viewportDirtyWhileHidden = true
+}
+
+const latchSinglePaneResizeRestoreToBottom = (term = currentTerminal.value || terminals.value[0]) => {
+  if (term?.xterm) {
+    singlePaneResizeRestoreToBottomLatched = (
+      singlePaneResizeRestoreToBottomLatched ||
+      !!term.restoreViewportToBottom ||
+      isBufferViewportAtBottom(term.xterm?.buffer)
+    )
+  }
+  clearSinglePaneResizeRestoreLatchTimer()
+  singlePaneResizeRestoreLatchTimer = window.setTimeout(() => {
+    singlePaneResizeRestoreLatchTimer = null
+    singlePaneResizeRestoreToBottomLatched = false
+  }, SINGLE_PANE_RESIZE_RESTORE_LATCH_MS)
+}
+
+const isCurrentSinglePaneTerminalMounted = () => {
+  const term = currentTerminal.value || terminals.value[0]
+  if (!term?.el) return false
+  if (term.el.style.display === 'none') return false
+  return term.el.isConnected
+}
+
 const refreshVisibleTerminal = (term, focus = true) => {
   if (!term) return
   if (props.singlePaneChrome && !props.focusPaneFocused) {
-    term.restoreViewportToBottom = true
-    term.viewportDirtyWhileHidden = true
+    markSinglePaneViewportRecoveryNeeded(term)
     return
   }
   let stickToBottom = !!term.restoreViewportToBottom
@@ -1473,7 +1565,7 @@ const refreshVisibleTerminal = (term, focus = true) => {
         window.electronAPI.terminal.resize({ id: term.ptyId, cols, rows })
       },
       reconcileViewport(immediate) {
-        term.xterm?._core?.viewport?.syncScrollArea?.(immediate, true)
+        forceViewportScrollAreaSync(term, immediate)
       }
     })
   })
@@ -1891,7 +1983,8 @@ const focusCurrentTerminal = () => {
   const term = currentTerminal.value || terminals.value[0]
   if (!term) return
   if (props.singlePaneChrome && props.focusPaneFocused) {
-    armProgrammaticFocusSigintGuard(term)
+    reconcileCurrentSinglePaneViewport({ focus: true })
+    return
   }
   refreshVisibleTerminal(term, true)
 }
@@ -1909,8 +2002,14 @@ const focusCurrentTerminalLightweight = () => {
   })
 }
 
-const syncSinglePaneViewport = (term, { notifyPty = false } = {}) => {
-  if (!term?.xterm) return
+const syncSinglePaneViewport = (term, {
+  notifyPty = false,
+  focus = false,
+  stickToBottom = false,
+  forceViewportReconcile = true
+} = {}) => {
+  if (!term?.xterm) return false
+  forceTerminalRenderGeometrySync(term)
   try {
     term.fitAddon?.fit?.()
   } catch {}
@@ -1919,50 +2018,122 @@ const syncSinglePaneViewport = (term, { notifyPty = false } = {}) => {
       term.xterm.refresh(0, term.xterm.rows - 1)
     }
   } catch {}
+  if (focus) {
+    try {
+      term.xterm.focus()
+    } catch {}
+  }
+  if (stickToBottom) {
+    try {
+      term.xterm.scrollToBottom()
+    } catch {}
+    try {
+      if (Number.isFinite(term.xterm.rows) && term.xterm.rows > 0) {
+        term.xterm.refresh(0, term.xterm.rows - 1)
+      }
+    } catch {}
+  }
   try {
-    term.xterm?._core?.viewport?.syncScrollArea?.(true, true)
+    if (stickToBottom || forceViewportReconcile) {
+      forceViewportScrollAreaSync(term, true)
+    }
   } catch {}
   if (notifyPty) {
     applySinglePanePtyResizeIfChanged(term)
   }
+  return true
+}
+
+const reconcileCurrentSinglePaneViewport = ({ focus = false } = {}) => {
+  const term = currentTerminal.value || terminals.value[0]
+  if (!term?.xterm) return
+
+  const stickToBottom = singlePaneResizeRestoreToBottomLatched || shouldRestoreViewportToBottom({
+    restoreViewportToBottom: term.restoreViewportToBottom || singlePaneViewportRecoveryPending,
+    bufferAtBottom: isBufferViewportAtBottom(term.xterm?.buffer)
+  })
+
+  const runSyncPass = (shouldFocus = false) => {
+    if (!props.isActive || !props.focusPaneFocused) {
+      markSinglePaneViewportRecoveryNeeded(term)
+      scheduleSinglePaneViewportRevealAfterResize()
+      return false
+    }
+    if (!canMeasureTerminal()) {
+      markSinglePaneViewportRecoveryNeeded(term)
+      scheduleSinglePaneViewportRevealAfterResize()
+      return false
+    }
+    return syncSinglePaneViewport(term, {
+      notifyPty: true,
+      focus: shouldFocus,
+      stickToBottom,
+      forceViewportReconcile: true
+    })
+  }
+
+  term.restoreViewportToBottom = false
+  term.viewportDirtyWhileHidden = false
+  singlePaneViewportRecoveryPending = false
+
+  if (focus && props.singlePaneChrome && props.focusPaneFocused) {
+    armProgrammaticFocusSigintGuard(term)
+  }
+
+  nextTick(() => {
+    if (!runSyncPass(focus)) return
+    requestAnimationFrame(() => {
+      runSyncPass(false)
+    })
+  })
 }
 
 const revealCurrentTerminalAfterAnimation = () => {
   const term = currentTerminal.value || terminals.value[0]
   if (!term?.xterm) return
-  armProgrammaticFocusSigintGuard(term)
-  term.restoreViewportToBottom = true
-  term.viewportDirtyWhileHidden = true
-  nextTick(() => {
-    scheduleViewportRevealSync({
-      term,
-      canMeasure: canMeasureTerminal,
-      focus: true,
-      stickToBottom: true,
-      forceViewportReconcile: true,
-      requestFrame: (callback) => requestAnimationFrame(callback),
-      setTimer: (callback, delay) => window.setTimeout(callback, delay),
-      clearTimer: (timerId) => window.clearTimeout(timerId),
-      followupDelayMs: 48,
-      resizePty() {
-        applySinglePanePtyResizeIfChanged(term)
-      },
-      reconcileViewport(immediate) {
-        term.xterm?._core?.viewport?.syncScrollArea?.(immediate, true)
-      }
-    })
+  term.restoreViewportToBottom = shouldRestoreViewportToBottom({
+    restoreViewportToBottom: term.restoreViewportToBottom,
+    bufferAtBottom: isBufferViewportAtBottom(term.xterm?.buffer)
   })
+  term.viewportDirtyWhileHidden = true
+  lastSinglePaneExplicitRevealAt = Date.now()
+  reconcileCurrentSinglePaneViewport({ focus: true })
 }
 
 const reconcileCurrentTerminalAfterAnimation = () => {
   if (!props.singlePaneChrome || !props.focusPaneFocused) return
-  const term = currentTerminal.value || terminals.value[0]
-  if (!term?.xterm) return
-  syncSinglePaneViewport(term, { notifyPty: true })
-  requestAnimationFrame(() => {
-    if (!props.isActive || !props.focusPaneFocused || !term?.xterm) return
-    syncSinglePaneViewport(term, { notifyPty: true })
-  })
+  reconcileCurrentSinglePaneViewport({ focus: false })
+}
+
+const bindDevicePixelRatioChangeListener = () => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+
+  if (typeof removeDevicePixelRatioChangeListener === 'function') {
+    removeDevicePixelRatioChangeListener()
+    removeDevicePixelRatioChangeListener = null
+  }
+
+  const nextDevicePixelRatio = Number(window.devicePixelRatio) || 1
+  const mediaQueryList = window.matchMedia(`(resolution: ${nextDevicePixelRatio}dppx)`)
+  const handleChange = () => {
+    bindDevicePixelRatioChangeListener()
+    handleContainerResize()
+  }
+
+  if (typeof mediaQueryList.addEventListener === 'function') {
+    mediaQueryList.addEventListener('change', handleChange)
+    removeDevicePixelRatioChangeListener = () => {
+      mediaQueryList.removeEventListener('change', handleChange)
+    }
+  } else if (typeof mediaQueryList.addListener === 'function') {
+    mediaQueryList.addListener(handleChange)
+    removeDevicePixelRatioChangeListener = () => {
+      mediaQueryList.removeListener(handleChange)
+    }
+  } else {
+    removeDevicePixelRatioChangeListener = null
+  }
+
 }
 
 const ensureDefaultTerminal = async (cwdOverride = '') => {
@@ -2255,12 +2426,58 @@ const shouldBufferTerminalOutput = () => {
   return false
 }
 
+const shouldKeepSinglePaneBottomOnVisibleOutput = (term) => {
+  if (!props.singlePaneChrome || !term?.xterm) return false
+  if (Date.now() > singlePaneOutputBottomRecoveryUntil) return false
+  const current = currentTerminal.value || terminals.value[0]
+  if (!current || current.termId !== term.termId) return false
+  return true
+}
+
+const scheduleSinglePaneVisibleOutputBottomRecovery = (term) => {
+  if (!props.singlePaneChrome || !term?.xterm) return
+  const current = currentTerminal.value || terminals.value[0]
+  if (!current || current.termId !== term.termId) return
+  clearSinglePaneOutputBottomRecoveryTimer()
+  singlePaneOutputBottomRecoveryTimer = window.setTimeout(() => {
+    singlePaneOutputBottomRecoveryTimer = null
+    if (Date.now() > singlePaneOutputBottomRecoveryUntil) return
+    const latestCurrent = currentTerminal.value || terminals.value[0]
+    if (!latestCurrent || latestCurrent.termId !== term.termId) return
+    term.restoreViewportToBottom = true
+    term.viewportDirtyWhileHidden = true
+    if (!props.isActive || !props.focusPaneFocused || props.suspendSinglePaneResize || !canMeasureTerminal()) {
+      markSinglePaneViewportRecoveryNeeded(term)
+      return
+    }
+    reconcileCurrentSinglePaneViewport({ focus: false })
+  }, SINGLE_PANE_OUTPUT_BOTTOM_RECOVERY_DEBOUNCE_MS)
+}
+
+const writeXtermChunk = (term, chunk, { recoverVisibleBottom = false } = {}) => {
+  if (!term?.xterm || !chunk) return
+  const finalize = () => {
+    if (recoverVisibleBottom) {
+      scheduleSinglePaneVisibleOutputBottomRecovery(term)
+    }
+  }
+
+  try {
+    term.xterm.write(chunk, finalize)
+  } catch {
+    term.xterm.write(chunk)
+    finalize()
+  }
+}
+
 const flushBufferedTerminalOutput = (term) => {
   if (!term?.xterm || !term._bufferedOutput) return
   const buffered = term._bufferedOutput
   term._bufferedOutput = ''
   term.viewportDirtyWhileHidden = true
-  term.xterm.write(buffered)
+  writeXtermChunk(term, buffered, {
+    recoverVisibleBottom: shouldKeepSinglePaneBottomOnVisibleOutput(term)
+  })
 }
 
 const writeTerminalOutput = (term, chunk) => {
@@ -2271,7 +2488,9 @@ const writeTerminalOutput = (term, chunk) => {
     return
   }
   flushBufferedTerminalOutput(term)
-  term.xterm.write(chunk)
+  writeXtermChunk(term, chunk, {
+    recoverVisibleBottom: shouldKeepSinglePaneBottomOnVisibleOutput(term)
+  })
 }
 
 const detachTerminalsFromDom = (terms) => {
@@ -2551,11 +2770,82 @@ const scheduleSinglePaneViewportRevealAfterResize = () => {
   clearSinglePaneViewportRevealTimer()
   singlePaneViewportRevealTimer = window.setTimeout(() => {
     singlePaneViewportRevealTimer = null
-    if (!props.singlePaneChrome || !props.isActive || !props.focusPaneFocused || props.suspendSinglePaneResize) {
+    if (!props.singlePaneChrome) return
+
+    const action = resolveSinglePaneResizeRecoveryAction({
+      isActive: props.isActive,
+      focusPaneFocused: props.focusPaneFocused,
+      suspendSinglePaneResize: props.suspendSinglePaneResize,
+      lastExplicitRevealAt: lastSinglePaneExplicitRevealAt,
+      now: Date.now()
+    })
+
+    if (action === 'defer') {
+      markSinglePaneViewportRecoveryNeeded()
       return
     }
-    revealCurrentTerminalAfterAnimation()
+
+    if (action === 'skip-recent-reveal') {
+      return
+    }
+
+    reconcileCurrentSinglePaneViewport({ focus: false })
+    clearSinglePaneResizeFollowupTimer()
+    singlePaneResizeFollowupTimer = window.setTimeout(() => {
+      singlePaneResizeFollowupTimer = null
+      if (!props.singlePaneChrome || !props.isActive || !props.focusPaneFocused) return
+      if (!singlePaneResizeRestoreToBottomLatched) return
+      reconcileCurrentSinglePaneViewport({ focus: false })
+    }, SINGLE_PANE_RESIZE_FOLLOWUP_MS)
   }, SINGLE_PANE_VIEWPORT_REVEAL_DEBOUNCE_MS)
+}
+
+const handleContainerResize = () => {
+  if (props.singlePaneChrome) {
+    latchSinglePaneResizeRestoreToBottom()
+    if (singlePaneResizeRestoreToBottomLatched) {
+      armSinglePaneOutputBottomRecoveryWindow()
+    }
+    if (!props.isActive || props.suspendSinglePaneResize || !props.focusPaneFocused) {
+      markSinglePaneViewportRecoveryNeeded()
+      return
+    }
+    if (resizeRafId != null) return
+    resizeRafId = requestAnimationFrame(() => {
+      resizeRafId = null
+      if (!isCurrentSinglePaneTerminalMounted()) {
+        applyLayout(false)
+        return
+      }
+      // 灵动终端在项目内导航开关这类宽度变化后，还需要在尺寸稳定后补一次 reveal，
+      // 否则长输出终端可能停在旧 viewport 顶部。
+      scheduleSinglePaneViewportRevealAfterResize()
+    })
+    return
+  }
+
+  if (resizeTimer) clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(() => {
+    // 终端视图可见时，导航开关/侧栏 resize 后需要把当前会话真正恢复回来，
+    // 否则 Codex 这类长输出终端容易停在旧 viewport 顶部。
+    applyLayout(!!props.isActive)
+  }, 100)
+}
+
+const scheduleWindowGeometryRecoveryBurst = () => {
+  clearWindowGeometryRecoveryTimers()
+  const trigger = () => {
+    if (props.singlePaneChrome) {
+      latchSinglePaneResizeRestoreToBottom()
+      armSinglePaneOutputBottomRecoveryWindow()
+      markSinglePaneViewportRecoveryNeeded()
+    }
+    handleContainerResize()
+  }
+
+  windowGeometryRecoveryTimerIds = WINDOW_GEOMETRY_RECOVERY_DELAYS_MS.map((delay) => window.setTimeout(() => {
+    trigger()
+  }, delay))
 }
 
 watch(() => [props.isActive, props.focusPaneFocused], ([active, paneFocused]) => {
@@ -2566,6 +2856,13 @@ watch(() => [props.isActive, props.focusPaneFocused], ([active, paneFocused]) =>
     if (props.singlePaneChrome) {
       clearDeferredSinglePanePtyResize()
       clearSinglePaneViewportRevealTimer()
+      if (props.suspendSinglePaneResize) {
+        return
+      }
+      const current = currentTerminal.value || terminals.value[0]
+      if (singlePaneViewportRecoveryPending || current?.viewportDirtyWhileHidden || current?.restoreViewportToBottom) {
+        reconcileCurrentSinglePaneViewport({ focus: false })
+      }
       return
     }
     applyLayout(true)
@@ -2580,6 +2877,17 @@ watch(() => [props.isActive, props.focusPaneFocused], ([active, paneFocused]) =>
     closeSearchBar(false)
   }
 })
+
+watch(
+  () => props.suspendSinglePaneResize,
+  (suspended) => {
+    if (!props.singlePaneChrome || suspended || !props.isActive || !props.focusPaneFocused) return
+    const current = currentTerminal.value || terminals.value[0]
+    if (singlePaneViewportRecoveryPending || current?.viewportDirtyWhileHidden || current?.restoreViewportToBottom) {
+      reconcileCurrentSinglePaneViewport({ focus: false })
+    }
+  }
+)
 
 watch(
   () => props.suspendSinglePaneOutput,
@@ -2662,30 +2970,23 @@ onMounted(() => {
   subscribeCodexTerminalStatuses()
 
   const ro = new ResizeObserver(() => {
-    if (props.singlePaneChrome) {
-      if (props.suspendSinglePaneResize || !props.focusPaneFocused) return
-      if (resizeRafId != null) return
-      resizeRafId = requestAnimationFrame(() => {
-        resizeRafId = null
-        applyLayout(false)
-        // 灵动终端在项目内导航开关这类宽度变化后，还需要在尺寸稳定后补一次 reveal，
-        // 否则长输出终端可能停在旧 viewport 顶部。
-        scheduleSinglePaneViewportRevealAfterResize()
-      })
-    } else {
-      if (resizeTimer) clearTimeout(resizeTimer)
-      resizeTimer = setTimeout(() => {
-        // 终端视图可见时，导航开关/侧栏 resize 后需要把当前会话真正恢复回来，
-        // 否则 Codex 这类长输出终端容易停在旧 viewport 顶部。
-        applyLayout(!!props.isActive)
-      }, 100)
-    }
+    handleContainerResize()
   })
   if (containerRef.value) {
     ro.observe(containerRef.value)
     containerRef.value._ro = ro
   }
+  if (terminalBodyRef.value && terminalBodyRef.value !== containerRef.value) {
+    ro.observe(terminalBodyRef.value)
+  }
 
+  window.addEventListener('resize', handleContainerResize)
+  bindDevicePixelRatioChangeListener()
+  if (window.electronAPI?.onWindowGeometryChanged) {
+    removeWindowGeometryChangeListener = window.electronAPI.onWindowGeometryChanged(() => {
+      scheduleWindowGeometryRecoveryBurst()
+    })
+  }
   document.addEventListener('click', handleDocumentClick)
   document.addEventListener('keydown', handleTerminalKeydown, true)
   window.addEventListener('dragover', handleGlobalDragOver, true)
@@ -2714,7 +3015,24 @@ onUnmounted(() => {
   }
   clearSinglePaneViewportRevealTimer()
   clearDeferredSinglePanePtyResize()
+  clearSinglePaneResizeRestoreLatchTimer()
+  clearSinglePaneResizeFollowupTimer()
+  clearSinglePaneOutputBottomRecoveryTimer()
+  clearWindowGeometryRecoveryTimers()
   lastSinglePanePtyResizeAt = 0
+  lastSinglePaneExplicitRevealAt = 0
+  singlePaneViewportRecoveryPending = false
+  singlePaneResizeRestoreToBottomLatched = false
+  singlePaneOutputBottomRecoveryUntil = 0
+  if (typeof removeDevicePixelRatioChangeListener === 'function') {
+    removeDevicePixelRatioChangeListener()
+    removeDevicePixelRatioChangeListener = null
+  }
+  if (typeof removeWindowGeometryChangeListener === 'function') {
+    removeWindowGeometryChangeListener()
+    removeWindowGeometryChangeListener = null
+  }
+  window.removeEventListener('resize', handleContainerResize)
   document.removeEventListener('click', handleDocumentClick)
   document.removeEventListener('keydown', handleTerminalKeydown, true)
   window.removeEventListener('dragover', handleGlobalDragOver, true)

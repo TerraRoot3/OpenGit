@@ -158,8 +158,8 @@ async function activateSession(sessionId) {
   if (sequence !== activationSequence) return
   focusSession(sessionId)
   await nextTick()
-  activatingSessionId.value = ''
   panelRefById.get(sessionId)?.revealCurrentTerminalAfterAnimation?.()
+  activatingSessionId.value = ''
 }
 
 function clearPendingActivationWait() {

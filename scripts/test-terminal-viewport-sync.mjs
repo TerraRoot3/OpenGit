@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
-import { scheduleViewportRevealSync } from '../src/components/terminal/terminalViewportSync.mjs'
+import {
+  forceTerminalRenderGeometrySync,
+  runViewportSyncPass,
+  scheduleViewportRevealSync,
+  forceViewportScrollAreaSync
+} from '../src/components/terminal/terminalViewportSync.mjs'
 
 const createStubTerm = () => {
   const events = []
@@ -24,6 +29,106 @@ const createStubTerm = () => {
     }
   }
   return { term, events }
+}
+
+{
+  const events = []
+  const term = {
+    fitAddon: {
+      fit() {
+        events.push('fit')
+      }
+    },
+    xterm: {
+      cols: 80,
+      rows: 24,
+      _core: {
+        _charSizeService: {
+          measure() {
+            events.push('measureChars')
+          }
+        },
+        _renderService: {
+          handleCharSizeChanged() {
+            events.push('handleCharSizeChanged')
+          },
+          handleResize(cols, rows) {
+            events.push(`renderResize:${cols}x${rows}`)
+          }
+        }
+      },
+      refresh(start, end) {
+        events.push(`refresh:${start}-${end}`)
+      }
+    }
+  }
+
+  assert.equal(
+    forceTerminalRenderGeometrySync(term),
+    true,
+    'geometry sync should report success when xterm render internals are available'
+  )
+  assert.deepEqual(
+    events,
+    ['measureChars', 'handleCharSizeChanged', 'renderResize:80x24'],
+    'geometry sync should re-measure characters and force the renderer to reflow at the current terminal size'
+  )
+}
+
+{
+  const events = []
+  const term = {
+    fitAddon: {
+      fit() {
+        events.push('fit')
+      }
+    },
+    xterm: {
+      cols: 80,
+      rows: 24,
+      _core: {
+        _charSizeService: {
+          measure() {
+            events.push('measureChars')
+          }
+        },
+        _renderService: {
+          handleCharSizeChanged() {
+            events.push('handleCharSizeChanged')
+          },
+          handleResize(cols, rows) {
+            events.push(`renderResize:${cols}x${rows}`)
+          }
+        }
+      },
+      refresh(start, end) {
+        events.push(`refresh:${start}-${end}`)
+      }
+    }
+  }
+
+  assert.equal(
+    runViewportSyncPass({
+      term,
+      resizePty({ cols, rows }) {
+        events.push(`resize:${cols}x${rows}`)
+      }
+    }),
+    true,
+    'viewport sync pass should still succeed after forcing renderer geometry reconciliation'
+  )
+  assert.deepEqual(
+    events,
+    [
+      'measureChars',
+      'handleCharSizeChanged',
+      'renderResize:80x24',
+      'fit',
+      'refresh:0-23',
+      'resize:80x24'
+    ],
+    'viewport sync should refresh xterm renderer geometry before running fit so resize recovery uses current cell metrics'
+  )
 }
 
 {
@@ -362,6 +467,69 @@ const createStubTerm = () => {
   pendingFrames.shift()()
 
   assert.deepEqual(events, [], 'sync should not touch terminal state when it cannot be measured')
+}
+
+{
+  const events = []
+  const term = {
+    xterm: {
+      _core: {
+        viewport: {
+          _refresh(immediate) {
+            events.push(`refreshViewport:${immediate}`)
+          },
+          syncScrollArea(immediate) {
+            events.push(`syncScrollArea:${immediate}`)
+          }
+        }
+      }
+    }
+  }
+
+  assert.equal(
+    forceViewportScrollAreaSync(term, true),
+    true,
+    'force reconcile should report success when a viewport exists'
+  )
+  assert.deepEqual(
+    events,
+    ['syncScrollArea:true', 'refreshViewport:true'],
+    'force reconcile should update viewport bookkeeping first, then force a real viewport-height refresh'
+  )
+}
+
+{
+  const events = []
+  const term = {
+    xterm: {
+      _core: {
+        viewport: {
+          syncScrollArea(immediate) {
+            events.push(`syncScrollArea:${immediate}`)
+          }
+        }
+      }
+    }
+  }
+
+  assert.equal(
+    forceViewportScrollAreaSync(term, true),
+    true,
+    'force reconcile should fall back to syncScrollArea when internal refresh is unavailable'
+  )
+  assert.deepEqual(
+    events,
+    ['syncScrollArea:true'],
+    'fallback reconcile should still update the viewport scroll area'
+  )
+}
+
+{
+  assert.equal(
+    forceViewportScrollAreaSync({}, true),
+    false,
+    'force reconcile should no-op when xterm viewport internals are unavailable'
+  )
 }
 
 console.log('terminal viewport sync assertions passed')

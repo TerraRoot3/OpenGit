@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const codexProjectStatusHandlers = new WeakMap()
 const codexTerminalStatusHandlers = new WeakMap()
+const windowGeometryChangeHandlers = new WeakMap()
 const focusProjectTerminalSubscribers = new Set()
 const pendingFocusProjectTerminalPayloads = []
 const MAX_PENDING_FOCUS_PROJECT_TERMINAL_PAYLOADS = 16
@@ -208,6 +209,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 通知刷新完成
   notifyRefreshComplete: () => {
     ipcRenderer.invoke('notify-refresh-complete')
+  },
+  onWindowGeometryChanged: (callback) => {
+    if (typeof callback !== 'function') return () => {}
+    const handler = (event, data) => callback(data)
+    windowGeometryChangeHandlers.set(callback, handler)
+    ipcRenderer.on('window-geometry-changed', handler)
+    return () => {
+      ipcRenderer.removeListener('window-geometry-changed', handler)
+      windowGeometryChangeHandlers.delete(callback)
+    }
+  },
+  removeWindowGeometryChangedListener: (callback) => {
+    if (typeof callback === 'function') {
+      const handler = windowGeometryChangeHandlers.get(callback) || callback
+      ipcRenderer.removeListener('window-geometry-changed', handler)
+      windowGeometryChangeHandlers.delete(callback)
+      return
+    }
+    ipcRenderer.removeAllListeners('window-geometry-changed')
   },
   
   // 实时命令输出监听
