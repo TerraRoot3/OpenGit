@@ -14,6 +14,8 @@ const { registerTerminalHandlers } = require('./ipc/terminal')
 const { registerConfigHandlers } = require('./ipc/config')
 const { registerFilesystemHandlers } = require('./ipc/filesystem')
 const { registerAiSessionHandlers } = require('./ipc/ai-sessions')
+const { registerCodexMainSessionHandlers } = require('./ipc/codex-main-session')
+const { createCodexFeishuBridge } = require('./ipc/codex-feishu-bridge')
 const { registerCommandHandlers } = require('./ipc/command')
 const { registerNavigationHandlers } = require('./ipc/navigation')
 const { registerProjectHandlers } = require('./ipc/projects')
@@ -1454,6 +1456,15 @@ registerAiSessionHandlers({
   summaryCacheFilePath: path.join(app.getPath('userData'), 'cache', 'ai-session-summary-cache.json')
 })
 
+const codexMainSession = registerCodexMainSessionHandlers({
+  ipcMain,
+  store,
+  getMainWindow: () => mainWindow,
+  createFeishuBridge: createCodexFeishuBridge,
+  safeLog,
+  safeError
+})
+
 
 // 检查并处理 Git 锁文件
 async function checkAndRemoveGitLock(cwd) {
@@ -1578,6 +1589,9 @@ app.whenReady().then(async () => {
   safeLog(`📁 User data path: ${userDataPath}`)
   
   createWindow()
+  void codexMainSession.start().catch((error) => {
+    safeError('[Codex Main] 后台服务启动失败:', error.message)
+  })
 
 }).catch((error) => {
   safeError('Error in app.whenReady():', error)
@@ -1643,4 +1657,5 @@ const { cleanup: cleanupTerminalSessions } = registerTerminalHandlers({
 app.on('will-quit', () => {
   cleanupTerminalSessions()
   cleanupCommandProcesses()
+  void codexMainSession.cleanup()
 })

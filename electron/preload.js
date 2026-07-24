@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const codexProjectStatusHandlers = new WeakMap()
 const codexTerminalStatusHandlers = new WeakMap()
+const codexMainSessionEventHandlers = new WeakMap()
 const windowGeometryChangeHandlers = new WeakMap()
 const focusProjectTerminalSubscribers = new Set()
 const pendingFocusProjectTerminalPayloads = []
@@ -35,6 +36,38 @@ ipcRenderer.on('focus-project-terminal', (event, payload) => {
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
+
+  codexMainSession: {
+    getState: () => ipcRenderer.invoke('codex-main-get-state'),
+    getHistory: (data) => ipcRenderer.invoke('codex-main-get-history', data),
+    selectSession: (data) => ipcRenderer.invoke('codex-main-select-session', data),
+    send: (data) => ipcRenderer.invoke('codex-main-send', data),
+    interrupt: (data) => ipcRenderer.invoke('codex-main-interrupt', data),
+    newSession: () => ipcRenderer.invoke('codex-main-new-session'),
+    restart: () => ipcRenderer.invoke('codex-main-restart'),
+    getConfig: () => ipcRenderer.invoke('codex-main-get-config'),
+    saveConfig: (data) => ipcRenderer.invoke('codex-main-save-config', data),
+    refreshAccount: () => ipcRenderer.invoke('codex-main-refresh-account'),
+    onEvent: (callback) => {
+      if (typeof callback !== 'function') return () => {}
+      const handler = (event, data) => callback(data)
+      codexMainSessionEventHandlers.set(callback, handler)
+      ipcRenderer.on('codex-main-session-event', handler)
+      return () => {
+        ipcRenderer.removeListener('codex-main-session-event', handler)
+        codexMainSessionEventHandlers.delete(callback)
+      }
+    },
+    removeEventListener: (callback) => {
+      if (typeof callback === 'function') {
+        const handler = codexMainSessionEventHandlers.get(callback) || callback
+        ipcRenderer.removeListener('codex-main-session-event', handler)
+        codexMainSessionEventHandlers.delete(callback)
+        return
+      }
+      ipcRenderer.removeAllListeners('codex-main-session-event')
+    }
+  },
 
   // Git 操作
   gitClone: (data) => ipcRenderer.invoke('git-clone', data),

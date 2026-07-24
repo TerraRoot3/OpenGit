@@ -25,6 +25,7 @@
             <Terminal v-else-if="tab.kind === 'terminal'" :size="14" />
             <HardDrive v-else-if="tab.kind === 'backup'" :size="14" />
             <Palette v-else-if="tab.kind === 'theme'" :size="14" />
+            <Bot v-else-if="tab.kind === 'codex'" :size="14" />
             <Folder v-else-if="tab.routeType === 'clone-directory'" :size="14" />
             <GitBranch v-else :size="14" />
           </span>
@@ -63,6 +64,11 @@
         </button>
 
         <div v-if="showWorkspaceMenu" class="workspace-menu">
+          <button type="button" @click="openCodex">
+            <Bot :size="16" />
+            <span>Codex</span>
+          </button>
+          <div class="workspace-menu-divider"></div>
           <button type="button" @click="openRemoteRepo">
             <Cloud :size="16" />
             <span>远端仓库</span>
@@ -142,10 +148,15 @@
         v-show="themeTab.id === activeTabId"
       />
 
+      <CodexMainSession
+        v-if="codexTab"
+        v-show="codexTab.id === activeTabId"
+      />
+
       <div v-if="tabs.length === 0" class="project-workspace-empty">
         <FolderOpen :size="34" stroke-width="1.5" />
         <strong>从侧边栏打开项目</strong>
-        <span>也可以打开远端仓库、灵动终端或分屏终端</span>
+        <span>也可以从右侧菜单打开 Codex、远端仓库或独立终端</span>
       </div>
     </section>
   </main>
@@ -161,6 +172,7 @@ import {
   watch
 } from 'vue'
 import {
+  Bot,
   Cloud,
   Folder,
   FolderOpen,
@@ -177,12 +189,14 @@ import FocusTerminalStack from '../terminal/FocusTerminalStack.vue'
 import StandaloneSplitTerminal from '../terminal/StandaloneSplitTerminal.vue'
 import BackupManager from './BackupManager.vue'
 import ThemePanel from './ThemePanel.vue'
+import CodexMainSession from './CodexMainSession.vue'
 import { clearProjectCache } from '../../stores/projectStore.js'
 import { clearFocusTerminalScope } from '../../stores/focusTerminalStore.js'
 import { useCodexProjectStatusStore } from '../../stores/codexProjectStatusStore.js'
 import {
   buildProjectWorkspaceRoute,
   createBackupWorkspaceTab,
+  createCodexWorkspaceTab,
   createProjectTerminalFocusRequest,
   createProjectWorkspaceTab,
   createRemoteWorkspaceTab,
@@ -263,6 +277,7 @@ const splitTerminalTabs = computed(() => terminalTabs.value.filter(
 const remoteTab = computed(() => tabs.value.find((tab) => tab.kind === 'remote') || null)
 const backupTab = computed(() => tabs.value.find((tab) => tab.kind === 'backup') || null)
 const themeTab = computed(() => tabs.value.find((tab) => tab.kind === 'theme') || null)
+const codexTab = computed(() => tabs.value.find((tab) => tab.kind === 'codex') || null)
 const activeProjectSnapshot = computed(() => {
   const tab = activeTab.value
   if (tab?.kind !== 'project') return null
@@ -376,6 +391,17 @@ const openProjectRoute = async (routeUrl) => {
 const openRemoteRepo = async () => {
   showWorkspaceMenu.value = false
   const nextTab = createRemoteWorkspaceTab()
+  if (!tabs.value.some((tab) => tab.id === nextTab.id)) {
+    tabs.value = [...tabs.value, nextTab]
+  }
+  activeTabId.value = nextTab.id
+  await nextTick()
+  return true
+}
+
+const openCodex = async () => {
+  showWorkspaceMenu.value = false
+  const nextTab = createCodexWorkspaceTab()
   if (!tabs.value.some((tab) => tab.id === nextTab.id)) {
     tabs.value = [...tabs.value, nextTab]
   }
@@ -600,6 +626,7 @@ onBeforeUnmount(() => {
 
 defineExpose({
   openProjectRoute,
+  openCodex,
   openRemoteRepo,
   openFocusTerminal,
   openSplitTerminal,

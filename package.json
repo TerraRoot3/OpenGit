@@ -27,6 +27,7 @@
     "convert-icon": "bash scripts/convert-icon.sh"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.71.1",
     "electron-store": "^11.0.0",
     "node-pty": "^1.1.0-beta42"
   },

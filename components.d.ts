@@ -10,6 +10,7 @@ declare module 'vue' {
     AppShell: typeof import('./src/components/app/AppShell.vue')['default']
     BackupManager: typeof import('./src/components/app/BackupManager.vue')['default']
     CloneProgressDialog: typeof import('./src/components/dialog/CloneProgressDialog.vue')['default']
+    CodexMainSession: typeof import('./src/components/app/CodexMainSession.vue')['default']
     ConfirmDialog: typeof import('./src/components/dialog/ConfirmDialog.vue')['default']
     CustomSelect: typeof import('./src/components/common/CustomSelect.vue')['default']
     FocusTerminalStack: typeof import('./src/components/terminal/FocusTerminalStack.vue')['default']

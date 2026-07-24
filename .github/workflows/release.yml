@@ -26,7 +26,7 @@ jobs:
             build_args: --mac --arm64 --x64
             artifact_name: release-macos
             allow_failure: false
-          - os: windows-latest
+          - os: windows-2022
             build_args: --win zip
             artifact_name: release-windows
             allow_failure: true

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {
   buildProjectWorkspaceRoute,
   createBackupWorkspaceTab,
+  createCodexWorkspaceTab,
   createProjectTerminalFocusRequest,
   createProjectWorkspaceTab,
   createRemoteWorkspaceTab,
@@ -54,6 +55,7 @@ const secondProjectTab = createProjectWorkspaceTab('git:project:/tmp/second')
 const remoteTab = createRemoteWorkspaceTab()
 const backupTab = createBackupWorkspaceTab()
 const themeTab = createThemeWorkspaceTab()
+const codexTab = createCodexWorkspaceTab()
 const terminalTab = createStandaloneTerminalTab({
   id: 'standalone-terminal:test',
   title: '灵动终端',
@@ -83,8 +85,8 @@ assert.equal(
 )
 
 const persisted = serializeWorkspaceTabs(
-  [firstProjectTab, secondProjectTab, remoteTab, terminalTab, splitTerminalTab, backupTab, themeTab],
-  themeTab.id
+  [firstProjectTab, secondProjectTab, remoteTab, terminalTab, splitTerminalTab, backupTab, themeTab, codexTab],
+  codexTab.id
 )
 assert.equal(
   persisted.tabs.filter((tab) => tab.routeType.startsWith('standalone-terminal-')).length,
@@ -100,13 +102,14 @@ assert.deepEqual(
     terminalTab.id,
     splitTerminalTab.id,
     backupTab.id,
-    themeTab.id
+    themeTab.id,
+    codexTab.id
   ],
   'project and native utility tabs should restore without browser tabs'
 )
 assert.equal(
   restoreWorkspaceTabs(persisted).activeTabId,
-  themeTab.id,
+  codexTab.id,
   'the last active workspace page should be restored'
 )
 const persistedActiveTerminal = serializeWorkspaceTabs(
@@ -128,6 +131,7 @@ const migratedLegacyState = migrateLegacyBrowserTabs({
     { url: 'about:terminal-split', title: '分屏终端', type: 'standalone-terminal-split' },
     { url: 'git:remote', title: '远端仓库', type: 'remote-repo' },
     { url: 'about:backup', title: '备份管理', type: 'backup-manager' },
+    { url: 'about:codex', title: 'Codex', type: 'codex-main-session' },
     { url: 'git:clone:/tmp/legacy-group', title: 'legacy-group', type: 'clone-directory' }
   ],
   savedActiveTabIndex: 3,
@@ -137,12 +141,13 @@ const migratedLegacyState = migrateLegacyBrowserTabs({
     'about:terminal-focus': 2,
     'about:terminal-split': 3,
     'about:backup': 4,
-    'git:clone:/tmp/legacy-group': 5
+    'about:codex': 5,
+    'git:clone:/tmp/legacy-group': 6
   }
 })
 assert.deepEqual(
   migratedLegacyState.tabs.map((tab) => tab.kind),
-  ['remote', 'project', 'terminal', 'terminal', 'backup', 'project'],
+  ['remote', 'project', 'terminal', 'terminal', 'backup', 'codex', 'project'],
   'legacy migration should keep native pages in their saved visual order'
 )
 assert.deepEqual(

@@ -85,6 +85,14 @@ export const createThemeWorkspaceTab = () => ({
   kind: 'theme'
 })
 
+export const createCodexWorkspaceTab = () => ({
+  id: 'about:codex',
+  route: 'about:codex',
+  routeType: 'codex-main-session',
+  title: 'Codex',
+  kind: 'codex'
+})
+
 export const createStandaloneTerminalTab = ({
   id,
   title = '',
@@ -140,6 +148,7 @@ export const serializeWorkspaceTabs = (tabs = [], activeTabId = '') => {
       || tab?.kind === 'terminal'
       || tab?.kind === 'backup'
       || tab?.kind === 'theme'
+      || tab?.kind === 'codex'
     ))
     .map((tab) => ({
       id: tab.id,
@@ -184,6 +193,8 @@ export const restoreWorkspaceTabs = (payload = {}) => {
       tab = createBackupWorkspaceTab()
     } else if (item?.routeType === 'theme-manager') {
       tab = createThemeWorkspaceTab()
+    } else if (item?.routeType === 'codex-main-session') {
+      tab = createCodexWorkspaceTab()
     } else {
       const projectRoute = item?.route || buildProjectWorkspaceRoute(item?.path, item?.routeType)
       tab = createProjectWorkspaceTab(projectRoute)
@@ -241,6 +252,8 @@ export const migrateLegacyBrowserTabs = ({
       tab = createBackupWorkspaceTab()
     } else if (routeType === 'theme-manager' || route === 'about:themes') {
       tab = createThemeWorkspaceTab()
+    } else if (routeType === 'codex-main-session' || route === 'about:codex') {
+      tab = createCodexWorkspaceTab()
     } else if (isStandaloneTerminalRoute(routeType, route)) {
       const mode = routeType === 'standalone-terminal-split' || route === 'about:terminal-split'
         ? 'split'

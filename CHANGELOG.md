@@ -12,7 +12,12 @@ From this file onward:
 
 ### Added
 
+- 新增可恢复的 Codex 会话页面，复用本机 Codex 的 ChatGPT 订阅登录，支持左侧多会话列表、独立持久上下文、任务队列、工作目录与权限配置。
+- 新增多飞书机器人长连接配置，可分别设置名称、凭据和白名单；不同机器人及 chat_id 使用独立 Codex 会话，最终回答不加包装直接回传飞书。
+
 ### Changed
+
+- 重构 Codex 页面视觉层级：会话导航、聊天工作区与设置抽屉分区展示，多飞书机器人使用可折叠配置卡片，并补齐键盘焦点、减少动画等可访问性细节。
 
 ### Fixed
 
@@ -21,6 +26,8 @@ From this file onward:
 ### Docs
 
 ### Build
+
+- Windows 发布构建固定使用 `windows-2022`，避免 `windows-latest` 迁移到 Visual Studio 2026 后原生依赖无法编译。
 
 ## [1.5.0] - 2026-07-24
 

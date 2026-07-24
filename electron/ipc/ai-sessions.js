@@ -1885,6 +1885,8 @@ function registerAiSessionHandlers({
 
 module.exports = {
   registerAiSessionHandlers,
+  resolveCodexExecutable,
+  buildCodexProcessEnv,
   __testables: {
     normalizeSessionText,
     resetSessionCaches,
