@@ -7,6 +7,9 @@ const {
   resolveCodexExecutable,
   buildCodexProcessEnv
 } = require('./ai-sessions')
+const {
+  collectOutboxAttachments
+} = require('./codex-feishu-attachments')
 const { version: OPEN_GIT_VERSION = '0.0.0' } = require('../../package.json')
 
 const CONFIG_STORE_KEY = 'codex-main-session-config-v1'
@@ -24,6 +27,7 @@ const MAIN_SESSION_INSTRUCTIONS = [
   '你是 OpenGit 内置的持久 Codex 会话。',
   '你会接收 OpenGit 页面或当前飞书会话转发的用户指令，并应在当前工作目录中主动完成任务。',
   '任务执行期间可以使用 Codex 可用的工具；在真正缺少用户选择或外部权限时才说明阻塞。',
+  '飞书任务可能附带本地文件与本轮专属 outbox；需要回传附件时，只把最终交付文件写入指定 outbox，不要写入临时产物，也不要读取或发送 outbox 之外的本机文件。',
   '每轮最终回答必须是可直接转发给用户的简洁结果总结：先说结果，再列出关键变更、验证状态和仍需用户处理的事项。',
   '不要在最终回答中泄露 access token、refresh token、App Secret 或其他凭据。'
 ].join('\n')
@@ -168,18 +172,76 @@ function resolveWorkingDirectory(value = '') {
   return os.homedir()
 }
 
-function buildTurnSandboxPolicy(config, cwd) {
+function buildTurnSandboxPolicy(config, cwd, extraWritableRoots = []) {
   if (config.sandboxMode === 'read-only') {
     return { type: 'readOnly', networkAccess: true }
   }
   if (config.sandboxMode === 'workspace-write') {
+    const writableRoots = Array.from(new Set([
+      cwd,
+      ...(Array.isArray(extraWritableRoots) ? extraWritableRoots : [])
+    ].map((item) => String(item || '').trim()).filter(Boolean)))
     return {
       type: 'workspaceWrite',
-      writableRoots: [cwd],
+      writableRoots,
       networkAccess: true
     }
   }
   return { type: 'dangerFullAccess' }
+}
+
+function formatAttachmentSize(size) {
+  const bytes = Number(size) || 0
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)}MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}KB`
+  return `${bytes}B`
+}
+
+function buildCodexTaskInput(task = {}) {
+  const isFeishu = task.source === 'feishu'
+  if (!isFeishu) {
+    return [{ type: 'text', text: String(task.text || '').trim() }]
+  }
+
+  const attachments = Array.isArray(task.attachments) ? task.attachments : []
+  const workspace = task.attachmentWorkspace || {}
+  const sections = [
+    '[来自飞书的指令]',
+    String(task.text || '').trim()
+  ]
+  if (attachments.length > 0) {
+    sections.push('', '[本轮飞书附件]')
+    for (const [index, attachment] of attachments.entries()) {
+      sections.push(
+        `${index + 1}. [${attachment.kind || 'file'}] ${attachment.name || '附件'}`
+        + ` (${attachment.mimeType || 'application/octet-stream'}, ${formatAttachmentSize(attachment.size)})`
+      )
+      sections.push(`   本地路径：${attachment.path}`)
+      if (attachment.kind === 'image') {
+        sections.push('   该图片已作为 localImage 一并提交。')
+      }
+    }
+  }
+  if (workspace.outboxDir) {
+    sections.push(
+      '',
+      '[飞书附件回复规则]',
+      `需要向用户回复图片或文件时，仅将最终交付文件写入：${workspace.outboxDir}`,
+      'OpenGit 会自动上传并发送该目录中的普通文件；不要写入中间产物、符号链接或无需发送的文件。',
+      '支持的回复类型为图片和普通文件；图片会按图片消息发送，其他内容按文件发送。'
+    )
+  }
+
+  const input = [{ type: 'text', text: sections.join('\n').trim() }]
+  for (const attachment of attachments) {
+    if (attachment?.kind === 'image' && attachment.path) {
+      input.push({
+        type: 'localImage',
+        path: attachment.path
+      })
+    }
+  }
+  return input
 }
 
 function createRpcError(payload = null, fallbackMessage = 'Codex app-server 请求失败') {
@@ -710,6 +772,32 @@ class CodexMainSessionService {
     }
   }
 
+  collectTurnResponseItems(activeTask, completedTurn = {}) {
+    const responseItems = []
+    const seenItemIds = new Set()
+    const appendMessage = (itemId, text) => {
+      const normalizedText = String(text || '').trim()
+      if (!normalizedText) return
+      const normalizedItemId = String(itemId || '').trim()
+      if (normalizedItemId && seenItemIds.has(normalizedItemId)) return
+      if (normalizedItemId) seenItemIds.add(normalizedItemId)
+      responseItems.push({
+        id: normalizedItemId,
+        text: normalizedText
+      })
+    }
+
+    for (const itemId of activeTask?.agentMessageIds || []) {
+      const messageKey = `${activeTask.sessionId}:${itemId}`
+      appendMessage(itemId, this.liveMessages.get(messageKey)?.text)
+    }
+    for (const item of Array.isArray(completedTurn?.items) ? completedTurn.items : []) {
+      if (item?.type !== 'agentMessage') continue
+      appendMessage(item.id, item.text)
+    }
+    return responseItems
+  }
+
   handleNotification(method, params) {
     if (method === 'account/updated') {
       this.account = this.account
@@ -774,17 +862,42 @@ class CodexMainSessionService {
         sessionId: activeTask.sessionId,
         message: { ...current }
       })
+      if (
+        current.text
+        && typeof activeTask.onAgentMessage === 'function'
+        && !activeTask.forwardedAgentMessageIds.has(itemId)
+      ) {
+        activeTask.forwardedAgentMessageIds.add(itemId)
+        try {
+          Promise.resolve(activeTask.onAgentMessage({
+            id: itemId,
+            text: current.text
+          })).catch((error) => {
+            this.safeError('[Codex Main] 实时回传飞书消息失败:', error.message)
+          })
+        } catch (error) {
+          this.safeError('[Codex Main] 实时回传飞书消息失败:', error.message)
+        }
+      }
       return
     }
 
     if (method === 'turn/completed') {
       const completedTurn = params?.turn || {}
       activeTask.turnId = completedTurn.id || activeTask.turnId
-      if (!activeTask.finalText) {
-        const agentItems = (Array.isArray(completedTurn.items) ? completedTurn.items : [])
-          .filter((item) => item?.type === 'agentMessage' && String(item.text || '').trim())
-        activeTask.finalText = String(agentItems.at(-1)?.text || '').trim()
-      }
+      const responseItems = this.collectTurnResponseItems(
+        activeTask,
+        completedTurn
+      )
+      const fallbackText = activeTask.finalText
+        || (String(completedTurn.status || 'completed') === 'interrupted'
+          ? '任务已中断。'
+          : '任务已完成。')
+      const replyItems = responseItems.length > 0
+        ? responseItems
+        : [{ id: '', text: fallbackText }]
+      const replyMessages = replyItems.map((item) => item.text)
+      activeTask.finalText = replyMessages.join('\n\n')
       const status = String(completedTurn.status || 'completed')
       const errorText = completedTurn?.error?.message || completedTurn?.error || ''
       if (status === 'failed') {
@@ -796,7 +909,9 @@ class CodexMainSessionService {
           turnId: activeTask.turnId,
           threadId: activeTask.threadId,
           status,
-          text: activeTask.finalText || (status === 'interrupted' ? '任务已中断。' : '任务已完成。')
+          text: activeTask.finalText,
+          messages: replyMessages,
+          messageItems: replyItems
         })
       }
     }
@@ -1114,7 +1229,10 @@ class CodexMainSessionService {
     text,
     source = 'ui',
     sessionId = '',
-    metadata = {}
+    metadata = {},
+    attachments = [],
+    attachmentWorkspace = null,
+    onAgentMessage = null
   } = {}) {
     const normalizedText = String(text || '').trim()
     if (!normalizedText) {
@@ -1155,6 +1273,11 @@ class CodexMainSessionService {
         text: normalizedText,
         source: normalizedSource,
         metadata,
+        attachments: Array.isArray(attachments) ? attachments : [],
+        attachmentWorkspace,
+        onAgentMessage: typeof onAgentMessage === 'function'
+          ? onAgentMessage
+          : null,
         resolve,
         reject
       })
@@ -1206,9 +1329,7 @@ class CodexMainSessionService {
   async runTask(task) {
     const threadId = await this.ensureThread(task.sessionId)
     const cwd = resolveWorkingDirectory(this.config.workingDirectory)
-    const inputText = task.source === 'feishu'
-      ? `[来自飞书的指令]\n${task.text}`
-      : task.text
+    const turnInput = buildCodexTaskInput(task)
 
     let completeTask
     const resultPromise = new Promise((resolve, reject) => {
@@ -1220,6 +1341,7 @@ class CodexMainSessionService {
       turnId: '',
       finalText: '',
       agentMessageIds: new Set(),
+      forwardedAgentMessageIds: new Set(),
       resolve: (result) => {
         if (this.activeTasks.get(task.sessionId) !== activeTask) return
         this.activeTasks.delete(task.sessionId)
@@ -1228,7 +1350,27 @@ class CodexMainSessionService {
         }
         this.touchSession(task.sessionId)
         this.broadcastState()
-        completeTask.resolve(result)
+        if (task.source === 'feishu' && task.attachmentWorkspace) {
+          try {
+            const output = collectOutboxAttachments(task.attachmentWorkspace)
+            completeTask.resolve({
+              ...result,
+              attachments: output.attachments,
+              attachmentErrors: output.rejected
+            })
+          } catch (error) {
+            completeTask.resolve({
+              ...result,
+              attachments: [],
+              attachmentErrors: [{
+                name: 'outbox',
+                error: error?.message || String(error)
+              }]
+            })
+          }
+        } else {
+          completeTask.resolve(result)
+        }
       },
       reject: (error) => {
         if (this.activeTasks.get(task.sessionId) !== activeTask) return
@@ -1248,10 +1390,16 @@ class CodexMainSessionService {
     try {
       const response = await this.request('turn/start', {
         threadId,
-        input: [{ type: 'text', text: inputText }],
+        input: turnInput,
         cwd,
         approvalPolicy: this.config.approvalPolicy,
-        sandboxPolicy: buildTurnSandboxPolicy(this.config, cwd),
+        sandboxPolicy: buildTurnSandboxPolicy(
+          this.config,
+          cwd,
+          task.attachmentWorkspace?.rootDir
+            ? [task.attachmentWorkspace.rootDir]
+            : []
+        ),
         ...(this.config.reasoningEffort
           ? { effort: this.config.reasoningEffort }
           : {})
@@ -1340,6 +1488,9 @@ function createFeishuBridgeManager({
           onInstruction: (payload) => service.enqueueInstruction({
             text: payload.text,
             source: 'feishu',
+            attachments: payload.attachments,
+            attachmentWorkspace: payload.attachmentWorkspace,
+            onAgentMessage: payload.onAgentMessage,
             metadata: {
               ...payload,
               connectionId: connection.id,
@@ -1566,6 +1717,7 @@ module.exports = {
   publicCodexMainConfig,
   resolveWorkingDirectory,
   buildTurnSandboxPolicy,
+  buildCodexTaskInput,
   extractThreadMessages,
   normalizeStoredSessions,
   createFeishuSessionId,

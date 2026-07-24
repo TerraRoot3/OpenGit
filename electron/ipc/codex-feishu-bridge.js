@@ -4,6 +4,13 @@ const MAX_DEDUP_MESSAGES = 2000
 const FEISHU_PING_TIMEOUT_SECONDS = 15
 const FEISHU_HANDSHAKE_TIMEOUT_MS = 60 * 1000
 const FEISHU_TYPING_REACTION = 'Typing'
+const {
+  createAttachmentWorkspace,
+  cleanupAttachmentWorkspace,
+  pruneExpiredAttachmentWorkspaces,
+  downloadFeishuAttachments,
+  sendFeishuOutputAttachment
+} = require('./codex-feishu-attachments')
 
 function parseMaybeJson(value) {
   if (!value) return null
@@ -44,6 +51,74 @@ function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function collectFeishuContentSignals(node, output) {
+  if (node == null) return
+  if (Array.isArray(node)) {
+    for (const item of node) collectFeishuContentSignals(item, output)
+    return
+  }
+  if (typeof node !== 'object') return
+
+  const imageKey = String(node.image_key || '').trim()
+  if (imageKey) output.images.add(imageKey)
+  const fileKey = String(node.file_key || '').trim()
+  if (fileKey && !output.files.has(fileKey)) {
+    output.files.set(
+      fileKey,
+      String(node.file_name || node.name || '').trim()
+    )
+  }
+  for (const key of ['text', 'title']) {
+    const text = typeof node[key] === 'string' ? node[key].trim() : ''
+    if (text) output.texts.add(text)
+  }
+  for (const value of Object.values(node)) {
+    collectFeishuContentSignals(value, output)
+  }
+}
+
+function parseFeishuMessageAttachments(message = {}, content = null) {
+  const messageType = String(
+    message.message_type
+    || message.msg_type
+    || ''
+  ).trim().toLowerCase()
+  const contentObject = content && typeof content === 'object'
+    ? content
+    : (
+        parseMaybeJson(message.content)
+        || parseMaybeJson(message?.body?.content)
+        || {}
+      )
+  const signals = {
+    images: new Set(),
+    files: new Map(),
+    texts: new Set()
+  }
+  collectFeishuContentSignals(contentObject, signals)
+
+  const topImageKey = String(message.image_key || '').trim()
+  if (topImageKey) signals.images.add(topImageKey)
+  const topFileKey = String(message.file_key || '').trim()
+  if (topFileKey && !signals.files.has(topFileKey)) {
+    signals.files.set(topFileKey, String(message.file_name || '').trim())
+  }
+
+  const attachments = []
+  for (const imageKey of signals.images) {
+    attachments.push({ kind: 'image', key: imageKey, name: '' })
+  }
+  for (const [fileKey, fileName] of signals.files) {
+    if (messageType === 'audio') continue
+    attachments.push({
+      kind: 'file',
+      key: fileKey,
+      name: fileName
+    })
+  }
+  return attachments
+}
+
 function parseFeishuMessageEvent(payload = {}) {
   const event = payload?.event && typeof payload.event === 'object'
     ? payload.event
@@ -70,20 +145,50 @@ function parseFeishuMessageEvent(payload = {}) {
       ).trim())
       .filter(Boolean)
   ))
-  const messageType = String(message.message_type || '').trim().toLowerCase()
+  const messageType = String(
+    message.message_type
+    || message.msg_type
+    || ''
+  ).trim().toLowerCase()
   const chatType = String(message.chat_type || '').trim().toLowerCase()
-  const rawText = typeof content.text === 'string'
-    ? content.text
-    : (typeof message.content === 'string' && !parseMaybeJson(message.content)
-        ? message.content
-        : '')
+  const contentSignals = {
+    images: new Set(),
+    files: new Map(),
+    texts: new Set()
+  }
+  collectFeishuContentSignals(content, contentSignals)
+  const rawText = contentSignals.texts.size > 0
+    ? Array.from(contentSignals.texts).join(' ')
+    : (
+        typeof message.content === 'string' && !parseMaybeJson(message.content)
+          ? message.content
+          : ''
+      )
+  const messageId = String(
+    message.message_id
+    || message.open_message_id
+    || ''
+  ).trim()
+  const attachments = parseFeishuMessageAttachments(message, content)
+    .map((attachment) => ({
+      ...attachment,
+      messageId
+    }))
 
   return {
-    messageId: String(message.message_id || message.open_message_id || '').trim(),
+    messageId,
     chatId: String(message.chat_id || message.open_chat_id || '').trim(),
     chatType,
     messageType,
     text: stripFeishuMentions(rawText, mentions),
+    attachments,
+    parentMessageId: String(
+      message.parent_id
+      || message.parentId
+      || message.upper_message_id
+      || ''
+    ).trim(),
+    rootMessageId: String(message.root_id || message.rootId || '').trim(),
     mentioned: mentions.length > 0,
     mentionedOpenIds,
     senderType: String(sender.sender_type || '').trim().toLowerCase(),
@@ -94,7 +199,17 @@ function parseFeishuMessageEvent(payload = {}) {
 }
 
 function isFeishuInstructionAllowed(payload = {}, config = {}, botOpenId = '') {
-  if (!payload.chatId || !payload.text || payload.messageType !== 'text') return false
+  const supportedMessageTypes = new Set(['text', 'post', 'image', 'file'])
+  const hasAttachments = Array.isArray(payload.attachments)
+    && payload.attachments.length > 0
+  const repliesToMessage = Boolean(
+    String(payload.parentMessageId || payload.rootMessageId || '').trim()
+  )
+  if (
+    !payload.chatId
+    || !supportedMessageTypes.has(payload.messageType)
+    || (!payload.text && !hasAttachments && !repliesToMessage)
+  ) return false
   if (payload.senderType && payload.senderType !== 'user') return false
   if (payload.chatType === 'group') {
     const normalizedBotOpenId = String(botOpenId || '').trim()
@@ -201,9 +316,9 @@ function createCodexFeishuBridge({
     return false
   }
 
-  const sendText = async (chatId, text) => {
-    if (!apiClient) throw new Error('飞书消息客户端未连接')
-    const response = await apiClient.im.v1.message.create({
+  const sendText = async (chatId, text, client = apiClient) => {
+    if (!client) throw new Error('飞书消息客户端未连接')
+    const response = await client.im.v1.message.create({
       params: { receive_id_type: 'chat_id' },
       data: {
         receive_id: chatId,
@@ -217,11 +332,11 @@ function createCodexFeishuBridge({
     return response
   }
 
-  const sendChunks = async (chatId, text) => {
+  const sendChunks = async (chatId, text, client = apiClient) => {
     const chunks = splitFeishuText(text)
     for (const [index, chunk] of chunks.entries()) {
       const prefix = chunks.length > 1 ? `[${index + 1}/${chunks.length}] ` : ''
-      await sendText(chatId, `${prefix}${chunk}`)
+      await sendText(chatId, `${prefix}${chunk}`, client)
     }
   }
 
@@ -261,9 +376,67 @@ function createCodexFeishuBridge({
     }
   }
 
+  const resolveReplyAttachments = async (payload, client) => {
+    if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
+      return payload.attachments
+    }
+    if (!client?.im?.v1?.message?.get) return []
+    const relatedMessageIds = Array.from(new Set([
+      payload.parentMessageId,
+      payload.rootMessageId
+    ].map((value) => String(value || '').trim()).filter(Boolean)))
+
+    for (const messageId of relatedMessageIds) {
+      const response = await client.im.v1.message.get({
+        path: { message_id: messageId }
+      })
+      if (response?.code && response.code !== 0) {
+        throw new Error(response.msg || `飞书被回复消息读取失败 (${response.code})`)
+      }
+      const items = response?.data?.items || response?.items || []
+      const message = Array.isArray(items) ? items[0] : null
+      if (!message) continue
+      const repliedChatId = String(message.chat_id || '').trim()
+      if (repliedChatId && repliedChatId !== payload.chatId) continue
+      const attachments = parseFeishuMessageAttachments(message)
+        .map((attachment) => ({
+          ...attachment,
+          messageId: String(message.message_id || messageId).trim()
+        }))
+      if (attachments.length > 0) return attachments
+    }
+    return []
+  }
+
   const processInstruction = async (payload) => {
     const reactionClient = apiClient
     let typingReactionId = ''
+    let attachmentWorkspace = null
+    let realtimeReplyChain = Promise.resolve()
+    const scheduledReplyKeys = new Set()
+    const deliveredReplyKeys = new Set()
+    const replyKey = (item = {}) => {
+      const itemId = String(item?.id || '').trim()
+      const text = String(item?.text || '').trim()
+      return itemId ? `id:${itemId}` : `text:${text}`
+    }
+    const queueRealtimeReply = (item = {}) => {
+      const text = String(item?.text || '').trim()
+      if (!text) return realtimeReplyChain
+      const key = replyKey(item)
+      if (scheduledReplyKeys.has(key)) return realtimeReplyChain
+      scheduledReplyKeys.add(key)
+      realtimeReplyChain = realtimeReplyChain.then(async () => {
+        try {
+          await sendChunks(payload.chatId, text, reactionClient)
+          deliveredReplyKeys.add(key)
+        } catch (error) {
+          scheduledReplyKeys.delete(key)
+          safeError('[Codex Feishu] 实时回复回传失败:', error.message)
+        }
+      })
+      return realtimeReplyChain
+    }
     try {
       try {
         typingReactionId = await addTypingReaction(payload.messageId, reactionClient)
@@ -273,12 +446,35 @@ function createCodexFeishuBridge({
 
       let result
       try {
-        result = await onInstruction(payload)
+        attachmentWorkspace = createAttachmentWorkspace(payload.messageId)
+        const rawAttachments = await resolveReplyAttachments(
+          payload,
+          reactionClient
+        )
+        const attachments = await downloadFeishuAttachments(
+          reactionClient,
+          rawAttachments,
+          attachmentWorkspace
+        )
+        const preparedPayload = {
+          ...payload,
+          text: String(payload.text || '').trim()
+            || '请处理这些附件，并直接回复处理结果。',
+          attachments,
+          attachmentWorkspace,
+          onAgentMessage: queueRealtimeReply
+        }
+        result = await onInstruction(preparedPayload)
       } catch (error) {
+        await realtimeReplyChain
         const message = error?.message || String(error)
         safeError('[Codex Feishu] 指令执行失败:', message)
         try {
-          await sendChunks(payload.chatId, `Codex 执行失败\n\n${message}`)
+          await sendChunks(
+            payload.chatId,
+            `Codex 执行失败\n\n${message}`,
+            reactionClient
+          )
         } catch (sendError) {
           safeError('[Codex Feishu] 失败消息回传失败:', sendError.message)
         }
@@ -286,12 +482,65 @@ function createCodexFeishuBridge({
       }
 
       try {
-        const summary = String(result?.text || '').trim() || '任务已完成。'
-        await sendChunks(payload.chatId, summary)
+        await realtimeReplyChain
+        const resultReplyItems = (
+          Array.isArray(result?.messageItems) && result.messageItems.length > 0
+            ? result.messageItems
+            : (
+                Array.isArray(result?.messages) && result.messages.length > 0
+                  ? result.messages.map((text) => ({ id: '', text }))
+                  : [{ id: '', text: result?.text }]
+              )
+        )
+          .map((item) => ({
+            id: String(item?.id || '').trim(),
+            text: String(item?.text || '').trim()
+          }))
+          .filter((item) => item.text)
+        const pendingReplyItems = (
+          resultReplyItems.length > 0
+            ? resultReplyItems
+            : [{ id: '', text: '任务已完成。' }]
+        ).filter((item) => !deliveredReplyKeys.has(replyKey(item)))
+        for (const replyItem of pendingReplyItems) {
+          await sendChunks(payload.chatId, replyItem.text, reactionClient)
+          deliveredReplyKeys.add(replyKey(replyItem))
+        }
+        const attachmentErrors = Array.isArray(result?.attachmentErrors)
+          ? [...result.attachmentErrors]
+          : []
+        for (const attachment of Array.isArray(result?.attachments) ? result.attachments : []) {
+          try {
+            await sendFeishuOutputAttachment(
+              reactionClient,
+              payload.chatId,
+              attachment,
+              attachmentWorkspace
+            )
+          } catch (error) {
+            attachmentErrors.push({
+              name: attachment?.name || '附件',
+              error: error?.message || String(error)
+            })
+          }
+        }
+        if (attachmentErrors.length > 0) {
+          const details = attachmentErrors
+            .map((item) => `- ${item?.name || '附件'}：${item?.error || '发送失败'}`)
+            .join('\n')
+          await sendChunks(
+            payload.chatId,
+            `以下附件未能发送：\n${details}`,
+            reactionClient
+          )
+        }
       } catch (error) {
         safeError('[Codex Feishu] 执行结果回传失败:', error.message)
       }
     } finally {
+      if (attachmentWorkspace) {
+        cleanupAttachmentWorkspace(attachmentWorkspace)
+      }
       if (typingReactionId) {
         try {
           await removeTypingReaction(
@@ -311,10 +560,12 @@ function createCodexFeishuBridge({
     const config = getConfig?.() || {}
     if (!payload || !isFeishuInstructionAllowed(payload, config, botOpenId)) return
     if (isDuplicateMessage(payload.messageId)) return
-    safeLog('[Codex Feishu] 收到允许的文本指令:', {
+    safeLog('[Codex Feishu] 收到允许的指令:', {
       chatType: payload.chatType,
       messageId: payload.messageId,
-      textLength: payload.text.length
+      textLength: payload.text.length,
+      attachmentCount: payload.attachments.length,
+      repliedMessage: Boolean(payload.parentMessageId || payload.rootMessageId)
     })
     void processInstruction(payload)
   }
@@ -360,6 +611,7 @@ function createCodexFeishuBridge({
     const sequence = ++restartSequence
     setStatus('connecting')
     try {
+      pruneExpiredAttachmentWorkspaces()
       lark ||= require('@larksuiteoapi/node-sdk')
       apiClient = new lark.Client({
         appId,
@@ -441,6 +693,7 @@ function createCodexFeishuBridge({
 module.exports = {
   createCodexFeishuBridge,
   parseFeishuMessageEvent,
+  parseFeishuMessageAttachments,
   isFeishuInstructionAllowed,
   resolveFeishuBotOpenId,
   splitFeishuText,

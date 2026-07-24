@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -6,6 +7,7 @@ const {
   normalizeCodexMainConfig,
   publicCodexMainConfig,
   buildTurnSandboxPolicy,
+  buildCodexTaskInput,
   extractThreadMessages,
   normalizeStoredSessions,
   createFeishuSessionId,
@@ -13,6 +15,11 @@ const {
   CodexMainSessionService,
   createFeishuBridgeManager
 } = require('../electron/ipc/codex-main-session.js')
+const {
+  createAttachmentWorkspace,
+  cleanupAttachmentWorkspace,
+  collectOutboxAttachments
+} = require('../electron/ipc/codex-feishu-attachments.js')
 
 const previousConfig = normalizeCodexMainConfig({
   workingDirectory: '/tmp/old',
@@ -178,6 +185,96 @@ assert.equal(
   'the deprecated single-session thread key should be removed'
 )
 
+const notificationService = new CodexMainSessionService({
+  store: new MemoryStore(),
+  getMainWindow: () => null
+})
+let completedNotificationResult = null
+const realtimeNotificationItems = []
+const notificationTask = {
+  jobId: 'job-multiple-replies',
+  sessionId: 'main',
+  threadId: 'thread-multiple-replies',
+  turnId: 'turn-multiple-replies',
+  finalText: '',
+  agentMessageIds: new Set(),
+  forwardedAgentMessageIds: new Set(),
+  onAgentMessage: (item) => {
+    realtimeNotificationItems.push(item)
+  },
+  resolve: (result) => {
+    completedNotificationResult = result
+  },
+  reject: (error) => {
+    throw error
+  }
+}
+notificationService.activeTasks.set('main', notificationTask)
+notificationService.activeTasksByThreadId.set(
+  notificationTask.threadId,
+  notificationTask
+)
+for (const [id, text] of [
+  ['agent-progress-1', '我会先生成图片。'],
+  ['agent-progress-2', '图片已经生成，正在整理。'],
+  ['agent-final', '图片已随消息发送。']
+]) {
+  notificationService.handleNotification('item/completed', {
+    threadId: notificationTask.threadId,
+    item: { id, type: 'agentMessage', text }
+  })
+}
+assert.deepEqual(
+  realtimeNotificationItems,
+  [
+    { id: 'agent-progress-1', text: '我会先生成图片。' },
+    { id: 'agent-progress-2', text: '图片已经生成，正在整理。' },
+    { id: 'agent-final', text: '图片已随消息发送。' }
+  ],
+  'completed Codex messages should be forwarded before the whole turn completes'
+)
+notificationService.handleNotification('turn/completed', {
+  threadId: notificationTask.threadId,
+  turn: {
+    id: notificationTask.turnId,
+    status: 'completed',
+    items: [
+      {
+        id: 'agent-progress-1',
+        type: 'agentMessage',
+        text: '我会先生成图片。'
+      },
+      {
+        id: 'agent-progress-2',
+        type: 'agentMessage',
+        text: '图片已经生成，正在整理。'
+      },
+      {
+        id: 'agent-final',
+        type: 'agentMessage',
+        text: '图片已随消息发送。'
+      }
+    ]
+  }
+})
+assert.deepEqual(
+  completedNotificationResult.messages,
+  [
+    '我会先生成图片。',
+    '图片已经生成，正在整理。',
+    '图片已随消息发送。'
+  ],
+  'all Codex agent messages from one turn should be preserved in order'
+)
+assert.deepEqual(
+  completedNotificationResult.messageItems,
+  realtimeNotificationItems
+)
+assert.equal(
+  completedNotificationResult.text,
+  '我会先生成图片。\n\n图片已经生成，正在整理。\n\n图片已随消息发送。'
+)
+
 const workChat = service.getOrCreateFeishuSession({
   connectionId: 'work',
   connectionName: '工作飞书',
@@ -284,10 +381,24 @@ assert.equal(bridgeManager.getStatus().status, 'connected')
 const routedInstruction = await bridgeOptions[1].onInstruction({
   text: '检查状态',
   chatId: 'oc_personal',
-  chatType: 'p2p'
+  chatType: 'p2p',
+  attachments: [{
+    kind: 'file',
+    name: 'input.txt',
+    path: '/tmp/input.txt'
+  }],
+  attachmentWorkspace: {
+    rootDir: '/tmp/attachment-task',
+    outboxDir: '/tmp/attachment-task/outbox'
+  }
 })
 assert.equal(routedInstruction.metadata.connectionId, 'personal')
 assert.equal(routedInstruction.metadata.connectionName, '个人飞书')
+assert.equal(routedInstruction.attachments[0].name, 'input.txt')
+assert.equal(
+  routedInstruction.attachmentWorkspace.outboxDir,
+  '/tmp/attachment-task/outbox'
+)
 await bridgeManager.stop()
 assert.equal(bridgeStopCount, 2)
 
@@ -304,9 +415,72 @@ assert.deepEqual(
   }
 )
 assert.deepEqual(
+  buildTurnSandboxPolicy(
+    { sandboxMode: 'workspace-write' },
+    '/tmp/demo',
+    ['/tmp/opengit-attachment']
+  ),
+  {
+    type: 'workspaceWrite',
+    writableRoots: ['/tmp/demo', '/tmp/opengit-attachment'],
+    networkAccess: true
+  }
+)
+assert.deepEqual(
   buildTurnSandboxPolicy({ sandboxMode: 'danger-full-access' }, '/tmp/demo'),
   { type: 'dangerFullAccess' }
 )
+
+const attachmentWorkspace = createAttachmentWorkspace('main-session-test')
+const inputImagePath = `${attachmentWorkspace.inboxDir}/input.png`
+const inputFilePath = `${attachmentWorkspace.inboxDir}/notes.txt`
+fs.writeFileSync(inputImagePath, 'image')
+fs.writeFileSync(inputFilePath, 'notes')
+const taskInput = buildCodexTaskInput({
+  source: 'feishu',
+  text: '分析附件并返回报告',
+  attachments: [
+    {
+      kind: 'image',
+      name: 'input.png',
+      path: inputImagePath,
+      mimeType: 'image/png',
+      size: 5
+    },
+    {
+      kind: 'file',
+      name: 'notes.txt',
+      path: inputFilePath,
+      mimeType: 'text/plain',
+      size: 5
+    }
+  ],
+  attachmentWorkspace
+})
+assert.equal(taskInput.length, 2)
+assert.equal(taskInput[1].type, 'localImage')
+assert.equal(taskInput[1].path, inputImagePath)
+assert.match(taskInput[0].text, /notes\.txt/)
+assert.match(taskInput[0].text, new RegExp(attachmentWorkspace.outboxDir))
+
+const reportPath = `${attachmentWorkspace.outboxDir}/report.pdf`
+const imagePath = `${attachmentWorkspace.outboxDir}/preview.png`
+fs.writeFileSync(reportPath, 'report')
+fs.writeFileSync(imagePath, 'preview')
+const outsidePath = '/etc/hosts'
+const symlinkPath = `${attachmentWorkspace.outboxDir}/unsafe-link`
+fs.symlinkSync(outsidePath, symlinkPath)
+const collectedOutbox = collectOutboxAttachments(attachmentWorkspace)
+assert.deepEqual(
+  collectedOutbox.attachments.map((item) => [item.name, item.kind]),
+  [
+    ['preview.png', 'image'],
+    ['report.pdf', 'file']
+  ]
+)
+assert.equal(collectedOutbox.rejected[0].name, 'unsafe-link')
+assert.equal(cleanupAttachmentWorkspace(attachmentWorkspace), true)
+assert.equal(fs.existsSync(attachmentWorkspace.rootDir), false)
 
 const history = extractThreadMessages({
   turns: [

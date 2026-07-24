@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { Readable } from 'node:stream'
 
 const require = createRequire(import.meta.url)
 const {
   createCodexFeishuBridge,
   parseFeishuMessageEvent,
+  parseFeishuMessageAttachments,
   isFeishuInstructionAllowed,
   resolveFeishuBotOpenId,
   splitFeishuText,
@@ -40,6 +43,9 @@ assert.deepEqual(groupMessage, {
   chatType: 'group',
   messageType: 'text',
   text: '帮我检查并修复构建',
+  attachments: [],
+  parentMessageId: '',
+  rootMessageId: '',
   mentioned: true,
   mentionedOpenIds: ['ou_opengit_bot'],
   senderType: 'user',
@@ -120,6 +126,85 @@ assert.equal(
   'private text messages do not require an @ mention'
 )
 
+const privateImageMessage = parseFeishuMessageEvent({
+  event: {
+    sender: {
+      sender_id: { open_id: 'ou_private' },
+      sender_type: 'user'
+    },
+    message: {
+      message_id: 'om_image',
+      chat_id: 'oc_private',
+      chat_type: 'p2p',
+      message_type: 'image',
+      content: JSON.stringify({ image_key: 'img_v2_001' })
+    }
+  }
+})
+assert.deepEqual(privateImageMessage.attachments, [{
+  kind: 'image',
+  key: 'img_v2_001',
+  name: '',
+  messageId: 'om_image'
+}])
+assert.equal(
+  isFeishuInstructionAllowed(privateImageMessage, {
+    allowedChatIds: [],
+    allowedSenderIds: []
+  }),
+  true,
+  'private image messages should be accepted without text'
+)
+assert.equal(
+  isFeishuInstructionAllowed({
+    ...privateImageMessage,
+    chatType: 'group',
+    chatId: 'oc_group'
+  }, {
+    allowedChatIds: [],
+    allowedSenderIds: []
+  }, 'ou_opengit_bot'),
+  false,
+  'a bare group attachment must not trigger the bot'
+)
+assert.deepEqual(
+  parseFeishuMessageAttachments({
+    message_id: 'om_audio',
+    msg_type: 'audio',
+    body: {
+      content: JSON.stringify({
+        file_key: 'file_audio_1',
+        file_name: 'voice.opus'
+      })
+    }
+  }),
+  [],
+  'audio messages are intentionally unsupported in this release'
+)
+const privateAudioMessage = parseFeishuMessageEvent({
+  event: {
+    sender: {
+      sender_id: { open_id: 'ou_private' },
+      sender_type: 'user'
+    },
+    message: {
+      message_id: 'om_audio',
+      chat_id: 'oc_private',
+      chat_type: 'p2p',
+      message_type: 'audio',
+      content: JSON.stringify({ file_key: 'file_audio_1' })
+    }
+  }
+})
+assert.equal(
+  isFeishuInstructionAllowed(privateAudioMessage, {
+    allowedChatIds: [],
+    allowedSenderIds: []
+  }),
+  false,
+  'private audio messages should remain disabled'
+)
+
 assert.equal(
   stripFeishuMentions('@_user_1 @OpenGit 执行测试', [
     { key: '@_user_1', name: 'OpenGit' }
@@ -133,9 +218,12 @@ assert.ok(chunks.every((chunk) => chunk.length <= 220))
 assert.equal(chunks.join('').replace(/\s/g, ''), '第一段'.repeat(80))
 
 const sentMessages = []
+const sentAttachments = []
 const bridgeEvents = []
 let registeredHandlers = null
 let instructionCount = 0
+const receivedInstructions = []
+let lastAttachmentWorkspace = ''
 
 class FakeEventDispatcher {
   register(handlers) {
@@ -150,10 +238,65 @@ class FakeClient {
       v1: {
         message: {
           create: async (payload) => {
-            const text = JSON.parse(payload.data.content).text
-            sentMessages.push(text)
-            bridgeEvents.push({ type: 'send', text })
+            const content = JSON.parse(payload.data.content)
+            if (payload.data.msg_type === 'text') {
+              const text = content.text
+              sentMessages.push(text)
+              bridgeEvents.push({ type: 'send', text })
+            } else {
+              sentAttachments.push({
+                msgType: payload.data.msg_type,
+                content
+              })
+            }
             return { code: 0 }
+          },
+          get: async (payload) => {
+            assert.equal(payload.path.message_id, 'om_parent_file')
+            return {
+              code: 0,
+              data: {
+                items: [{
+                  message_id: 'om_parent_file',
+                  chat_id: 'oc_group',
+                  msg_type: 'file',
+                  body: {
+                    content: JSON.stringify({
+                      file_key: 'file_parent_1',
+                      file_name: 'parent.txt'
+                    })
+                  }
+                }]
+              }
+            }
+          }
+        },
+        messageResource: {
+          get: async (payload) => {
+            const key = payload.path.file_key
+            const body = key === 'img_v2_001'
+              ? Buffer.from('fake-image-content')
+              : Buffer.from('parent file content')
+            return {
+              headers: {
+                'content-type': key === 'img_v2_001'
+                  ? 'image/png'
+                  : 'text/plain'
+              },
+              getReadableStream: () => Readable.from([body])
+            }
+          }
+        },
+        image: {
+          create: async (payload) => {
+            assert.ok(Buffer.isBuffer(payload.data.image))
+            return { image_key: 'uploaded_image_1' }
+          }
+        },
+        file: {
+          create: async (payload) => {
+            assert.ok(Buffer.isBuffer(payload.data.file))
+            return { file_key: 'uploaded_file_1' }
           }
         },
         messageReaction: {
@@ -222,8 +365,43 @@ const bridge = createCodexFeishuBridge({
     allowedChatIds: [],
     allowedSenderIds: []
   }),
-  onInstruction: async () => {
+  onInstruction: async (payload) => {
     instructionCount += 1
+    receivedInstructions.push(payload)
+    if (payload.messageId === 'om_private_image') {
+      lastAttachmentWorkspace = payload.attachmentWorkspace.rootDir
+      assert.equal(payload.attachments.length, 1)
+      assert.equal(
+        fs.readFileSync(payload.attachments[0].path, 'utf8'),
+        'fake-image-content'
+      )
+      const imagePath = `${payload.attachmentWorkspace.outboxDir}/reply.png`
+      const filePath = `${payload.attachmentWorkspace.outboxDir}/report.pdf`
+      fs.writeFileSync(imagePath, 'reply-image')
+      fs.writeFileSync(filePath, 'reply-file')
+      return {
+        text: '附件已处理',
+        attachments: [
+          { kind: 'image', name: 'reply.png', path: imagePath },
+          { kind: 'file', name: 'report.pdf', path: filePath }
+        ]
+      }
+    }
+    if (payload.messageId === 'om_bridge_bot') {
+      await payload.onAgentMessage({
+        id: 'agent-progress',
+        text: '第一条回复'
+      })
+      bridgeEvents.push({ type: 'instruction-complete' })
+      return {
+        text: '第一条回复\n\n任务总结',
+        messages: ['第一条回复', '任务总结'],
+        messageItems: [
+          { id: 'agent-progress', text: '第一条回复' },
+          { id: 'agent-final', text: '任务总结' }
+        ]
+      }
+    }
     return { text: '任务总结' }
   },
   larkSdk: {
@@ -288,8 +466,8 @@ assert.equal(
 )
 assert.deepEqual(
   sentMessages,
-  ['任务总结'],
-  'the Codex final response should be returned without acknowledgements or prefixes'
+  ['第一条回复', '任务总结'],
+  'every Codex response from the turn should be returned in order'
 )
 assert.deepEqual(
   bridgeEvents,
@@ -298,6 +476,13 @@ assert.deepEqual(
       type: 'reaction-add',
       messageId: 'om_bridge_bot',
       emojiType: 'Typing'
+    },
+    {
+      type: 'send',
+      text: '第一条回复'
+    },
+    {
+      type: 'instruction-complete'
     },
     {
       type: 'send',
@@ -312,6 +497,89 @@ assert.deepEqual(
   'only the targeted bot should add Typing and remove it after returning the result'
 )
 assert.equal(bridge.getStatus().status, 'connected')
+
+await registeredHandlers['im.message.receive_v1']({
+  sender: {
+    sender_id: { open_id: 'ou_sender' },
+    sender_type: 'user'
+  },
+  message: {
+    message_id: 'om_group_bare_image',
+    chat_id: 'oc_group',
+    chat_type: 'group',
+    message_type: 'image',
+    content: JSON.stringify({ image_key: 'img_should_ignore' })
+  }
+})
+await registeredHandlers['im.message.receive_v1']({
+  sender: {
+    sender_id: { open_id: 'ou_private' },
+    sender_type: 'user'
+  },
+  message: {
+    message_id: 'om_private_image',
+    chat_id: 'oc_private',
+    chat_type: 'p2p',
+    message_type: 'image',
+    content: JSON.stringify({ image_key: 'img_v2_001' })
+  }
+})
+await registeredHandlers['im.message.receive_v1']({
+  sender: {
+    sender_id: { open_id: 'ou_sender' },
+    sender_type: 'user'
+  },
+  message: {
+    message_id: 'om_group_reply',
+    parent_id: 'om_parent_file',
+    chat_id: 'oc_group',
+    chat_type: 'group',
+    message_type: 'text',
+    content: JSON.stringify({ text: '@_user_2 读取这个附件' }),
+    mentions: [{
+      key: '@_user_2',
+      name: 'OpenGit',
+      id: { open_id: 'ou_bridge_bot' }
+    }]
+  }
+})
+
+for (
+  let index = 0;
+  index < 50 && (
+    instructionCount < 3
+    || sentAttachments.length < 2
+    || (lastAttachmentWorkspace && fs.existsSync(lastAttachmentWorkspace))
+  );
+  index += 1
+) {
+  await new Promise((resolve) => setTimeout(resolve, 20))
+}
+assert.equal(
+  instructionCount,
+  3,
+  'private attachments and group replies to attachments should be processed'
+)
+assert.equal(
+  receivedInstructions.find((item) => item.messageId === 'om_group_reply')
+    ?.attachments?.[0]?.name,
+  'parent.txt'
+)
+assert.deepEqual(
+  sentAttachments.map((item) => item.msgType),
+  ['image', 'file']
+)
+assert.deepEqual(sentAttachments[0].content, {
+  image_key: 'uploaded_image_1'
+})
+assert.deepEqual(sentAttachments[1].content, {
+  file_key: 'uploaded_file_1'
+})
+assert.equal(
+  fs.existsSync(lastAttachmentWorkspace),
+  false,
+  'the per-task attachment workspace should be removed after replying'
+)
 await bridge.stop()
 
 console.log('codex feishu bridge assertions passed')
