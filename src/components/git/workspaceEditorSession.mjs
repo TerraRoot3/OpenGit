@@ -1,5 +1,4 @@
 const workspaceEditorSessions = new Map()
-let liveWorkspaceEditorCount = 0
 
 export const WORKSPACE_EDITOR_RELEASE_DELAY_MS = 8000
 
@@ -33,27 +32,4 @@ export function clearWorkspaceEditorSession(projectPath) {
   }
   session.pathToModel.clear()
   workspaceEditorSessions.delete(key)
-}
-
-export function retainLiveWorkspaceEditor() {
-  liveWorkspaceEditorCount += 1
-}
-
-export function releaseLiveWorkspaceEditor() {
-  liveWorkspaceEditorCount = Math.max(0, liveWorkspaceEditorCount - 1)
-}
-
-export function getWorkspaceEditorDebugStats() {
-  let modelCount = 0
-  let viewStateCount = 0
-  for (const session of workspaceEditorSessions.values()) {
-    modelCount += session.pathToModel.size
-    viewStateCount += session.pathToViewState.size
-  }
-  return {
-    sessions: workspaceEditorSessions.size,
-    liveEditors: liveWorkspaceEditorCount,
-    modelCount,
-    viewStateCount
-  }
 }

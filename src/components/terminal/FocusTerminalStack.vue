@@ -90,16 +90,18 @@
 </template>
 
 <script setup>
-import { TransitionGroup, computed, nextTick, onMounted, onUnmounted, reactive, ref, watch, toRef } from 'vue'
+import { TransitionGroup, computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Plus, X, Terminal as TerminalIcon } from 'lucide-vue-next'
 import TerminalPanel from './TerminalPanel.vue'
 import { useFocusTerminalStore } from '../../stores/focusTerminalStore.js'
 
 const props = defineProps({
   isActive: { type: Boolean, default: true },
-  defaultCwd: { type: String, default: '' }
+  defaultCwd: { type: String, default: '' },
+  scopeKey: { type: String, default: '' }
 })
 
+const terminalScopeKey = computed(() => props.scopeKey || props.defaultCwd)
 const {
   sessions,
   focusedId,
@@ -111,7 +113,7 @@ const {
   removeSession,
   focusSession,
   swapSessionOrder
-} = useFocusTerminalStore(toRef(props, 'defaultCwd'))
+} = useFocusTerminalStore(terminalScopeKey)
 
 onMounted(() => {
   void hydrate()
@@ -410,7 +412,7 @@ watch(
 )
 
 function paneSnapshotKey(sessionId) {
-  const scope = String(props.defaultCwd || '__standalone__').replace(/[^a-zA-Z0-9]/g, '_')
+  const scope = String(terminalScopeKey.value || '__standalone__').replace(/[^a-zA-Z0-9]/g, '_')
   return `focus-pane:${scope}:${sessionId}`
 }
 

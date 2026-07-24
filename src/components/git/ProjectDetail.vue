@@ -622,7 +622,6 @@ import {
 } from '../../stores/projectStore'
 import { useThemeStore } from '../../stores/themeStore.js'
 import { useCodexProjectStatusStore } from '../../stores/codexProjectStatusStore.js'
-import { removeProjectDetailDebugEntry, updateProjectDetailDebugEntry } from '../../debug/runtimeDebug.js'
 
 const ProjectWorkspace = defineAsyncComponent(() => import('./ProjectWorkspace.vue'))
 const themeStore = useThemeStore()
@@ -691,7 +690,6 @@ const props = defineProps({
   }
 })
 
-const projectDetailDebugId = Symbol('project-detail-debug')
 
 const platform = window.electronAPI?.platform || 'darwin'
 const { getProjectStatus } = useCodexProjectStatusStore()
@@ -1104,17 +1102,6 @@ const refreshing = ref(false)
 const refreshSuccess = ref(false)
 let aiSessionsPreloadHandle = null
 let workspacePreloadHandle = null
-
-const syncProjectDetailDebugState = () => {
-  updateProjectDetailDebugEntry(projectDetailDebugId, {
-    path: props.path,
-    isActive: props.isActive,
-    currentView: currentView.value,
-    workspaceMounted: workspaceMounted.value,
-    aiSessionsMounted: aiSessionsMounted.value,
-    terminalMounted: terminalMounted.value
-  })
-}
 
 const clearAiSessionsPreload = () => {
   if (aiSessionsPreloadHandle == null || typeof window === 'undefined') return
@@ -3091,9 +3078,7 @@ const openWithGitRemote = async () => {
     }
 
     debugLog(`🔗 [ProjectDetailNew] 打开 ${providerLabel}:`, webUrl)
-    if (window.electronAPI?.openUrlInNewTab) {
-      window.electronAPI.openUrlInNewTab(webUrl)
-    }
+    await window.electronAPI?.openExternal?.(webUrl)
   } catch (error) {
     console.error('打开仓库页面失败:', error)
   }
@@ -3394,7 +3379,6 @@ watch(
     terminalMounted: terminalMounted.value
   }),
   () => {
-    syncProjectDetailDebugState()
   },
   { deep: true, immediate: true }
 )
@@ -3466,7 +3450,6 @@ const flushBranchesPanelWidthBeforeLeave = () => {
 }
 
 onMounted(async () => {
-  syncProjectDetailDebugState()
   if (props.path) {
     await loadBranchesPanelWidth(props.path)
     await refreshGitRemoteProviderLabel()
@@ -3496,7 +3479,6 @@ onUnmounted(() => {
   if (window.electronAPI?.removeWindowFocusListener) {
     window.electronAPI.removeWindowFocusListener(handleWindowFocus)
   }
-  removeProjectDetailDebugEntry(projectDetailDebugId)
 })
 
 // 监听标签激活状态变化，切换到当前标签时刷新

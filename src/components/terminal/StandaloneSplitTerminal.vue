@@ -4,6 +4,7 @@
       :default-cwd="''"
       :allow-first-terminal-without-cwd="true"
       :is-active="isActive"
+      :snapshot-cache-key="snapshotCacheKey"
       split-only-mode
     />
   </div>
@@ -13,15 +14,16 @@
 import TerminalPanel from './TerminalPanel.vue'
 
 defineProps({
-  isActive: { type: Boolean, default: true }
+  isActive: { type: Boolean, default: true },
+  snapshotCacheKey: { type: String, default: '__standalone_split__' }
 })
 </script>
 
 <style scoped>
 .standalone-split-terminal {
+  display: flex;
   width: 100%;
   height: 100%;
-  display: flex;
   flex-direction: column;
   background: var(--theme-sem-bg-project);
 }

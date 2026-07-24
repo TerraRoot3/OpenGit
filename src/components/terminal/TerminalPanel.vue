@@ -260,11 +260,6 @@ import {
 } from './terminalSinglePaneRecovery.mjs'
 import TerminalSplitNode from './TerminalSplitNode.vue'
 import { useThemeStore } from '../../stores/themeStore.js'
-import {
-  releaseLiveTerminalPanel,
-  retainLiveTerminalPanel,
-  updateTerminalCacheDebug
-} from './terminalRuntimeDebug.mjs'
 import '@xterm/xterm/css/xterm.css'
 
 const emit = defineEmits(['close', 'pane-title'])
@@ -328,17 +323,6 @@ const panelInstanceKey = (() => {
   const randomPart = Math.random().toString(36).slice(2, 10)
   return `panel_${base}_${Date.now().toString(36)}_${randomPart}`
 })()
-
-const syncTerminalDebugState = () => {
-  let cachedTerminalCount = 0
-  for (const [, cached] of terminalCache) {
-    cachedTerminalCount += Array.isArray(cached?.terminals) ? cached.terminals.length : 0
-  }
-  updateTerminalCacheDebug({
-    entryCount: terminalCache.size,
-    terminalCount: cachedTerminalCount
-  })
-}
 
 const TERMINAL_SNAPSHOT_PREFIX = 'terminalSnapshot_v1_'
 const TERMINAL_SNAPSHOT_MAX_LINES = 1200
@@ -840,8 +824,8 @@ const createXterm = async () => {
     const normalizedUri = typeof uri === 'string' ? uri.trim() : ''
     if (!/^https?:\/\//i.test(normalizedUri)) return
 
-    if (window.electronAPI?.openUrlInNewTab) {
-      window.electronAPI.openUrlInNewTab(normalizedUri)
+    if (window.electronAPI?.openExternal) {
+      window.electronAPI.openExternal(normalizedUri)
       return
     }
 
@@ -2965,8 +2949,6 @@ watch(
 )
 
 onMounted(() => {
-  retainLiveTerminalPanel()
-  syncTerminalDebugState()
   register(ipcHandler)
   void hydrateCodexTerminalStatuses()
   subscribeCodexTerminalStatuses()
@@ -3046,13 +3028,11 @@ onUnmounted(() => {
     destroyTerminals(cached.terminals)
   }
   terminalCache.clear()
-  syncTerminalDebugState()
   unregister(ipcHandler)
   if (typeof removeCodexTerminalStatusListener === 'function') {
     removeCodexTerminalStatusListener()
     removeCodexTerminalStatusListener = null
   }
-  releaseLiveTerminalPanel()
 })
 
 watch(

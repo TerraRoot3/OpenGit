@@ -3,7 +3,6 @@
  * 按需求禁用持久化，重启后始终从一个新会话开始。
  */
 import { computed, unref, ref } from 'vue'
-import { clearFocusTerminalScopeDebug, updateFocusTerminalScopeDebug } from '../components/terminal/terminalRuntimeDebug.mjs'
 
 const MAX_SESSIONS = 9
 const scopeStates = new Map()
@@ -31,10 +30,6 @@ function createScopeState() {
   }
 }
 
-function syncFocusScopeDebug(scopeKey, scopeState) {
-  updateFocusTerminalScopeDebug(scopeKey, scopeState.sessions.value.length)
-}
-
 function getScopeState(scopeSource) {
   const key = normalizeScopeKey(scopeSource)
   if (!scopeStates.has(key)) {
@@ -51,14 +46,12 @@ export function useFocusTerminalStore(scopeSource = '__default__') {
     const id = mkId()
     scopeState.value.sessions.value = [{ id }]
     scopeState.value.focusedId.value = id
-    syncFocusScopeDebug(scopeKey.value, scopeState.value)
   }
 
   const resetLayout = ({ clearCache = false } = {}) => {
     scopeState.value.sessions.value = []
     scopeState.value.focusedId.value = ''
     scopeState.value.layoutReady.value = false
-    clearFocusTerminalScopeDebug(scopeKey.value)
     if (clearCache) {
       scopeStates.delete(scopeKey.value)
     }
@@ -75,7 +68,6 @@ export function useFocusTerminalStore(scopeSource = '__default__') {
     const id = mkId()
     scopeState.value.sessions.value = [...scopeState.value.sessions.value, { id }]
     scopeState.value.focusedId.value = id
-    syncFocusScopeDebug(scopeKey.value, scopeState.value)
   }
 
   const removeSession = (id) => {
@@ -88,7 +80,6 @@ export function useFocusTerminalStore(scopeSource = '__default__') {
       const pick = next[Math.max(0, idx - 1)] || next[0]
       scopeState.value.focusedId.value = pick.id
     }
-    syncFocusScopeDebug(scopeKey.value, scopeState.value)
   }
 
   const focusSession = (id) => {
@@ -105,7 +96,6 @@ export function useFocusTerminalStore(scopeSource = '__default__') {
     if (leftIndex === -1 || rightIndex === -1) return false
     ;[list[leftIndex], list[rightIndex]] = [list[rightIndex], list[leftIndex]]
     scopeState.value.sessions.value = list
-    syncFocusScopeDebug(scopeKey.value, scopeState.value)
     return true
   }
 
@@ -130,6 +120,5 @@ export function clearFocusTerminalScope(scopeSource = '__default__') {
   scopeState.sessions.value = []
   scopeState.focusedId.value = ''
   scopeState.layoutReady.value = false
-  clearFocusTerminalScopeDebug(key)
   scopeStates.delete(key)
 }

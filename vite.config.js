@@ -10,16 +10,9 @@ export default defineConfig({
     monacoEditorPlugin({
       languageWorkers: ['editorWorkerService', 'typescript', 'json', 'html', 'css']
     }),
-    vue({
-      template: {
-        compilerOptions: {
-          // 告诉 Vue webview 是原生自定义元素
-          isCustomElement: (tag) => tag === 'webview'
-        }
-      }
-    }),
+    vue(),
     AutoImport({
-      imports: ['vue', 'vue-router'],
+      imports: ['vue'],
       dts: true
     }),
     Components({

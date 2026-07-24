@@ -28,9 +28,7 @@ import monaco from './monacoSetup.mjs'
 import { useThemeStore } from '../../stores/themeStore.js'
 import {
   WORKSPACE_EDITOR_RELEASE_DELAY_MS,
-  getWorkspaceEditorSession,
-  releaseLiveWorkspaceEditor,
-  retainLiveWorkspaceEditor
+  getWorkspaceEditorSession
 } from './workspaceEditorSession.mjs'
 
 const props = defineProps({
@@ -524,7 +522,6 @@ function destroyEditorInstance () {
     clearGitDiffDecorations()
     editor.dispose()
     editor = null
-    releaseLiveWorkspaceEditor()
   }
 }
 
@@ -553,7 +550,6 @@ async function createEditorInstance () {
     wordWrap: 'on',
     glyphMargin: true
   })
-  retainLiveWorkspaceEditor()
 
   editor.onDidScrollChange(() => {
     saveCurrentViewState()

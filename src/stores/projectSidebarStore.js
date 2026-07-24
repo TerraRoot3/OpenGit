@@ -320,6 +320,11 @@ const collapseAllRoots = () => {
   persist()
 }
 
+const restoreFromBackup = (payload = {}) => {
+  applyPayload(payload)
+  persist()
+}
+
 const orderedRoots = computed(() => {
   return [...scanRoots.value].sort((a, b) => a.path.localeCompare(b.path))
 })
@@ -411,6 +416,7 @@ export function useProjectSidebarStore() {
     toggleRootExpanded,
     expandAllRoots,
     collapseAllRoots,
+    restoreFromBackup,
     persist,
     hydrate
   }

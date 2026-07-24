@@ -1,5 +1,4 @@
 import { computed, reactive } from 'vue'
-import { registerDebugProvider } from '../debug/runtimeDebug.js'
 
 const SUPPORTED_STATUSES = new Set(['running', 'awaiting_confirmation', 'ended'])
 
@@ -172,12 +171,6 @@ function getProjectStatus(projectPath) {
   const normalizedPath = normalizeProjectPath(projectPath)
   return normalizedPath ? state.statuses[normalizedPath] || '' : ''
 }
-
-registerDebugProvider('codexProjectStatus', () => ({
-  apiAvailable: state.apiAvailable,
-  trackedProjects: Object.keys(state.statuses).length,
-  lastSnapshotAt: state.lastSnapshotAt || 0
-}))
 
 export function useCodexProjectStatusStore() {
   void ensureInitialized()

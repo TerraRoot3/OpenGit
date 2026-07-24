@@ -83,12 +83,6 @@
                   <Folder :size="14" />
                   <span>{{ group.name }}</span>
                   <RefreshCw v-if="isRefreshingGroup(group)" :size="12" class="root-loading-indicator spinning" />
-                  <Star
-                    v-if="isFavorited(group.path)"
-                    :size="12"
-                    class="favorite-indicator"
-                    fill="currentColor"
-                  />
                 </div>
               </div>
             </div>
@@ -116,12 +110,6 @@
             <div class="repo-name-row">
               <div class="child-name">
                 <span>{{ repo.name }}</span>
-                <Star
-                  v-if="isFavorited(repo.path)"
-                  :size="12"
-                  class="favorite-indicator"
-                  fill="currentColor"
-                />
               </div>
               <div class="repo-meta">
                 <div
@@ -171,9 +159,6 @@
         @click.stop
       >
         <div class="context-menu-item" @click="handleContextMenuOpen">打开</div>
-        <div class="context-menu-item" @click="handleContextMenuToggleFavorite">
-          {{ contextMenuItem?.favorited ? '取消收藏' : '收藏' }}
-        </div>
         <div class="context-menu-item delete" @click="handleContextMenuDelete">
           {{ contextMenuItem?.kind === 'group' ? '从侧栏删除目录' : '从侧栏删除项目' }}
         </div>
@@ -195,7 +180,6 @@ import {
   Pin,
   RefreshCw,
   Search,
-  Star,
   X
 } from 'lucide-vue-next'
 
@@ -243,10 +227,6 @@ const props = defineProps({
   selectedEntryPath: {
     type: String,
     default: ''
-  },
-  favoritePaths: {
-    type: Array,
-    default: () => []
   }
 })
 
@@ -254,7 +234,6 @@ const emit = defineEmits([
   'add-root',
   'open-group',
   'open-repository',
-  'toggle-favorite',
   'remove-root',
   'remove-repository',
   'toggle-root',
@@ -299,11 +278,6 @@ const isExpanded = (path) => {
   return props.expandedRootPaths.includes(path)
 }
 
-const isFavorited = (path) => {
-  const normalizedPath = String(path || '').trim()
-  return normalizedPath ? props.favoritePaths.includes(normalizedPath) : false
-}
-
 const isRefreshingGroup = (group) => {
   return props.isCurrentRootRefreshing && String(props.currentRefreshRootPath || '').trim() === String(group?.path || '').trim()
 }
@@ -315,7 +289,7 @@ const closeContextMenu = () => {
 
 const openContextMenu = (event, item) => {
   const menuWidth = 180
-  const menuHeight = 116
+  const menuHeight = 82
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 0
   const maxX = Math.max(8, viewportWidth - menuWidth - 8)
@@ -332,18 +306,14 @@ const openContextMenu = (event, item) => {
 const showGroupContextMenu = (event, group) => {
   openContextMenu(event, {
     kind: 'group',
-    data: group,
-    favorited: isFavorited(group.path),
-    routeType: 'clone-directory'
+    data: group
   })
 }
 
 const showRepositoryContextMenu = (event, repo) => {
   openContextMenu(event, {
     kind: 'repository',
-    data: repo,
-    favorited: isFavorited(repo.path),
-    routeType: 'single-project'
+    data: repo
   })
 }
 
@@ -355,17 +325,6 @@ const handleContextMenuOpen = () => {
   } else {
     emit('open-repository', item.data)
   }
-  closeContextMenu()
-}
-
-const handleContextMenuToggleFavorite = () => {
-  const item = contextMenuItem.value
-  if (!item) return
-  emit('toggle-favorite', {
-    path: item.data?.path,
-    title: item.data?.name,
-    routeType: item.routeType
-  })
   closeContextMenu()
 }
 
@@ -735,12 +694,6 @@ onBeforeUnmount(() => {
 .root-loading-indicator {
   color: var(--theme-sem-accent-primary);
   flex: 0 0 auto;
-}
-
-.favorite-indicator {
-  flex: 0 0 auto;
-  color: #facc15;
-  opacity: 0.92;
 }
 
 .root-name :deep(svg),

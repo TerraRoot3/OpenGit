@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Notification, shell, dialog, ipcMain, session, protocol, net, screen } = require('electron')
+const { app, BrowserWindow, Menu, Notification, shell, ipcMain, session, protocol, net, screen } = require('electron')
 const path = require('path')
 const { exec, spawn, execFileSync } = require('child_process')
 const { promisify, format } = require('util')
@@ -13,32 +13,16 @@ const { registerRefreshHandlers } = require('./ipc/refresh')
 const { registerTerminalHandlers } = require('./ipc/terminal')
 const { registerConfigHandlers } = require('./ipc/config')
 const { registerFilesystemHandlers } = require('./ipc/filesystem')
-const { registerWallpaperHandlers, autoRefreshOnlineWallpaperOnStartup } = require('./ipc/wallpaper')
 const { registerAiSessionHandlers } = require('./ipc/ai-sessions')
-const { registerBrowserDataHandlers } = require('./ipc/browser-data')
 const { registerCommandHandlers } = require('./ipc/command')
 const { registerNavigationHandlers } = require('./ipc/navigation')
 const { registerProjectHandlers } = require('./ipc/projects')
 const { registerWindowUiHandlers } = require('./ipc/window-ui')
 const { registerBranchHandlers } = require('./ipc/branch')
-const { registerExtensionHandlers } = require('./ipc/extensions')
 const { registerScmHandlers } = require('./ipc/scm')
 const { createCodexSessionMonitor, normalizeProjectPath } = require('./ipc/codex-session-monitor')
 const { createCodexNotificationBadgeState } = require('./ipc/codex-notification-badge-state')
 const { createFocusProjectTerminalState } = require('./ipc/focus-project-terminal-state')
-const { getDefaultMcpConfig, getMcpConfig, saveMcpConfig } = require('./mcp/config')
-const { createEmbeddedMcpServer } = require('./mcp/server')
-const { createProjectsService } = require('./mcp/services/projects')
-const { createTerminalsService } = require('./mcp/services/terminals')
-const { createRemotesService } = require('./mcp/services/remotes')
-const { terminalBuffers } = require('./mcp/services/terminalBuffers')
-const { createProjectsTools } = require('./mcp/tools/projects')
-const { createTerminalsTools } = require('./mcp/tools/terminals')
-const { createRemotesTools } = require('./mcp/tools/remotes')
-const { writeTerminalSession } = require('./ipc/terminal-runtime')
-const { createSessionPartitionManager } = require('./tab-manager/session-partition-manager')
-const { decideWindowOpenAction } = require('./tab-manager/window-open-policy')
-const { createSitePermissionManager } = require('./permissions/site-permission-manager')
 
 // 注册自定义协议（必须在 app ready 之前调用）
 // local-resource:// 用于安全地向渲染进程提供 ~/.gitManager/ 目录下的本地文件
@@ -754,15 +738,9 @@ safeLog('🔧 自定义 fetch 函数已设置:', typeof fetch)
 
 // 保持对窗口对象的全局引用
 let mainWindow
-let embeddedMcpServer = null
-let mcpRuntimeState = {
-  browser: {
-    totalTabs: 0,
-    activeTabId: null,
-    projectTabCount: 0,
-    openProjectTabs: [],
-    activeProject: null
-  }
+let workspaceRuntimeState = {
+  activeProject: null,
+  openProjects: []
 }
 
 function syncCodexUnreadBadge(count = 0) {
@@ -947,16 +925,22 @@ function isAppBackground() {
 }
 
 function getActiveProjectPath() {
-  return normalizeProjectPath(mcpRuntimeState?.browser?.activeProject?.path || '')
+  return normalizeProjectPath(workspaceRuntimeState?.activeProject?.path || '')
 }
 
 function getProjectRouteType(projectPath = '') {
   const normalizedProjectPath = normalizeProjectPath(projectPath)
   if (!normalizedProjectPath) return 'single-project'
-  const matchingTab = Array.isArray(mcpRuntimeState?.browser?.openProjectTabs)
-    ? mcpRuntimeState.browser.openProjectTabs.find((tab) => normalizeProjectPath(tab?.path || '') === normalizedProjectPath)
+  const activeProject = workspaceRuntimeState?.activeProject
+  if (normalizeProjectPath(activeProject?.path || '') === normalizedProjectPath) {
+    return activeProject?.routeType === 'clone-directory' ? 'clone-directory' : 'single-project'
+  }
+  const matchingProject = Array.isArray(workspaceRuntimeState?.openProjects)
+    ? workspaceRuntimeState.openProjects.find(
+        (project) => normalizeProjectPath(project?.path || '') === normalizedProjectPath
+      )
     : null
-  return matchingTab?.routeType === 'clone-directory' ? 'clone-directory' : 'single-project'
+  return matchingProject?.routeType === 'clone-directory' ? 'clone-directory' : 'single-project'
 }
 
 function focusProjectTerminalInRenderer(projectPath = '', routeType = 'single-project') {
@@ -1039,150 +1023,34 @@ const codexSessionMonitor = createCodexSessionMonitor({
   }
 })
 
-function getMcpRuntimeState() {
-  return JSON.parse(JSON.stringify(mcpRuntimeState))
-}
-
-function getEmbeddedMcpTools(config = getMcpConfig(store)) {
-  const projectsService = createProjectsService({
-    store,
-    executeGitCommand,
-    getRuntimeState: getMcpRuntimeState
-  })
-  const terminalsService = createTerminalsService({
-    terminalBuffers,
-    writeTerminal: async (terminalId, data) => {
-      codexSessionMonitor.handleTerminalInput(terminalId, data)
-      return writeTerminalSession(terminalId, data)
-    }
-  })
-  const remotesService = createRemotesService({
-    store,
-    executeGitCommand,
-    fetch,
-    getGitlabProjectId
-  })
-
-  const tools = []
-  if (config?.capabilities?.projects !== false) {
-    tools.push(...createProjectsTools(projectsService))
-  }
-  if (config?.capabilities?.terminals !== false || config?.capabilities?.terminalsWrite === true) {
-    tools.push(...createTerminalsTools(terminalsService, {
-      enableWrite: config?.capabilities?.terminalsWrite === true
-    }))
-  }
-  if (config?.capabilities?.remotesRead !== false || config?.capabilities?.remotesWrite === true || config?.capabilities?.remotesRequest === true) {
-    tools.push(...createRemotesTools(remotesService, {
-      enableWrite: config?.capabilities?.remotesWrite === true,
-      enableRequest: config?.capabilities?.remotesRequest === true
-    }))
-  }
-  return tools
-}
-
-function broadcastMcpServerStatus(status) {
-  const windows = BrowserWindow.getAllWindows()
-  windows.forEach((win) => {
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('mcp-status-changed', status)
-    }
-  })
-}
-
-function ensureEmbeddedMcpServer() {
-  if (!embeddedMcpServer) {
-    embeddedMcpServer = createEmbeddedMcpServer({
-      safeLog,
-      safeError,
-      onStatusChange: broadcastMcpServerStatus,
-      getTools: getEmbeddedMcpTools
-    })
-  }
-  return embeddedMcpServer
-}
-
 // 初始化 electron-store
 const store = new Store({
   defaults: {
     gitlabConfig: {},
     gitlabHistory: [],
-    savedConfigs: [],
-    browserFavorites: [],
-    browserPasswords: [],
-    mcpConfig: getDefaultMcpConfig()
+    savedConfigs: []
   }
 })
 
-async function syncEmbeddedMcpServer() {
-  const server = ensureEmbeddedMcpServer()
-  const config = getMcpConfig(store)
-  const status = await server.start(config)
-  return { config, status }
-}
-
-ipcMain.handle('mcp-get-config', async () => {
-  return {
-    success: true,
-    config: getMcpConfig(store)
-  }
-})
-
-ipcMain.handle('mcp-save-config', async (event, payload = {}) => {
-  try {
-    const config = saveMcpConfig(store, payload)
-    const status = await ensureEmbeddedMcpServer().restart(config)
-    return { success: true, config, status }
-  } catch (error) {
-    safeError('❌ 保存 MCP 配置失败:', error.message)
-    return {
-      success: false,
-      error: error.message,
-      config: getMcpConfig(store),
-      status: ensureEmbeddedMcpServer().getStatus()
-    }
-  }
-})
-
-ipcMain.handle('mcp-get-status', async () => {
-  const config = getMcpConfig(store)
-  const status = ensureEmbeddedMcpServer().getStatus()
-  return {
-    success: true,
-    status: {
-      ...status,
-      enabled: config.enabled,
-      host: config.host,
-      port: config.port
-    }
-  }
-})
-
-ipcMain.on('mcp-runtime-state-update', (event, payload = {}) => {
+ipcMain.on('workspace-runtime-state-update', (event, payload = {}) => {
   if (!payload || typeof payload !== 'object') return
-  if (payload.browser && typeof payload.browser === 'object') {
-    const browser = payload.browser
-    mcpRuntimeState.browser = {
-      totalTabs: Number.isFinite(browser.totalTabs) ? browser.totalTabs : 0,
-      activeTabId: browser.activeTabId ?? null,
-      projectTabCount: Number.isFinite(browser.projectTabCount) ? browser.projectTabCount : 0,
-      openProjectTabs: Array.isArray(browser.openProjectTabs)
-        ? browser.openProjectTabs.map((tab) => ({
-          id: tab?.id ?? null,
-          path: String(tab?.path || '').trim(),
-          routeType: String(tab?.routeType || '').trim(),
-          title: String(tab?.title || '').trim()
-        })).filter((tab) => tab.path)
-        : [],
-      activeProject: browser.activeProject && typeof browser.activeProject === 'object'
-        ? {
-          id: browser.activeProject?.id ?? null,
-          path: String(browser.activeProject?.path || '').trim(),
-          routeType: String(browser.activeProject?.routeType || '').trim(),
-          title: String(browser.activeProject?.title || '').trim()
-        }
-        : null
-    }
+  workspaceRuntimeState = {
+    activeProject: payload.activeProject && typeof payload.activeProject === 'object'
+      ? {
+        id: payload.activeProject?.id ?? null,
+        path: String(payload.activeProject?.path || '').trim(),
+        routeType: String(payload.activeProject?.routeType || '').trim(),
+        title: String(payload.activeProject?.title || '').trim()
+      }
+      : null,
+    openProjects: Array.isArray(payload.openProjects)
+      ? payload.openProjects.map((project) => ({
+          id: project?.id ?? null,
+          path: String(project?.path || '').trim(),
+          routeType: String(project?.routeType || '').trim(),
+          title: String(project?.title || '').trim()
+        })).filter((project) => project.path)
+      : []
   }
 })
 
@@ -1197,258 +1065,6 @@ ipcMain.on('focus-project-terminal-ack', (event, payload = {}) => {
 
 // 开发环境判断
 const isDev = process.env.NODE_ENV === 'development'
-let sitePermissionManager = null
-let sessionPartitionManager = null
-const pendingPermissionCallbacks = new Map()
-const pendingPermissionTimeouts = new Map()
-const configuredBrowserPartitions = new Set()
-const SITE_PERMISSION_PARTITION = 'persist:main'
-const SITE_PERMISSION_REQUEST_TIMEOUT_MS = 30_000
-let nextPermissionRequestId = 0
-
-function getDebugMemoryStats() {
-  const codexSnapshot = codexSessionMonitor.getSnapshot()
-  return {
-    permissions: {
-      pendingCallbacks: pendingPermissionCallbacks.size,
-      pendingTimeouts: pendingPermissionTimeouts.size
-    },
-    codexSessions: {
-      terminals: codexSnapshot.terminals.length,
-      projects: codexSnapshot.projects.length,
-      awaitingConfirmation: codexSnapshot.projects.filter((project) => project.status === 'awaiting_confirmation').length,
-      running: codexSnapshot.projects.filter((project) => project.status === 'running').length,
-      ended: codexSnapshot.projects.filter((project) => project.status === 'ended').length
-    }
-  }
-}
-
-function createPermissionRequestId() {
-  nextPermissionRequestId += 1
-  return `site-permission-${Date.now()}-${nextPermissionRequestId}`
-}
-
-function clearPendingPermissionTimeout(requestId) {
-  const timeout = pendingPermissionTimeouts.get(requestId)
-  if (timeout) {
-    clearTimeout(timeout)
-    pendingPermissionTimeouts.delete(requestId)
-  }
-}
-
-function resolvePendingPermissionRequest({ requestId, decision = 'deny', remember = false, reason = '' } = {}) {
-  if (!sitePermissionManager || !requestId) {
-    return { success: false, error: 'invalid permission request resolution' }
-  }
-
-  const pendingRequest = sitePermissionManager.getPendingRequest(requestId)
-  if (!pendingRequest) {
-    if (reason) {
-      safeLog(`[Permission] ignore missing request ${requestId}: ${reason}`)
-    }
-    return { success: false, error: 'request not found' }
-  }
-
-  if (remember && decision === 'allow') {
-    sitePermissionManager.rememberDecision({
-      partition: pendingRequest.partition,
-      origin: pendingRequest.origin,
-      permission: pendingRequest.permission,
-      decision
-    })
-  }
-
-  const resolvedRequest = sitePermissionManager.resolvePendingRequest({ requestId, decision })
-  clearPendingPermissionTimeout(requestId)
-
-  const callback = pendingPermissionCallbacks.get(requestId)
-  pendingPermissionCallbacks.delete(requestId)
-
-  if (callback) {
-    try {
-      callback(decision === 'allow')
-    } catch (error) {
-      safeError(`[Permission] callback failed for ${requestId}:`, error)
-    }
-  }
-
-  return { success: Boolean(resolvedRequest), request: resolvedRequest }
-}
-
-function getPermissionOrigin(webContents, details = {}, requestingOrigin = '') {
-  const rawOrigin = requestingOrigin
-    || details.requestingOrigin
-    || details.requestingUrl
-    || details.securityOrigin
-    || details.embeddingOrigin
-    || webContents?.getURL?.()
-    || ''
-
-  return sitePermissionManager ? sitePermissionManager.normalizeOrigin(rawOrigin) : ''
-}
-
-function getTabPermissionContext({ origin = '', partition = '' } = {}) {
-  const resolvedPartition = partition || SITE_PERMISSION_PARTITION
-  const rawOrigin = origin || ''
-  const resolvedOrigin = sitePermissionManager?.normalizeOrigin(rawOrigin) || ''
-  return {
-    partition: resolvedPartition,
-    origin: resolvedOrigin
-  }
-}
-
-function configureBrowserSessionPartition(partition = SITE_PERMISSION_PARTITION) {
-  if (!partition || configuredBrowserPartitions.has(partition)) {
-    return
-  }
-
-  const webviewSession = session.fromPartition(partition)
-  webviewSession.setProxy({ mode: 'system' }).catch((error) => {
-    safeError(`[Proxy] failed to apply system proxy for partition ${partition}:`, error.message || error)
-  })
-
-  webviewSession.setPermissionRequestHandler((webContents, permission, callback, details = {}) => {
-    const origin = getPermissionOrigin(webContents, details)
-    if (!origin) {
-      safeLog(`[Permission] deny ${permission}: missing origin`)
-      callback(false)
-      return
-    }
-
-    const rememberedDecision = sitePermissionManager.getRememberedDecision({
-      partition,
-      origin,
-      permission
-    })
-
-    if (rememberedDecision === 'allow') {
-      callback(true)
-      return
-    }
-
-    if (rememberedDecision === 'deny') {
-      callback(false)
-      return
-    }
-
-    const defaultDecision = sitePermissionManager.getDefaultDecision(permission)
-    if (defaultDecision !== 'ask') {
-      safeLog(`[Permission] deny ${permission}: default policy`)
-      callback(false)
-      return
-    }
-
-    const tabId = webContents?.id ? String(webContents.id) : ''
-    if (!sitePermissionManager.shouldPromptRenderer({ tabId, defaultDecision })) {
-      safeLog(`[Permission] deny ${permission}: unable to map tab for ${origin}`)
-      callback(false)
-      return
-    }
-
-    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
-      safeLog(`[Permission] deny ${permission}: renderer unavailable for ${origin}`)
-      callback(false)
-      return
-    }
-
-    const requestId = createPermissionRequestId()
-    const pendingRequest = sitePermissionManager.createPendingRequest({
-      requestId,
-      partition,
-      origin,
-      permission,
-      tabId,
-      expiresAt: Date.now() + SITE_PERMISSION_REQUEST_TIMEOUT_MS
-    })
-
-    pendingPermissionCallbacks.set(requestId, callback)
-    clearPendingPermissionTimeout(requestId)
-
-    const timeout = setTimeout(() => {
-      safeLog(`[Permission] deny ${permission}: renderer response timeout for ${origin}`)
-      resolvePendingPermissionRequest({
-        requestId,
-        decision: 'deny',
-        reason: 'timeout'
-      })
-    }, SITE_PERMISSION_REQUEST_TIMEOUT_MS)
-
-    if (typeof timeout.unref === 'function') {
-      timeout.unref()
-    }
-
-    pendingPermissionTimeouts.set(requestId, timeout)
-
-    const promptPayload = sitePermissionManager.buildPromptPayload(pendingRequest)
-    if (!promptPayload) {
-      safeLog(`[Permission] deny ${permission}: invalid prompt payload for ${origin}`)
-      resolvePendingPermissionRequest({
-        requestId,
-        decision: 'deny',
-        reason: 'invalid-prompt-payload'
-      })
-      return
-    }
-
-    try {
-      mainWindow.webContents.send('browser-permission-requested', promptPayload)
-    } catch (error) {
-      safeError(`[Permission] send prompt failed for ${requestId}:`, error)
-      resolvePendingPermissionRequest({
-        requestId,
-        decision: 'deny',
-        reason: 'renderer-send-failed'
-      })
-    }
-  })
-
-  webviewSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details = {}) => {
-    const origin = getPermissionOrigin(webContents, details, requestingOrigin)
-    if (!origin) {
-      return false
-    }
-
-    const rememberedDecision = sitePermissionManager.getRememberedDecision({
-      partition,
-      origin,
-      permission
-    })
-
-    return sitePermissionManager.getCheckDecision({
-      permission,
-      rememberedDecision
-    })
-  })
-
-  webviewSession.on('will-download', (event, item) => {
-    event.preventDefault()
-    safeLog(`[Download] blocked browser download for partition ${partition}: ${item.getURL() || item.getFilename() || 'unknown'}`)
-  })
-
-  configuredBrowserPartitions.add(partition)
-}
-
-ipcMain.handle('browser-ensure-session-partition', async (event, { partition = '' } = {}) => {
-  const resolvedPartition = typeof partition === 'string' && partition ? partition : SITE_PERMISSION_PARTITION
-  configureBrowserSessionPartition(resolvedPartition)
-  return { success: true, partition: resolvedPartition }
-})
-
-ipcMain.handle('browser-clear-session-partition', async (event, { partition = '' } = {}) => {
-  if (!partition || !sessionPartitionManager?.isPrivatePartition(partition)) {
-    return { success: false, error: 'invalid private partition' }
-  }
-
-  try {
-    const targetSession = session.fromPartition(partition)
-    await targetSession.clearStorageData()
-    configuredBrowserPartitions.delete(partition)
-    return { success: true, partition }
-  } catch (error) {
-    safeError(`[Session] clear private partition failed: ${partition}`, error)
-    return { success: false, error: error.message }
-  }
-})
 
 function createWindow() {
   // 防止重复创建窗口
@@ -1459,7 +1075,7 @@ function createWindow() {
   }
   
   safeLog('Creating window...')
-  // 创建浏览器窗口
+  // 创建主窗口
           mainWindow = new BrowserWindow({
             width: 1400,
             height: 900,
@@ -1469,8 +1085,7 @@ function createWindow() {
               nodeIntegration: false,
               contextIsolation: true,
               enableRemoteModule: false,
-              preload: path.join(__dirname, 'preload.js'),
-              webviewTag: true
+              preload: path.join(__dirname, 'preload.js')
             },
             titleBarStyle: 'hidden',
             trafficLightPosition: { x: 8, y: 8 },
@@ -1564,141 +1179,14 @@ function createWindow() {
   createMenu()
 }
 
-function createPopupWindow(url) {
-  const newWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1200,
-    minHeight: 800,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      enableRemoteModule: false,
-      preload: path.join(__dirname, 'preload.js')
-    },
-    titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 8, y: 8 },
-    show: false
-  })
-
-  newWindow.loadURL(url)
-  newWindow.once('ready-to-show', () => {
-    newWindow.show()
-  })
-
-  newWindow.on('close', (event) => {
-    if (!app.isQuiting) {
-      event.preventDefault()
-      newWindow.hide()
-      safeLog('📱 新窗口已隐藏到应用图标')
-    }
-  })
-}
-
-function handleWindowOpen({ url = '', disposition = '', frameName = '' } = {}) {
-  const decision = decideWindowOpenAction({ url, disposition, frameName })
-  safeLog('🔗 [主进程] 窗口打开策略:', { url, disposition, frameName, decision: decision.action })
-
-  if (decision.action === 'tab') {
-    if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send('open-url-in-new-tab', url)
-    }
-    return { action: 'deny' }
-  }
-
-  if (decision.action === 'window') {
-    createPopupWindow(url)
-    return { action: 'deny' }
-  }
-
-  if (url) {
+function handleWindowOpen({ url = '' } = {}) {
+  if (/^https?:\/\//i.test(url)) {
     shell.openExternal(url).catch((error) => {
       safeError('openExternal failed:', error)
     })
   }
   return { action: 'deny' }
 }
-
-ipcMain.handle('debug-memory-stats', async () => {
-  return getDebugMemoryStats()
-})
-
-ipcMain.handle('browser-get-site-permissions', async (event, payload = {}) => {
-  try {
-    if (!sitePermissionManager) throw new Error('sitePermissionManager not initialized')
-    const { partition, origin } = getTabPermissionContext({
-      tabId: payload.tabId || '',
-      origin: payload.origin || '',
-      partition: payload.partition || ''
-    })
-    return {
-      success: true,
-      origin,
-      partition,
-      permissions: sitePermissionManager.listPermissionsForOrigin({ partition, origin })
-    }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('browser-reset-site-permission', async (event, payload = {}) => {
-  try {
-    if (!sitePermissionManager) throw new Error('sitePermissionManager not initialized')
-    const { partition, origin } = getTabPermissionContext({
-      tabId: payload.tabId || '',
-      origin: payload.origin || '',
-      partition: payload.partition || ''
-    })
-    const success = sitePermissionManager.resetPermission({
-      partition,
-      origin,
-      permission: payload.permission || ''
-    })
-    return { success, origin, partition }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('browser-reset-all-site-permissions', async (event, payload = {}) => {
-  try {
-    if (!sitePermissionManager) throw new Error('sitePermissionManager not initialized')
-    const { partition, origin } = getTabPermissionContext({
-      tabId: payload.tabId || '',
-      origin: payload.origin || '',
-      partition: payload.partition || ''
-    })
-    const success = sitePermissionManager.resetAllPermissionsForOrigin({
-      partition,
-      origin
-    })
-    return { success, origin, partition }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('browser-permission-respond', async (event, payload = {}) => {
-  try {
-    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || event.sender.id !== mainWindow.webContents.id) {
-      return { success: false, error: 'invalid permission response sender' }
-    }
-
-    const requestId = typeof payload.requestId === 'string' ? payload.requestId : ''
-    const decision = payload.decision === 'allow' ? 'allow' : 'deny'
-    const remember = Boolean(payload.remember)
-    return resolvePendingPermissionRequest({
-      requestId,
-      decision,
-      remember,
-      reason: 'renderer-response'
-    })
-  } catch (error) {
-    safeError('[Permission] browser-permission-respond failed:', error)
-    return { success: false, error: error.message }
-  }
-})
 
 // Git 操作函数
 async function executeGitCommand(command, cwd) {
@@ -1892,58 +1380,11 @@ function createMenu() {
     {
       label: '视图',
       submenu: [
-        { 
-          label: '重新加载当前标签页', 
-          accelerator: 'Command+R', 
-          click: () => {
-            safeLog('⌨️ Command+R 快捷键被触发')
-            // 向渲染进程发送刷新当前标签页的消息
-            if (mainWindow && mainWindow.webContents) {
-              safeLog('📡 发送 refresh-current-tab 消息到渲染进程')
-              mainWindow.webContents.send('refresh-current-tab')
-            } else {
-              safeLog('❌ mainWindow 或 webContents 不可用')
-            }
-          }
-        },
-        { label: '强制重新加载', accelerator: 'Command+Shift+R', role: 'forceReload' },
-        { label: '切换开发者工具', accelerator: 'F12', role: 'toggleDevTools' },
-        { 
-          label: '打开 Webview 开发者工具', 
-          accelerator: 'Command+Option+I',
-          click: () => {
-            if (mainWindow && mainWindow.webContents) {
-              mainWindow.webContents.send('open-webview-devtools')
-            }
-          }
-        },
-        { type: 'separator' },
         { label: '实际大小', accelerator: 'Command+0', role: 'resetZoom' },
         { label: '放大', accelerator: 'Command+Plus', role: 'zoomIn' },
         { label: '缩小', accelerator: 'Command+-', role: 'zoomOut' },
         { type: 'separator' },
         { label: '切换全屏', accelerator: 'Ctrl+Command+F', role: 'togglefullscreen' }
-      ]
-    },
-    {
-      label: '收藏',
-      submenu: [
-        {
-          label: '导出收藏',
-          click: () => {
-            if (mainWindow && mainWindow.webContents) {
-              mainWindow.webContents.send('export-favorites')
-            }
-          }
-        },
-        {
-          label: '导入收藏',
-          click: () => {
-            if (mainWindow && mainWindow.webContents) {
-              mainWindow.webContents.send('import-favorites')
-            }
-          }
-        }
       ]
     },
     {
@@ -1970,7 +1411,7 @@ function createMenu() {
   Menu.setApplicationMenu(menu)
 }
 
-// 当 Electron 完成初始化并准备创建浏览器窗口时调用此方法
+// 当 Electron 完成初始化并准备创建主窗口时调用此方法
 safeLog('Electron app starting...')
 
 registerWindowUiHandlers({
@@ -2003,14 +1444,6 @@ registerFilesystemHandlers({
   getMainWindow: () => mainWindow,
   executeGitCommand,
   shell,
-  safeLog,
-  safeError
-})
-
-registerWallpaperHandlers({
-  ipcMain,
-  app,
-  fetch,
   safeLog,
   safeError
 })
@@ -2078,15 +1511,6 @@ const { cleanup: cleanupCommandProcesses } = registerCommandHandlers({
 registerNavigationHandlers({
   ipcMain,
   shell,
-  getMainWindow: () => mainWindow,
-  safeLog,
-  safeError
-})
-
-registerBrowserDataHandlers({
-  ipcMain,
-  getMainWindow: () => mainWindow,
-  store,
   safeLog,
   safeError
 })
@@ -2119,14 +1543,9 @@ registerBranchHandlers({
   safeError
 })
 
-// 监听所有 webContents 创建，拦截 webview 中的新窗口请求
+// 所有网页导航统一交给系统默认浏览器。
 app.on('web-contents-created', (event, contents) => {
   contents.setWindowOpenHandler((details) => handleWindowOpen(details))
-  
-  // 为 webview 设置导航处理
-  contents.on('will-navigate', (event, url) => {
-    safeLog('🔗 [主进程] webContents will-navigate:', url)
-  })
 })
 
 
@@ -2135,16 +1554,6 @@ app.whenReady().then(async () => {
   await session.defaultSession.setProxy({ mode: 'system' }).catch((error) => {
     safeError('[Proxy] failed to apply system proxy for default session:', error.message || error)
   })
-  void autoRefreshOnlineWallpaperOnStartup({
-    app,
-    store,
-    fetch,
-    safeLog,
-    safeError
-  })
-  sitePermissionManager = createSitePermissionManager({ store })
-  sessionPartitionManager = createSessionPartitionManager()
-
   // 注册 local-resource:// 协议：安全地将 ~/.gitManager/ 下的文件提供给渲染进程
   // URL 格式：local-resource://相对路径  例：local-resource://screenshots/screenshot-123.png
   const gitManagerBase = path.resolve(os.homedir(), '.gitManager')
@@ -2164,15 +1573,11 @@ app.whenReady().then(async () => {
     }
   })
 
-  configureBrowserSessionPartition(SITE_PERMISSION_PARTITION)
-  
   // 设置存储路径（确保使用应用数据目录）
   const userDataPath = app.getPath('userData')
   safeLog(`📁 User data path: ${userDataPath}`)
-  safeLog(`✅ Webview session configured with persist:main`)
   
   createWindow()
-  await syncEmbeddedMcpServer()
 
 }).catch((error) => {
   safeError('Error in app.whenReady():', error)
@@ -2181,25 +1586,8 @@ app.whenReady().then(async () => {
 // 添加应用退出标记
 app.isQuiting = false
 
-// 不在此 handler 上使用 async/await：Electron 会等待 before-quit 返回的 Promise，
-// cookies.flushStore() 可能较慢，导致退出前界面“卡一下”。同步 flush 存储 + 异步写 cookie 即可。
 app.on('before-quit', () => {
   app.isQuiting = true
-
-  try {
-    const webviewSession = session.fromPartition('persist:main')
-
-    if (typeof webviewSession.flushStorageData === 'function') {
-      webviewSession.flushStorageData()
-    }
-
-    void webviewSession.cookies.flushStore().then(
-      () => safeLog('✅ Session cookies flushed to disk'),
-      (error) => safeError('❌ Session cookies flush failed:', error?.message || error)
-    )
-  } catch (error) {
-    safeError('❌ Failed to flush session data:', error)
-  }
 })
 
 app.on('window-all-closed', () => {
@@ -2253,19 +1641,6 @@ const { cleanup: cleanupTerminalSessions } = registerTerminalHandlers({
 })
 
 app.on('will-quit', () => {
-  if (embeddedMcpServer) {
-    void embeddedMcpServer.stop()
-  }
   cleanupTerminalSessions()
   cleanupCommandProcesses()
-})
-
-registerExtensionHandlers({
-  ipcMain,
-  dialog,
-  app,
-  store,
-  getMainWindow: () => mainWindow,
-  safeLog,
-  safeError
 })

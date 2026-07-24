@@ -51,20 +51,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveConfig: (data) => ipcRenderer.invoke('save-config', data),
   getConfig: (key) => ipcRenderer.invoke('get-config', key),
   getAllConfigs: () => ipcRenderer.invoke('get-all-configs'),
-  listOnlineWallpaperProviders: () => ipcRenderer.invoke('list-online-wallpaper-providers'),
-  getOnlineWallpaperList: (data) => ipcRenderer.invoke('get-online-wallpaper-list', data),
-  downloadOnlineWallpaper: (data) => ipcRenderer.invoke('download-online-wallpaper', data),
-  refreshOnlineWallpaperIfNeeded: (data) => ipcRenderer.invoke('refresh-online-wallpaper-if-needed', data),
-  getMcpConfig: () => ipcRenderer.invoke('mcp-get-config'),
-  saveMcpConfig: (payload) => ipcRenderer.invoke('mcp-save-config', payload),
-  getMcpServerStatus: () => ipcRenderer.invoke('mcp-get-status'),
-  reportMcpRuntimeState: (payload) => ipcRenderer.send('mcp-runtime-state-update', payload),
-  onMcpServerStatusChanged: (callback) => {
-    ipcRenderer.on('mcp-status-changed', (event, status) => callback(status))
-  },
-  removeMcpServerStatusChangedListener: () => {
-    ipcRenderer.removeAllListeners('mcp-status-changed')
-  },
+  reportWorkspaceRuntimeState: (payload) => ipcRenderer.send('workspace-runtime-state-update', payload),
   
   // GitLab API 操作
   gitlabTest: (data) => ipcRenderer.invoke('gitlab-test', data),
@@ -143,10 +130,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteSavedConfig: (index) => ipcRenderer.invoke('delete-saved-config', index),
   setConfig: (key, value) => ipcRenderer.invoke('set-config', key, value),
   
-  // 标签页管理
-  onRefreshCurrentTab: (callback) => {
-    ipcRenderer.on('refresh-current-tab', callback)
-  },
   onFocusProjectTerminal: (callback) => {
     if (typeof callback !== 'function') return () => {}
 
@@ -176,10 +159,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     focusProjectTerminalSubscribers.clear()
   },
-  removeRefreshCurrentTabListener: (callback) => {
-    ipcRenderer.removeListener('refresh-current-tab', callback)
-  },
-  
   // 实时Git输出监听
   onGitOutputUpdate: (callback) => {
     ipcRenderer.on('git-output-update', callback)
@@ -260,49 +239,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 窗口操作
   toggleMaximize: () => ipcRenderer.invoke('toggle-maximize'),
   
-  // 浏览器功能
-  getBrowserFavorites: () => ipcRenderer.invoke('get-browser-favorites'),
-  addBrowserFavorite: (data) => ipcRenderer.invoke('add-browser-favorite', data),
-  removeBrowserFavorite: (data) => ipcRenderer.invoke('remove-browser-favorite', data),
-  updateBrowserFavorite: (data) => ipcRenderer.invoke('update-browser-favorite', data),
-  saveBrowserFavoritesOrder: (orderedIds) => ipcRenderer.invoke('save-browser-favorites-order', orderedIds),
-  exportBrowserFavorites: () => ipcRenderer.invoke('export-browser-favorites'),
-  importBrowserFavorites: () => ipcRenderer.invoke('import-browser-favorites'),
-  getBrowserPasswords: () => ipcRenderer.invoke('get-browser-passwords'),
-  saveBrowserPassword: (data) => ipcRenderer.invoke('save-browser-password', data),
-  getBrowserPassword: (data) => ipcRenderer.invoke('get-browser-password', data),
-  updateBrowserPasswordUsed: (data) => ipcRenderer.invoke('update-browser-password-used', data),
-  clearBrowserPasswords: () => ipcRenderer.invoke('clear-browser-passwords'),
-  deleteBrowserPassword: (data) => ipcRenderer.invoke('delete-browser-password', data),
-  deleteBrowserPasswordByDomain: (data) => ipcRenderer.invoke('delete-browser-password-by-domain', data),
-  
-  // 收藏导入导出事件监听
-  onExportFavorites: (callback) => {
-    ipcRenderer.on('export-favorites', callback)
-  },
-  removeExportFavoritesListener: (callback) => {
-    ipcRenderer.removeListener('export-favorites', callback)
-  },
-  onImportFavorites: (callback) => {
-    ipcRenderer.on('import-favorites', callback)
-  },
-  removeImportFavoritesListener: (callback) => {
-    ipcRenderer.removeListener('import-favorites', callback)
-  },
-  
-  // 监听主进程发来的新标签页打开请求
-  onOpenUrlInNewTab: (callback) => {
-    ipcRenderer.on('open-url-in-new-tab', (event, url) => callback(url))
-  },
-  removeOpenUrlInNewTabListener: () => {
-    ipcRenderer.removeAllListeners('open-url-in-new-tab')
-  },
-  
-  // 全局方法：在新标签页中打开 URL
-  openUrlInNewTab: (url) => {
-    ipcRenderer.send('request-open-url-in-new-tab', url)
-  },
-  
   // 读取图片文件并返回 base64
   readImageAsBase64: (filePath) => ipcRenderer.invoke('read-image-as-base64', filePath),
   readFileAsBase64: (filePath) => ipcRenderer.invoke('read-file-as-base64', filePath),
@@ -332,27 +268,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   moveFilesystemItems: (data) => ipcRenderer.invoke('move-filesystem-items', data),
   getFilesystemPasteConflicts: (data) => ipcRenderer.invoke('get-filesystem-paste-conflicts', data),
   deleteFilesystemItems: (data) => ipcRenderer.invoke('delete-filesystem-items', data),
-  
-  // 监听打开 webview DevTools 请求
-  onOpenWebviewDevTools: (callback) => {
-    ipcRenderer.on('open-webview-devtools', callback)
-  },
-  removeOpenWebviewDevToolsListener: () => {
-    ipcRenderer.removeAllListeners('open-webview-devtools')
-  },
-  debugMemoryStats: () => ipcRenderer.invoke('debug-memory-stats'),
-  browserEnsureSessionPartition: (data) => ipcRenderer.invoke('browser-ensure-session-partition', data),
-  browserClearSessionPartition: (data) => ipcRenderer.invoke('browser-clear-session-partition', data),
-  browserGetSitePermissions: (data) => ipcRenderer.invoke('browser-get-site-permissions', data),
-  browserResetSitePermission: (data) => ipcRenderer.invoke('browser-reset-site-permission', data),
-  browserResetAllSitePermissions: (data) => ipcRenderer.invoke('browser-reset-all-site-permissions', data),
-  onBrowserPermissionRequested: (callback) => {
-    ipcRenderer.on('browser-permission-requested', (event, data) => callback(data))
-  },
-  removeBrowserPermissionRequestedListener: () => {
-    ipcRenderer.removeAllListeners('browser-permission-requested')
-  },
-  browserRespondToPermissionRequest: (data) => ipcRenderer.invoke('browser-permission-respond', data),
   
   // ==================== 终端 ====================
   terminal: {
@@ -449,14 +364,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return
     }
     ipcRenderer.removeAllListeners('codex-session-project-status-changed')
-  },
-
-  // Chrome 扩展管理
-  getExtensions: () => ipcRenderer.invoke('get-extensions'),
-  loadExtensionFromFolder: () => ipcRenderer.invoke('load-extension-from-folder'),
-  loadExtensionFromCrx: () => ipcRenderer.invoke('load-extension-from-crx'),
-  loadExtensionFromChrome: () => ipcRenderer.invoke('load-extension-from-chrome'),
-  loadExtensionById: (extensionId) => ipcRenderer.invoke('load-extension-by-id', extensionId),
-  toggleExtension: (extensionId, enabled) => ipcRenderer.invoke('toggle-extension', extensionId, enabled),
-  removeExtension: (extensionId) => ipcRenderer.invoke('remove-extension', extensionId)
+  }
 })

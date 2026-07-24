@@ -264,7 +264,11 @@ const formatJobDuration = (job) => {
 
 const openPipelineWebUrl = (url) => {
   if (!url) return
-  window.electronAPI?.openUrlInNewTab?.(url)
+  if (window.electronAPI?.openExternal) {
+    window.electronAPI.openExternal(url)
+    return
+  }
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 const selectPipeline = async (pipelineId) => {

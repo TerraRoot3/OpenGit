@@ -2,7 +2,7 @@
 
 ## Scope
 
-This repository is `OpenGit`, an Electron + Vue 3 desktop application for Git workflows, built-in browser/terminal tooling, and project-scoped AI sessions.
+This repository is `OpenGit`, an Electron + Vue 3 desktop application for Git workflows, project terminal tooling, and project-scoped AI sessions.
 
 Agents working in this repo should optimize for stable desktop behavior first. Avoid broad refactors unless the user explicitly asks for them.
 
@@ -16,7 +16,7 @@ Agents working in this repo should optimize for stable desktop behavior first. A
 ## Working Rules
 
 1. Prefer narrow fixes over large architectural rewrites.
-2. When touching browser, terminal, or Electron integration, preserve existing lifecycle behavior unless the bug requires changing it.
+2. When touching project workspace, terminal, or Electron integration, preserve existing lifecycle behavior unless the requested change requires changing it.
 3. For user-visible changes, add a short entry to `CHANGELOG.md` under `## [Unreleased]`.
 4. For release-oriented changes, keep these three values aligned:
    - `package.json` version
@@ -43,7 +43,7 @@ Good:
 
 Bad:
 
-- `- 调整 Browser.vue 第 3 个 watcher`
+- `- 调整 ProjectDetail.vue 第 3 个 watcher`
 
 ## Release Workflow
 

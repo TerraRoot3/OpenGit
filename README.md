@@ -2,9 +2,7 @@
 
 [中文](#中文) | [English](#english)
 
-OpenGit is a desktop Git client built with `Electron + Vue 3`, designed for daily development workflows.
-
-It is positioned as a practical, lightweight alternative to `GitKraken`, with a stronger focus on project-oriented Git operations, GitLab collaboration, built-in terminal workflows, and project-scoped AI session management.
+OpenGit is a project-centered desktop Git client built with Electron and Vue 3.
 
 ![OpenGit Screenshot 1](./图1.jpg)
 ![OpenGit Screenshot 2](./图2.jpg)
@@ -15,136 +13,77 @@ It is positioned as a practical, lightweight alternative to `GitKraken`, with a 
 
 ### 这是什么
 
-OpenGit 是一个面向日常开发的桌面 Git 客户端，适合替代 `GitKraken` 这类通用 Git GUI 工具来处理高频仓库操作。
+OpenGit 是一个面向日常开发的桌面 Git 客户端。它把高频仓库操作、GitLab / GitHub / Gitee 协作、项目终端和项目级 AI 会话集中在一个工作区中。
 
-它的定位不是“做一个最全的 Git 教科书界面”，而是把开发过程中真正常用的几件事放在一个地方：
-
-- 全局项目侧边栏与扫描目录管理
-- 分支 / 标签 / 提交 / 暂存
-- GitLab / MR 协作入口
-- GitLab Pipeline 执行状态监控
-- 项目级终端工作区
-- 项目级 AI 会话管理
-- 内置浏览器与相关权限、下载、恢复能力
-
-如果你想要一个更贴近日常开发、支持 GitLab、终端、AI 会话和项目视角的一体化桌面 Git 工具，OpenGit 可以作为 `GitKraken` 的轻量平替。
-
-### 最近新增
-
-- 新增完整主题系统，已内置 `7` 套主题，并支持 `跟随系统`
-  - `Slate Dual`
-  - `Graphite Moss`
-  - `Abyss Blue`
-  - `Mist Paper`
-  - `Frost Slate`
-  - `Aurora Paper`
-  - `Cobalt Mist`
-- 首页设置抽屉支持主题切换、跟随系统、在线壁纸和本地壁纸切换，并持久化保存选择
-- 浏览器、项目详情、工作区、终端、弹层与原生浮动菜单已接入统一主题变量
-- 支持深色与浅色主题混合扩展，便于后续继续增加新皮肤
-- GitLab / GitHub 流水线在提交、推送、创建 MR/PR、推送标签等操作后会自动触发延时刷新，并在后台跟踪运行状态
-- Project Detail 顶部可直接查看当前运行中的流水线摘要状态
-- 新增 OpenGit 内置 MCP，本地 AI 和外部 AI 可直接读取项目、终端输出、远端平台只读信息
+应用通过左侧项目侧边栏管理仓库，并在主区域以原生工作区标签同时打开多个项目。工作区右上菜单提供远端仓库、灵动终端、分屏终端、备份管理和皮肤页面；需要访问仓库、流水线等网页时，会交给系统默认浏览器打开。
+退出后会保存当前打开的原生工作区页面、标签顺序和激活页，并在下次启动时恢复。
 
 ### 核心能力
 
-#### 1. 项目与仓库工作台
+#### 项目与仓库
 
-- 左侧全局项目侧边栏，支持添加目录并在 3 级内扫描 Git 仓库
-- 多仓库集中管理，统一查看项目状态并快速切换
-- 项目详情页聚合分支、标签、文件状态、提交历史、终端与 AI 会话
-- 项目列表按目录分组展示，并同步显示分支、待改文件、提交数与拉取数
-- 支持项目单独在新标签页打开
+- 添加扫描目录，并在 3 级目录内发现 Git 仓库
+- 按目录分组展示多个仓库
+- 从侧边栏打开多个项目工作区标签并快速切换
+- 显示分支、待改文件、领先和落后状态
 
-#### 2. 高频 Git 操作
+#### Git 操作
 
-- 本地 / 远程分支查看、切换、创建、删除、合并
-- 标签查看、创建、推送、删除、检出
-- 文件状态可视化：暂存、反暂存、提交、冲突处理
-- 暂存列表（stash）查看与恢复
-- 提交历史查看与详情展开
+- 查看、切换、创建、删除和合并本地 / 远程分支
+- 查看、创建、推送、删除和检出标签
+- 暂存、反暂存、提交与冲突处理
+- 查看和恢复 stash
+- 查看提交历史与文件差异
 
-#### 3. 协作能力
+#### 远端协作
 
-- GitLab / GitHub / Gitee 快速打开
-- 快速创建 Merge Request
-- 常见远端同步操作可视化
-- GitLab Pipeline 与 GitHub Actions 子页面：查看进行中的与最近的流水线
-- Project Detail 头部显示当前运行中的流水线状态，并自动轮询更新
+- 支持 GitLab、GitHub 和 Gitee
+- 快速创建 Merge Request / Pull Request
+- 查看 GitLab Pipeline 与 GitHub Actions 状态
+- 提交、推送、创建 MR/PR 或推送标签后自动刷新流水线状态
+- 仓库和流水线网页由系统默认浏览器打开
 
-#### 4. 终端工作区
+#### 项目终端
 
 - 项目内置终端
-- 支持 `灵动终端` 模式，适合快速聚焦当前项目命令操作
-- 支持 `分屏终端` 模式，适合并行执行多组命令
-- 从浏览器菜单以新标签页打开独立终端
+- 工作区右上菜单可分别新建灵动终端和分屏终端标签
+- 水平 / 垂直分屏、拖拽调节和交换
 - 终端内容快照恢复
-- 内部终端里的 `Codex` 会话状态可同步到项目 tab 与终端导航，并在后台等待确认/结束时通知
-- 无限水平 / 垂直分屏
-- 分屏拖拽调节大小
-- 分屏拖拽交换位置
+- Codex 会话状态同步与后台通知
+- 点击通知可打开对应项目并聚焦终端
 
-#### 5. AI 会话管理
+#### AI 会话
 
-- 按当前项目聚合 `Codex` 与 `Claude Code` 历史会话
-- 默认进入 AI 会话页，提供方列表优先展示 `Codex`
+- 按当前项目聚合 Codex 与 Claude Code 会话
 - 查看对话记录
-- 一键恢复会话到终端
-- 删除本地会话记录
+- 恢复会话到项目终端
+- 重命名、归档和删除本地会话
 
-#### 6. 内置浏览器
+#### 主题
 
-- 基于 `WebContentsView` 的内置 Browser
-- 支持下载状态、权限提示、崩溃恢复
-- 支持隐私标签页与独立页面管理
-- 地址栏联想弹窗、首页浏览器菜单等原生浮层已适配主题
+- 7 套内置主题与跟随系统模式
+- 皮肤选择迁移到独立工作区页面
+- 项目详情、工作区、终端、菜单和弹层使用统一主题变量
+- 同时支持深色与浅色主题
 
-#### 7. 主题与界面系统
+#### 配置备份
 
-- 统一的 `theme token` 结构，支持语义色、组件别名和后续一键换肤扩展
-- 主链路界面已完成主题化：项目详情、工作区、终端、内置浏览器、菜单、弹窗
-- 常用功能按钮支持按语义分色，并随主题自动调整明暗与对比度
-
-#### 8. 在线壁纸与首页背景
-
-- 支持 `本地图片 / 在线壁纸` 两种首页背景来源
-- 第一版内置 `Bing` 在线壁纸源
-- 支持下载到本地缓存后作为首页背景
-- 支持自动更新到最新在线壁纸
-
-#### 9. 内置 MCP
-
-- OpenGit 主进程可启动本地 MCP Server，仅监听 `127.0.0.1`
-- 支持项目发现能力：列目录、列仓库、活动项目、打开标签
-- 支持终端日志读取能力：读取终端最近输出、按项目聚合终端输出、提取错误片段
-- 支持终端交互能力：增量 tail 与向现有终端写入文本/命令
-- 支持远端平台只读能力：GitLab / GitHub / Gitee 仓库信息、MR/PR、流水线
-- 支持远端高层写能力：创建 MR/PR、评论、重跑流水线
-- 支持远端受控 API 请求：由 OpenGit 主进程附加凭据，AI 不直接拿到 token
-- 外部 AI 和内部 Codex 可共用同一 MCP 接口
-
-### 适合谁
-
-OpenGit 更适合这类用户：
-
-- 日常需要同时处理多个 Git 仓库
-- 主要使用 GitLab 协作
-- 希望在 Git GUI 里直接完成大部分终端和仓库操作
-- 同时使用 `Codex` / `Claude Code`，希望把 AI 会话和项目关联起来
-- 想找一个比 `GitKraken` 更轻量、更偏“项目工作台”的桌面客户端
+- 工作区右上菜单可打开独立备份管理页面
+- 支持项目侧边栏、远端仓库、项目工作区、皮肤和终端偏好的导出与恢复
+- 不会导入已移除的收藏、浏览历史、密码、壁纸或 MCP 配置
 
 ### 技术栈
 
-- 前端：`Vue 3` + `Vite`
-- 桌面容器：`Electron`
-- 终端：`xterm.js` + `node-pty`
+- 前端：Vue 3 + Vite
+- 桌面容器：Electron
+- 终端：xterm.js + node-pty
 - 状态层：`src/stores`
 
 ### 环境要求
 
 - Node.js `>= 18`，建议使用 LTS
 - npm `>= 9`
-- Git 已安装，并且可在终端直接执行
+- Git 已安装并可从终端执行
 
 ### 本地开发
 
@@ -174,156 +113,32 @@ npm run electron:build:win
 npm run electron:build:linux
 ```
 
-产物目录：
-
-```text
-dist-electron/
-```
-
-### OpenGit 内置 MCP
-
-OpenGit 现在支持在主进程内启动一个本地 MCP Server。
-
-特点：
-
-- 仅监听 `127.0.0.1`
-- 不对公网开放
-- 默认从首页设置抽屉里手动开启
-- 当前为第一版只读能力
-
-默认端点：
-
-```text
-http://127.0.0.1:3765/mcp
-```
-
-当前工具分组：
-
-- `projects.*`
-  - `projects.list`
-  - `projects.find`
-  - `projects.get`
-  - `projects.get_active`
-  - `projects.get_open_tabs`
-- `terminals.*`
-  - `terminals.list`
-  - `terminals.get_output`
-  - `terminals.get_project_outputs`
-  - `terminals.get_recent_errors`
-  - `terminals.tail`
-  - `terminals.write`
-- `remotes.*`
-  - `remotes.detect_provider`
-  - `remotes.get_repo`
-  - `remotes.list_branches`
-  - `remotes.list_merge_requests`
-  - `remotes.list_pull_requests`
-  - `remotes.list_pipelines`
-  - `remotes.get_pipeline`
-  - `remotes.create_merge_request`
-  - `remotes.create_pull_request`
-  - `remotes.comment_merge_request`
-  - `remotes.comment_pull_request`
-  - `remotes.rerun_pipeline`
-  - `remotes.request`
-
-详细接入说明见：
-
-- [docs/mcp/opengit-embedded-mcp.md](./docs/mcp/opengit-embedded-mcp.md)
+产物位于 `dist-electron/`。
 
 ### 目录结构
 
 ```text
 OpenGit/
-├── electron/      # Electron 主进程、窗口、IPC、Browser/Terminal 集成
-├── src/           # Vue 页面、组件、业务逻辑、stores
-├── scripts/       # 构建、测试、发布辅助脚本
+├── electron/      # Electron 主进程、窗口与 IPC
+├── src/           # Vue 页面、组件、业务逻辑与 stores
+├── scripts/       # 构建、测试与发布辅助脚本
 └── build/         # 打包、签名与平台配置
 ```
 
-### GitHub Tag 自动发布
+### 版本与发布
 
-工作流文件：
-
-```text
-.github/workflows/release.yml
-```
-
-发布方式：
+日常修改写入 `CHANGELOG.md` 的 `Unreleased`。准备新版本时：
 
 ```bash
-npm run release:prepare -- 1.4.2
+npm run release:prepare -- 1.4.10
 npm run release
-git tag v2.0.1
-git push origin v2.0.1
-```
-
-工作流会自动构建多平台产物并创建 GitHub Release。
-
-### Changelog 与版本维护
-
-从现在开始，版本发布按下面的规则维护：
-
-- 日常修改先写入根目录 `CHANGELOG.md` 的 `## [Unreleased]`
-- 发版前运行：
-
-```bash
-npm run release:prepare -- 1.4.2
-```
-
-这个命令会同时做两件事：
-
-- 更新 `package.json` 的 `version`
-- 把 `CHANGELOG.md` 里的 `Unreleased` 提升为 `1.4.2`
-
-如果要查看某个版本的 release notes，可执行：
-
-```bash
-npm run release:notes -- 1.4.2
-```
-
-建议的发版顺序：
-
-```bash
-npm run release:prepare -- 1.4.2
-npm run release
-git add package.json CHANGELOG.md
-git commit -m "chore: prepare release v1.4.2"
-git tag v1.4.2
+git add package.json package-lock.json CHANGELOG.md
+git commit -m "chore: prepare release v1.4.10"
+git tag v1.4.10
 git push origin main --tags
 ```
 
-### 常见问题
-
-#### 1. Electron 打开白屏
-
-先执行：
-
-```bash
-npm run build
-```
-
-然后再启动：
-
-```bash
-npm run electron:dev
-```
-
-#### 2. Git 操作失败
-
-优先检查：
-
-- 本机 Git 是否安装正确
-- 远端凭据是否可用
-- 终端内网络 / 代理配置是否正确
-
-#### 3. 打包失败
-
-优先检查：
-
-- 平台相关依赖是否齐全
-- Electron 缓存是否损坏
-- 签名与权限配置是否正确
+推送 `vX.Y.Z` 标签后，GitHub Actions 会构建多平台产物并创建 GitHub Release。
 
 ---
 
@@ -331,118 +146,77 @@ npm run electron:dev
 
 ### What It Is
 
-OpenGit is a desktop Git client for daily development work.
+OpenGit is a desktop Git client for daily development. It combines common repository operations, GitLab / GitHub / Gitee collaboration, project terminals, and project-scoped AI sessions in one workspace.
 
-It is intended to be a practical, lightweight alternative to `GitKraken`, especially for teams and developers who want a project-centered workflow with Git, GitLab, terminal tooling, and AI session management in one place.
-
-Instead of trying to expose every Git concept equally, OpenGit focuses on the workflows developers actually use every day:
-
-- global project sidebar with scan-root management
-- repository management
-- branches, tags, commits, and stash
-- GitLab / Merge Request entry points
-- GitLab Pipeline monitoring
-- project terminal workspace
-- project-scoped AI session management
-- built-in browser with download, permission, and recovery support
-
-### Recent Additions
-
-- A complete theme system with `7` built-in themes plus `Follow System`
-  - `Slate Dual`
-  - `Graphite Moss`
-  - `Abyss Blue`
-  - `Mist Paper`
-  - `Frost Slate`
-  - `Aurora Paper`
-  - `Cobalt Mist`
-- Theme switching, follow-system mode, and local/online wallpaper selection from the Home settings drawer
-- Unified theme tokens now cover the browser, project detail views, workspace, terminal, dialogs, and native floating popups
-- Theming now supports both dark and light theme expansion cleanly
-- GitLab Pipelines and GitHub Actions now refresh automatically after commit, push, MR/PR submit flows, and tag push operations
-- Project Detail now keeps a running pipeline summary visible in the header
-- A new embedded local MCP server exposes project discovery, terminal output, and remote provider read-only tools to AI clients
+Repositories are managed from the project sidebar and opened as native workspace tabs, so multiple projects can remain open. The top-right workspace menu opens Remote Repositories, Focus Terminal, Split Terminal, Backup Management, and the Themes page. Repository and pipeline web pages open in the system default browser.
+Open native workspace pages, tab order, and the active page are restored on the next launch.
 
 ### Core Capabilities
 
-#### 1. Project-Centered Repository Management
+#### Projects & Repositories
 
-- Global project sidebar with scan-root management and Git repository discovery within 3 directory levels
-- Manage multiple repositories from one desktop client
-- Unified project detail page for branches, tags, file status, commit history, terminal, and AI sessions
-- Project list grouped by directory, with branch, pending-file, ahead, and behind indicators
-- Open a project in its own tab
+- Add scan roots and discover Git repositories within three directory levels
+- Group repositories by directory
+- Open and switch between multiple project workspace tabs from the sidebar
+- Show branch, changed-file, ahead, and behind status
 
-#### 2. High-Frequency Git Operations
+#### Git Operations
 
 - View, switch, create, delete, and merge local / remote branches
-- View, create, push, delete, and checkout tags
-- Visual file-status workflow for stage, unstage, commit, and conflict handling
-- Stash list and restore workflow
-- Commit history inspection
+- View, create, push, delete, and check out tags
+- Stage, unstage, commit, and resolve conflicts
+- Inspect and restore stashes
+- Inspect commit history and file diffs
 
-#### 3. Collaboration Flow
+#### Remote Collaboration
 
-- Open GitLab directly from the app
-- Quick Merge Request creation
-- Visual remote sync operations
-- GitLab Pipeline page for active and recent pipeline runs
-- Header-level running pipeline summary in Project Detail with automatic polling
+- GitLab, GitHub, and Gitee support
+- Quick Merge Request / Pull Request creation
+- GitLab Pipeline and GitHub Actions status
+- Automatic pipeline refresh after commit, push, MR/PR creation, and tag push
+- Repository and pipeline pages open in the system default browser
 
-#### 4. Terminal Workspace
+#### Project Terminal
 
 - Built-in project terminal
-- Supports a `Focus Terminal` mode for quick project-scoped command work
-- Supports a `Split Terminal` mode for parallel command workflows
-- Open standalone terminal tabs from the browser menu
-- Terminal snapshot restore
-- Unlimited horizontal / vertical pane splitting
-- Draggable pane resizing
-- Draggable pane swapping
+- Create separate Focus Terminal and Split Terminal tabs from the top-right workspace menu
+- Horizontal / vertical splitting, resizing, and pane swapping
+- Terminal snapshot restoration
+- Codex session status and background notifications
+- Notification clicks open the matching project and focus its terminal
 
-#### 5. AI Session Management
+#### AI Sessions
 
-- Aggregate project-scoped `Codex` and `Claude Code` sessions
-- Default to the AI sessions page, with `Codex` shown before `Claude Code`
-- Inspect transcripts
-- Resume sessions directly into terminal
-- Delete local session files
+- Project-scoped Codex and Claude Code sessions
+- Transcript inspection
+- Resume sessions in the project terminal
+- Rename, archive, and delete local sessions
 
-#### 6. Built-In Browser
+#### Themes
 
-- Browser flow based on `WebContentsView`
-- Download status, permission prompts, and crash recovery
-- Private tabs and standalone page management
-- Native suggestion popups and floating browser menus are theme-aware
+- Seven built-in themes plus Follow System
+- Theme selection lives on a dedicated workspace page
+- Shared theme tokens across project details, workspace, terminal, menus, and dialogs
+- Dark and light theme support
 
-#### 7. Theme & UI System
+#### Configuration Backup
 
-- Formal `theme token` architecture with semantic tokens and component aliases
-- High-frequency surfaces are now theme-driven: Project Detail, workspace, terminal, built-in browser, menus, and dialogs
-- Common action buttons use semantic functional colors that adapt to the active theme
-
-### Who It Is For
-
-OpenGit is a strong fit if you:
-
-- work across multiple Git repositories every day
-- mainly collaborate through GitLab
-- want terminal and Git workflows inside the same desktop tool
-- use `Codex` or `Claude Code` and want sessions grouped by project
-- want something lighter and more project-oriented than `GitKraken`
+- Open Backup Management from the top-right workspace menu
+- Export and restore project sidebar, remote repository, workspace, theme, and terminal preferences
+- Removed favorites, browsing history, passwords, wallpapers, and MCP settings are never imported
 
 ### Tech Stack
 
-- Frontend: `Vue 3` + `Vite`
-- Desktop runtime: `Electron`
-- Terminal: `xterm.js` + `node-pty`
+- Frontend: Vue 3 + Vite
+- Desktop runtime: Electron
+- Terminal: xterm.js + node-pty
 - State layer: `src/stores`
 
 ### Requirements
 
 - Node.js `>= 18` (LTS recommended)
 - npm `>= 9`
-- Git installed and available in terminal
+- Git installed and available in the terminal
 
 ### Local Development
 
@@ -472,77 +246,29 @@ npm run electron:build:win
 npm run electron:build:linux
 ```
 
-Output directory:
-
-```text
-dist-electron/
-```
+Build artifacts are written to `dist-electron/`.
 
 ### Project Structure
 
 ```text
 OpenGit/
-├── electron/      # Electron main process, windows, IPC, Browser/Terminal integration
-├── src/           # Vue pages, components, business logic, stores
-├── scripts/       # Build, test, and release helper scripts
-└── build/         # Packaging, signing, and platform-specific config
+├── electron/      # Electron main process, windows, and IPC
+├── src/           # Vue pages, components, business logic, and stores
+├── scripts/       # Build, test, and release helpers
+└── build/         # Packaging, signing, and platform configuration
 ```
 
-### GitHub Tag Release Automation
+### Versioning & Releases
 
-Workflow file:
-
-```text
-.github/workflows/release.yml
-```
-
-Release with:
+Daily changes go under `Unreleased` in `CHANGELOG.md`. To prepare a release:
 
 ```bash
-git tag v2.0.1
-git push origin v2.0.1
+npm run release:prepare -- 1.4.10
+npm run release
+git add package.json package-lock.json CHANGELOG.md
+git commit -m "chore: prepare release v1.4.10"
+git tag v1.4.10
+git push origin main --tags
 ```
 
-This workflow builds multi-platform artifacts and creates a GitHub Release automatically.
-
-### FAQ
-
-#### 1. Electron opens to a blank window
-
-Run:
-
-```bash
-npm run build
-```
-
-Then start again:
-
-```bash
-npm run electron:dev
-```
-
-#### 2. Git operations fail
-
-Check:
-
-- local Git installation
-- remote credentials
-- terminal network / proxy configuration
-
-#### 3. Packaging fails
-
-Check:
-
-- platform-specific dependencies
-- Electron cache integrity
-- signing and permission configuration
-
----
-
-## Repository
-
-- GitHub: https://github.com/TerraRoot3/OpenGit
-
-## License
-
-MIT
+Pushing a `vX.Y.Z` tag triggers the GitHub Actions workflow that builds platform artifacts and creates the GitHub Release.

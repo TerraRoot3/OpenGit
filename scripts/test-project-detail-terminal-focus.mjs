@@ -13,7 +13,7 @@ assert.equal(
     currentView: 'terminal'
   }),
   true,
-  'project terminal should autofocus when the browser tab becomes active on the terminal subpage'
+  'project terminal should autofocus when the project workspace becomes active on the terminal subpage'
 )
 
 assert.equal(
@@ -23,7 +23,7 @@ assert.equal(
     currentView: 'workspace'
   }),
   false,
-  'non-terminal subpages should not steal keyboard focus on browser tab switch'
+  'non-terminal subpages should not steal keyboard focus when the project workspace changes'
 )
 
 assert.equal(

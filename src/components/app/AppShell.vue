@@ -26,7 +26,6 @@
           <div class="floating-sidebar-drawer">
             <ProjectSidebar
               :groups="filteredGroups"
-              :favorite-paths="favoriteProjectPaths"
               :expanded-root-paths="sidebarStore.expandedRootPaths.value"
               :search-query="sidebarStore.searchQuery.value"
               :mode="sidebarMode"
@@ -40,7 +39,6 @@
               @add-root="handleAddRoot"
               @open-group="handleOpenGroup"
               @open-repository="handleOpenRepository"
-              @toggle-favorite="handleToggleProjectFavorite"
               @remove-root="handleRemoveRoot"
               @remove-repository="handleRemoveRepository"
               @toggle-root="sidebarStore.toggleRootExpanded"
@@ -64,7 +62,6 @@
     >
       <ProjectSidebar
         :groups="filteredGroups"
-        :favorite-paths="favoriteProjectPaths"
         :expanded-root-paths="sidebarStore.expandedRootPaths.value"
         :search-query="sidebarStore.searchQuery.value"
         :mode="sidebarMode"
@@ -78,7 +75,6 @@
         @add-root="handleAddRoot"
         @open-group="handleOpenGroup"
         @open-repository="handleOpenRepository"
-        @toggle-favorite="handleToggleProjectFavorite"
         @remove-root="handleRemoveRoot"
         @remove-repository="handleRemoveRepository"
         @toggle-root="sidebarStore.toggleRootExpanded"
@@ -94,16 +90,13 @@
     </div>
 
     <div class="workspace-pane">
-      <Browser
-        ref="browserRef"
-        :leading-tab-inset="browserLeadingTabInset"
-        :force-hide-web-contents-view="isFloatingDrawerVisible"
-        :favorite-project-paths="favoriteProjectPaths"
+      <ProjectWorkspaceHost
+        ref="projectWorkspaceRef"
+        :leading-tab-inset="workspaceLeadingTabInset"
         @project-context-changed="handleProjectContextChanged"
         @project-branch-changed="handleProjectBranchChanged"
         @project-status-updated="handleProjectStatusUpdated"
         @project-pending-status-changed="handleProjectPendingStatusChanged"
-        @toggle-project-favorite="handleToggleProjectFavorite"
       />
     </div>
   </div>
@@ -112,12 +105,12 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { FolderPlus, PanelLeftOpen } from 'lucide-vue-next'
-import Browser from '../browser/Browser.vue'
+import ProjectWorkspaceHost from './ProjectWorkspaceHost.vue'
 import ProjectSidebar from '../project-sidebar/ProjectSidebar.vue'
 import { useProjectSidebarStore } from '../../stores/projectSidebarStore'
 import { useConfirm } from '../../composables/useConfirm'
 
-const browserRef = ref(null)
+const projectWorkspaceRef = ref(null)
 const sidebarStore = useProjectSidebarStore()
 const { confirm: showConfirm } = useConfirm()
 const selectedRootPath = ref('')
@@ -128,11 +121,9 @@ const repositorySignatureMap = ref({})
 let repositoryStatusTimer = null
 const REPOSITORY_STATUS_CACHE_KEY = 'project-sidebar-repository-status-v1'
 const REPOSITORY_STATUS_ELECTRON_STORE_KEY = 'project-sidebar-repository-status-v1'
-const FAVORITES_UPDATED_EVENT = 'browser-favorites-updated'
 const ROOT_SCAN_CONCURRENCY = 3
 const REPOSITORY_WARMUP_CONCURRENCY = 4
 const isWindowActive = ref(true)
-const favoriteProjectPaths = ref([])
 let postMountWarmupHandle = null
 const sidebarResultMessage = ref('')
 const sidebarResultType = ref('success')
@@ -146,7 +137,9 @@ const isUnpinningSidebar = ref(false)
 const isSidebarVisible = computed(() => isSidebarPinned.value || sidebarOpen.value)
 const isFloatingDrawerVisible = computed(() => !isSidebarPinned.value && sidebarOpen.value)
 const showPinnedSidebarPane = computed(() => isSidebarPinned.value || isUnpinningSidebar.value)
-const browserLeadingTabInset = computed(() => (isSidebarPinned.value ? 10 : Math.max(72 - 52, 0)))
+const workspaceLeadingTabInset = computed(() => (
+  isSidebarPinned.value ? 10 : Math.max(72 - 52, 0)
+))
 const suppressNextFloatingTransition = ref(false)
 const floatingSidebarTransitionName = computed(() => (
   suppressNextFloatingTransition.value ? 'floating-sidebar-instant' : 'floating-sidebar'
@@ -170,38 +163,14 @@ const isCurrentRootRefreshing = computed(() => {
   return Boolean(target?.isScanning)
 })
 
-const normalizeFavoritePaths = (value) => {
-  if (!Array.isArray(value)) return []
-  return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)))
-}
-
-const isFavoritePath = (path) => {
-  const normalizedPath = String(path || '').trim()
-  return normalizedPath ? favoriteProjectPaths.value.includes(normalizedPath) : false
-}
-
-const sortItemsByFavoriteFirst = (items = [], getPath) => {
-  return items
-    .map((item, index) => ({ item, index }))
-    .sort((left, right) => {
-      const favoriteDelta = Number(isFavoritePath(getPath(right.item))) - Number(isFavoritePath(getPath(left.item)))
-      if (favoriteDelta !== 0) return favoriteDelta
-      return left.index - right.index
-    })
-    .map(({ item }) => item)
-}
-
 const filteredGroups = computed(() => {
   const repositoryGroups = sidebarStore.repositoryGroups.value.map((group) => ({
     ...group,
     renderKey: `repo-group:${group.path}`,
-    repositories: sortItemsByFavoriteFirst(
-      (group.repositories || []).map((repo) => ({
-        ...repo,
-        gitStatus: repositoryStatusMap.value[repo.path] || null
-      })),
-      (repo) => repo.path
-    )
+    repositories: (group.repositories || []).map((repo) => ({
+      ...repo,
+      gitStatus: repositoryStatusMap.value[repo.path] || null
+    }))
   }))
 
   const emptyDirectoryGroups = sidebarStore.scanRoots.value
@@ -218,49 +187,8 @@ const filteredGroups = computed(() => {
       repositories: []
     }))
 
-  return sortItemsByFavoriteFirst(
-    [...repositoryGroups, ...emptyDirectoryGroups],
-    (group) => group.path
-  )
+  return [...repositoryGroups, ...emptyDirectoryGroups]
 })
-
-const extractProjectPathFromFavoriteUrl = (value) => {
-  const url = String(value || '').trim()
-  if (!url) return ''
-
-  if (url.startsWith('git:project:')) {
-    const projectPath = url.slice('git:project:'.length)
-    try {
-      return decodeURIComponent(projectPath)
-    } catch {
-      return projectPath
-    }
-  }
-
-  if (url.startsWith('git:clone:')) {
-    const projectPath = url.slice('git:clone:'.length)
-    try {
-      return decodeURIComponent(projectPath)
-    } catch {
-      return projectPath
-    }
-  }
-
-  return ''
-}
-
-const refreshFavoriteProjectPaths = async () => {
-  if (!window.electronAPI?.getBrowserFavorites) return
-  try {
-    const result = await window.electronAPI.getBrowserFavorites()
-    const favorites = Array.isArray(result?.favorites) ? result.favorites : []
-    favoriteProjectPaths.value = normalizeFavoritePaths(
-      favorites.map((favorite) => extractProjectPathFromFavoriteUrl(favorite?.url))
-    )
-  } catch (error) {
-    console.warn('恢复项目收藏状态失败:', error)
-  }
-}
 
 const normalizeRepositoryStatusPayload = (value) => {
   if (!value || typeof value !== 'object') return {}
@@ -629,7 +557,6 @@ const stopRepositoryStatusPolling = () => {
 
 const handleWindowFocus = () => {
   isWindowActive.value = true
-  refreshFavoriteProjectPaths()
   startRepositoryStatusPolling()
 }
 
@@ -644,10 +571,6 @@ const handleVisibilityChange = () => {
   } else {
     handleWindowBlur()
   }
-}
-
-const handleFavoritesUpdated = () => {
-  refreshFavoriteProjectPaths()
 }
 
 const runPostMountWarmup = async () => {
@@ -672,14 +595,12 @@ const schedulePostMountWarmup = () => {
 
 onMounted(async () => {
   await sidebarStore.hydrate?.()
-  await refreshFavoriteProjectPaths()
   await hydrateRepositoryStatusCache()
   startRepositoryStatusPolling()
   schedulePostMountWarmup()
   window.addEventListener('focus', handleWindowFocus)
   window.addEventListener('blur', handleWindowBlur)
   document.addEventListener('visibilitychange', handleVisibilityChange)
-  window.addEventListener(FAVORITES_UPDATED_EVENT, handleFavoritesUpdated)
 })
 
 const openProjectPath = async (path, type) => {
@@ -690,7 +611,7 @@ const openProjectPath = async (path, type) => {
     ? `git:clone:${normalizedPath}`
     : `git:project:${normalizedPath}`
 
-  await browserRef.value?.openProjectRoute?.(routeUrl)
+  await projectWorkspaceRef.value?.openProjectRoute?.(routeUrl)
 }
 
 const closeFloatingSidebar = () => {
@@ -818,64 +739,6 @@ const handleRefreshCurrentRoot = async () => {
   }
 }
 
-const handleToggleProjectFavorite = async (payload = {}) => {
-  const path = String(payload?.path || '').trim()
-  if (!path) return
-  const routeType = payload?.routeType === 'clone-directory' ? 'clone-directory' : 'single-project'
-  const routeUrl = routeType === 'clone-directory'
-    ? `git:clone:${path}`
-    : `git:project:${path}`
-
-  try {
-    const favoritesResult = await window.electronAPI?.getBrowserFavorites?.()
-    const favorites = Array.isArray(favoritesResult?.favorites) ? favoritesResult.favorites : []
-    const existing = favorites.find((favorite) => String(favorite?.url || '') === routeUrl)
-
-    if (existing?.id) {
-      await window.electronAPI.removeBrowserFavorite({ id: existing.id })
-    } else {
-      const fallbackTitle = String(payload?.title || '').trim() || path.split(/[\\/]/).filter(Boolean).pop() || '项目'
-      await window.electronAPI.addBrowserFavorite({
-        title: fallbackTitle,
-        url: routeUrl,
-        icon: null,
-        domain: '项目'
-      })
-    }
-  } catch (error) {
-    console.warn('切换项目收藏状态失败:', error)
-  }
-
-  await refreshFavoriteProjectPaths()
-}
-
-const removeFavoritesByPaths = async (paths = []) => {
-  const normalizedPaths = Array.from(new Set(paths.map((item) => String(item || '').trim()).filter(Boolean)))
-  if (!normalizedPaths.length || !window.electronAPI?.getBrowserFavorites) return
-
-  const favoriteUrls = new Set()
-  for (const path of normalizedPaths) {
-    favoriteUrls.add(`git:project:${path}`)
-    favoriteUrls.add(`git:clone:${path}`)
-  }
-
-  try {
-    const favoritesResult = await window.electronAPI.getBrowserFavorites()
-    const favorites = Array.isArray(favoritesResult?.favorites) ? favoritesResult.favorites : []
-    const removals = favorites
-      .filter((favorite) => favorite?.id && favoriteUrls.has(String(favorite?.url || '').trim()))
-      .map((favorite) => window.electronAPI.removeBrowserFavorite({ id: favorite.id }))
-
-    if (removals.length) {
-      await Promise.all(removals)
-    }
-  } catch (error) {
-    console.warn('删除侧栏收藏失败:', error)
-  }
-
-  await refreshFavoriteProjectPaths()
-}
-
 const handleRemoveRoot = async (group = {}) => {
   const rootPath = String(group?.path || '').trim()
   if (!rootPath) return
@@ -908,8 +771,6 @@ const handleRemoveRoot = async (group = {}) => {
     }
   }
 
-  await removeFavoritesByPaths(relatedPaths)
-
   if (selectedRootPath.value === rootPath) {
     selectedRootPath.value = ''
   }
@@ -917,7 +778,7 @@ const handleRemoveRoot = async (group = {}) => {
     selectedEntryPath.value = ''
   }
 
-  await browserRef.value?.closeProjectTabsByPaths?.(relatedPaths)
+  await projectWorkspaceRef.value?.closeProjectsByPaths?.(relatedPaths)
 }
 
 const handleRemoveRepository = async (repo = {}) => {
@@ -935,13 +796,12 @@ const handleRemoveRepository = async (repo = {}) => {
   if (!confirmed) return
 
   sidebarStore.removeRepository(repoPath)
-  await removeFavoritesByPaths([repoPath])
 
   if (selectedEntryPath.value === repoPath) {
     selectedEntryPath.value = ''
   }
 
-  await browserRef.value?.closeProjectTabsByPaths?.([repoPath])
+  await projectWorkspaceRef.value?.closeProjectsByPaths?.([repoPath])
 }
 
 const handleProjectContextChanged = (payload) => {
@@ -1001,7 +861,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', handleWindowFocus)
   window.removeEventListener('blur', handleWindowBlur)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
-  window.removeEventListener(FAVORITES_UPDATED_EVENT, handleFavoritesUpdated)
   cleanupResize?.()
 })
 </script>

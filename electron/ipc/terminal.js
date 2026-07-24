@@ -11,7 +11,6 @@ function registerTerminalHandlers({
   getMainWindow,
   codexSessionMonitor
 }) {
-  const { terminalBuffers, normalizeTerminalMode } = require('../mcp/services/terminalBuffers')
   const {
     registerTerminalSession,
     getTerminalSession,
@@ -21,6 +20,15 @@ function registerTerminalHandlers({
     writeTerminalSession
   } = require('./terminal-runtime')
   const { execFile } = require('child_process')
+
+  const normalizeTerminalMode = (value) => {
+    const raw = String(value || '').trim().toLowerCase()
+    if (!raw) return 'classic'
+    if (raw === 'classic' || raw === 'liquid' || raw === 'split') return raw
+    if (raw.includes('split')) return 'split'
+    if (raw.includes('liquid') || raw.includes('focus')) return 'liquid'
+    return 'classic'
+  }
 
   const sendCodexSessionEvent = (channel, payload) => {
     if (!channel || !payload) return
@@ -160,12 +168,6 @@ function registerTerminalHandlers({
         hasUserInput: false
       }
       registerTerminalSession(terminalId, terminalSession)
-      terminalBuffers.ensureTerminal({
-        terminalId,
-        projectPath: resolvedCwd,
-        cwd: resolvedCwd,
-        mode
-      })
       codexSessionMonitor?.registerTerminal({
         terminalId,
         projectPath: resolvedCwd,
@@ -241,10 +243,6 @@ function registerTerminalHandlers({
             const cwd = await resolveProcessCwd(ptyProcess.pid)
             if (cwd && cwd !== sessionInfo.projectPath) {
               sessionInfo.projectPath = cwd
-              terminalBuffers.updateTerminal(terminalId, {
-                projectPath: cwd,
-                cwd
-              })
               codexSessionMonitor?.updateTerminalProjectPath(terminalId, cwd)
               const wc = getSenderWindow()
               if (wc) wc.send('terminal-cwd', { id: terminalId, cwd })
@@ -257,7 +255,6 @@ function registerTerminalHandlers({
 
       let refreshDebounce = null
       ptyProcess.onData((data) => {
-        terminalBuffers.appendOutput(terminalId, data)
         codexSessionMonitor?.handleTerminalOutput(terminalId, data)
         const wc = getSenderWindow()
         if (wc) wc.send('terminal-output', { id: terminalId, data })
@@ -289,7 +286,6 @@ function registerTerminalHandlers({
           clearTimeout(refreshDebounce)
           refreshDebounce = null
         }
-        terminalBuffers.removeTerminal(terminalId)
         removeTerminalSession(terminalId)
         const wc = getSenderWindow()
         if (wc) wc.send('terminal-exit', { id: terminalId, exitCode, signal })
@@ -326,10 +322,6 @@ function registerTerminalHandlers({
       if (!cwd) {
         return { success: false, error: 'cwd unavailable' }
       }
-      terminalBuffers.updateTerminal(terminalId, {
-        projectPath: cwd,
-        cwd
-      })
       codexSessionMonitor?.updateTerminalProjectPath(terminalId, cwd)
       return { success: true, id: terminalId, cwd, projectPath: cwd }
     } catch (error) {
@@ -370,7 +362,6 @@ function registerTerminalHandlers({
       try {
         session.ptyProcess.kill()
         codexSessionMonitor?.handleTerminalExit(id, { exitCode: null, signal: 'manual-destroy' })
-        terminalBuffers.removeTerminal(id)
         removeTerminalSession(id)
         codexSessionMonitor?.removeTerminal(id)
         return { success: true }
@@ -392,7 +383,6 @@ function registerTerminalHandlers({
       try {
         session.ptyProcess.kill()
       } catch {}
-      terminalBuffers.removeTerminal(terminalId)
       codexSessionMonitor?.handleTerminalExit(terminalId, { exitCode: null, signal: 'cleanup' })
       codexSessionMonitor?.removeTerminal(terminalId)
     }

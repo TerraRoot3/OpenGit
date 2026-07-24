@@ -3,7 +3,7 @@ const path = require('path')
 const os = require('os')
 const { URL } = require('url')
 
-function registerNavigationHandlers({ ipcMain, shell, getMainWindow, safeLog, safeError }) {
+function registerNavigationHandlers({ ipcMain, shell, safeLog, safeError }) {
   ipcMain.handle('open-in-finder', async (event, data) => {
     try {
       let filePath = data?.path || data?.filePath
@@ -40,14 +40,6 @@ function registerNavigationHandlers({ ipcMain, shell, getMainWindow, safeLog, sa
     } catch (error) {
       safeError('❌ 打开外部链接失败:', error.message)
       return { success: false, message: `打开失败: ${error.message}` }
-    }
-  })
-
-  ipcMain.on('request-open-url-in-new-tab', (event, url) => {
-    safeLog(`🔗 收到新标签页打开请求: ${url}`)
-    const mainWindow = getMainWindow()
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('open-url-in-new-tab', url)
     }
   })
 }
