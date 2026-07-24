@@ -1,4 +1,5 @@
 const assert = require('assert')
+const { spawnSync } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -17,6 +18,7 @@ async function run() {
   assert.strictEqual(typeof __testables.readCodexThreadFromAppServer, 'function', 'Codex thread reader should exist')
   assert.strictEqual(typeof __testables.extractCodexAppServerTranscript, 'function', 'Codex transcript mapper should exist')
   assert.strictEqual(typeof __testables.loadCodexSessionsLatest, 'function', 'latest Codex loader should exist')
+  assert.strictEqual(typeof __testables.buildCodexProcessEnv, 'function', 'Codex process env builder should exist')
 
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-session-test-'))
   const sessionId = '019f-test-session'
@@ -27,6 +29,43 @@ async function run() {
   const staleSessionFile = path.join(homeDir, '.codex', 'sessions', '2026', '05', '15', `rollout-${staleSessionId}.jsonl`)
   const sessionIndexPath = path.join(homeDir, '.codex', 'session_index.jsonl')
   const fallbackFirstMessage = 'The very first user request should become the fallback Codex title'
+
+  if (process.platform !== 'win32') {
+    const fakeCodexBinDir = path.join(homeDir, '.nvm', 'versions', 'node', 'v-test', 'bin')
+    const fakeNodePath = path.join(fakeCodexBinDir, 'node')
+    const fakeCodexPath = path.join(fakeCodexBinDir, 'codex')
+    fs.mkdirSync(fakeCodexBinDir, { recursive: true })
+    fs.symlinkSync(process.execPath, fakeNodePath)
+    fs.writeFileSync(
+      fakeCodexPath,
+      '#!/usr/bin/env node\nprocess.stdout.write(\"release-path-ok\")\n',
+      'utf8'
+    )
+    fs.chmodSync(fakeCodexPath, 0o755)
+
+    const releaseLikeEnv = __testables.buildCodexProcessEnv({
+      homeDir,
+      executable: fakeCodexPath,
+      baseEnv: {
+        PATH: '/usr/bin:/bin'
+      }
+    })
+    assert.strictEqual(
+      releaseLikeEnv.PATH.split(path.delimiter)[0],
+      fakeCodexBinDir,
+      'Codex executable directory should lead PATH in a release-like GUI environment'
+    )
+    const releaseProbe = spawnSync(fakeCodexPath, [], {
+      env: releaseLikeEnv,
+      encoding: 'utf8'
+    })
+    assert.strictEqual(releaseProbe.status, 0, releaseProbe.stderr)
+    assert.strictEqual(
+      releaseProbe.stdout,
+      'release-path-ok',
+      'Codex npm launcher should find its adjacent Node runtime in release builds'
+    )
+  }
 
   writeJsonl(sessionFile, [
     {

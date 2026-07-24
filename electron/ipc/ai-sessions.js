@@ -246,6 +246,50 @@ function resolveCodexExecutable(homeDir = os.homedir()) {
   return candidates.find(isExecutableFile) || 'codex'
 }
 
+function buildCodexProcessEnv({
+  homeDir = os.homedir(),
+  executable = resolveCodexExecutable(homeDir),
+  baseEnv = process.env
+} = {}) {
+  const normalizedHomeDir = normalizeProjectPath(homeDir)
+  const env = { ...baseEnv }
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') || 'PATH'
+  const pathEntries = String(env[pathKey] || '')
+    .split(path.delimiter)
+    .filter(Boolean)
+
+  if (path.isAbsolute(executable)) {
+    pathEntries.unshift(path.dirname(executable))
+  }
+
+  if (process.platform !== 'win32') {
+    pathEntries.push(
+      '/usr/local/bin',
+      '/opt/homebrew/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin'
+    )
+  }
+
+  const seen = new Set()
+  env[pathKey] = pathEntries
+    .filter((entry) => {
+      const normalizedEntry = normalizeProjectPath(entry)
+      if (!normalizedEntry) return false
+      const dedupeKey = process.platform === 'win32'
+        ? normalizedEntry.toLowerCase()
+        : normalizedEntry
+      if (seen.has(dedupeKey)) return false
+      seen.add(dedupeKey)
+      return true
+    })
+    .join(path.delimiter)
+  env.CODEX_HOME = path.join(normalizedHomeDir, '.codex')
+  return env
+}
+
 function createCodexRpcError(payload = null, fallbackMessage = 'codex app-server request failed') {
   const error = new Error(payload?.message || fallbackMessage)
   if (payload?.code != null) {
@@ -265,10 +309,7 @@ function runCodexAppServerRpc({
     const executable = resolveCodexExecutable(normalizedHomeDir)
     const child = spawn(executable, ['app-server', '--stdio'], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        CODEX_HOME: path.join(normalizedHomeDir, '.codex')
-      },
+      env: buildCodexProcessEnv({ homeDir: normalizedHomeDir, executable }),
       shell: process.platform === 'win32' && /\.cmd$/i.test(executable),
       windowsHide: true
     })
@@ -1864,6 +1905,7 @@ module.exports = {
     extractClaudeTranscript,
     resolveAiSessionRoots,
     resolveCodexExecutable,
+    buildCodexProcessEnv,
     callCodexAppServer,
     listCodexThreadsFromAppServer,
     readCodexThreadFromAppServer,
