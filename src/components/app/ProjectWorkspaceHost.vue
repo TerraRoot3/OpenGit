@@ -832,7 +832,7 @@ defineExpose({
 .workspace-tab-status.running {
   width: 12px;
   height: 12px;
-  border: 2px solid color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  border: 2px solid var(--theme-sem-accent-primary-strong);
   border-top-color: transparent;
   box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
   animation: workspace-tab-spin 0.8s linear infinite;
@@ -841,14 +841,14 @@ defineExpose({
 .workspace-tab-status.awaiting_confirmation {
   width: 10px;
   height: 10px;
-  background: color-mix(in srgb, var(--theme-sem-accent-danger) 88%, #ff5a5f 12%);
+  background: var(--theme-sem-accent-danger-strong);
   box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-danger) 52%, transparent);
 }
 
 .workspace-tab-status.ended {
   width: 10px;
   height: 10px;
-  background: color-mix(in srgb, var(--theme-sem-accent-success) 82%, #2ee680 18%);
+  background: var(--theme-sem-accent-success-strong);
   box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-success) 44%, transparent);
 }
 

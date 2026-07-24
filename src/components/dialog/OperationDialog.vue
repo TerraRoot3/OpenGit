@@ -125,7 +125,7 @@ watch(() => props.output, () => {
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--theme-sem-bg-overlay) 72%, transparent);
   overflow: hidden;
 }
 
@@ -161,7 +161,7 @@ watch(() => props.output, () => {
   color: var(--theme-sem-text-primary);
   white-space: pre-wrap;
   word-wrap: break-word;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, var(--theme-sem-surface-2) 18%);
   padding: 12px;
   border-radius: 6px;
   border: 1px solid var(--theme-sem-border-strong);
@@ -256,7 +256,7 @@ watch(() => props.output, () => {
   color: var(--theme-sem-text-on-accent);
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .cancel-btn:hover {

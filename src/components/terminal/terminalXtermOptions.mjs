@@ -98,3 +98,22 @@ export function createXtermTheme() {
     scrollbarSliderHoverBackground: borderStrong || undefined
   }
 }
+
+export function createXtermSearchOptions() {
+  const matchBackground = readThemeCssVar('--theme-sem-warning-bg') || 'rgba(214, 176, 74, 0.18)'
+  const matchBorder = readThemeCssVar('--theme-sem-warning-border') || 'rgba(214, 176, 74, 0.34)'
+  const activeMatchBackground = readThemeCssVar('--theme-sem-info-bg') || 'rgba(59, 130, 246, 0.22)'
+  const activeMatchBorder = readThemeCssVar('--theme-sem-info-border') || 'rgba(59, 130, 246, 0.42)'
+  const activeMatchOverviewRuler = readThemeCssVar('--theme-sem-accent-info') || '#2472c8'
+
+  return {
+    decorations: {
+      matchBackground,
+      matchBorder,
+      matchOverviewRuler: matchBorder,
+      activeMatchBackground,
+      activeMatchBorder,
+      activeMatchColorOverviewRuler: activeMatchOverviewRuler
+    }
+  }
+}

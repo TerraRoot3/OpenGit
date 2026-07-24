@@ -912,7 +912,7 @@ onUnmounted(() => {
 }
 
 .session-tip.error {
-  color: #ff9aa5;
+  color: var(--theme-sem-accent-danger);
 }
 
 .session-time,
@@ -998,7 +998,7 @@ onUnmounted(() => {
   color: var(--theme-sem-text-secondary);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
 }
 
 .resume-btn {
@@ -1063,7 +1063,7 @@ onUnmounted(() => {
   min-width: 420px;
   max-width: 720px;
   width: min(720px, calc(100vw - 32px));
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--theme-sem-bg-overlay) 72%, transparent);
 }
 
 .dialog-header-simple {
@@ -1157,7 +1157,7 @@ onUnmounted(() => {
 }
 
 .summary-block-placeholder.error {
-  color: #ff9aa5;
+  color: var(--theme-sem-accent-danger);
 }
 
 .transcript-list {
@@ -1237,7 +1237,7 @@ onUnmounted(() => {
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
 }
 
 .cancel-btn-large {
@@ -1308,9 +1308,10 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-.rename-session-input:focus {
-  border-color: var(--theme-sem-border-strong);
+.rename-session-input:focus-visible {
+  border-color: var(--theme-sem-accent-primary);
   background: color-mix(in srgb, var(--theme-sem-hover) 60%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-accent-primary) 22%, transparent);
 }
 
 .rename-session-hint {

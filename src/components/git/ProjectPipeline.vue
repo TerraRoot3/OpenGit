@@ -552,7 +552,7 @@ onUnmounted(() => {
 
 .pipeline-detail-tip.error,
 .pipeline-tip.error {
-  color: #fda4af;
+  color: var(--theme-sem-accent-danger);
 }
 
 .pipeline-summary-grid {
@@ -626,13 +626,13 @@ onUnmounted(() => {
 .status-text-preparing,
 .status-text-waiting_for_resource,
 .status-text-created {
-  color: #f4d37d;
+  color: var(--theme-sem-accent-warning);
 }
 
 .stage-count.failed,
 .status-text-failed,
 .status-text-canceled {
-  color: #fca5a5;
+  color: var(--theme-sem-accent-danger);
 }
 
 .stage-count.success,
@@ -683,7 +683,7 @@ onUnmounted(() => {
 .status-preparing,
 .status-waiting_for_resource,
 .status-created {
-  background: #d99b20;
+  background: var(--theme-sem-accent-warning-strong);
 }
 
 .status-success {
@@ -692,7 +692,7 @@ onUnmounted(() => {
 
 .status-failed,
 .status-canceled {
-  background: #ef4444;
+  background: var(--theme-sem-accent-danger-strong);
 }
 
 .status-skipped,

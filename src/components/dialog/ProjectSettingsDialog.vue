@@ -405,7 +405,7 @@ const confirm = async () => {
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--theme-sem-bg-overlay) 72%, transparent);
   overflow: hidden;
 }
 
@@ -441,8 +441,13 @@ const confirm = async () => {
   border: none;
   outline: none;
   background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
-  color: var(--theme-sem-text-on-accent);
+  color: var(--theme-sem-text-primary);
   font-size: 13px;
+}
+
+.terminal-scrollback-setting__input:focus-visible {
+  outline: 2px solid var(--theme-sem-accent-primary);
+  outline-offset: 1px;
 }
 
 .terminal-scrollback-setting__hint {
@@ -516,7 +521,7 @@ const confirm = async () => {
 
 .template-input {
   width: 100%;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 92%, black 8%);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-surface-2) 12%);
   border: 1px solid var(--theme-sem-border-strong);
   border-radius: 6px;
   padding: 10px;
@@ -527,8 +532,9 @@ const confirm = async () => {
   min-height: 80px;
 }
 
-.template-input:focus {
-  outline: none;
+.template-input:focus-visible {
+  outline: 2px solid var(--theme-sem-accent-primary);
+  outline-offset: 1px;
   border-color: var(--theme-sem-accent-primary);
 }
 
@@ -618,7 +624,7 @@ const confirm = async () => {
   border-radius: 4px;
   cursor: pointer;
   color: var(--theme-sem-text-muted);
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s;
 }
 
 .edit-btn:hover {
@@ -654,13 +660,14 @@ const confirm = async () => {
   background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
   border: 1px solid var(--theme-sem-border-strong);
   border-radius: 4px;
-  color: var(--theme-sem-text-on-accent);
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
 }
 
-.remote-name-input:focus,
-.remote-url-input:focus {
-  outline: none;
+.remote-name-input:focus-visible,
+.remote-url-input:focus-visible {
+  outline: 2px solid var(--theme-sem-accent-primary);
+  outline-offset: 1px;
   border-color: var(--theme-sem-accent-primary);
 }
 
@@ -674,7 +681,7 @@ const confirm = async () => {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s;
 }
 
 .save-btn {
@@ -709,7 +716,7 @@ const confirm = async () => {
   border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, opacity 0.2s;
 }
 
 .cancel-btn {

@@ -96,7 +96,7 @@ defineExpose({ show })
 .confirm-dialog {
   background: var(--theme-sem-bg-dialog);
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--theme-sem-bg-overlay) 72%, transparent);
   min-width: 360px;
   max-width: 480px;
   animation: slideIn 0.2s ease-out;
@@ -146,7 +146,7 @@ defineExpose({ show })
 .confirm-detail {
   margin: 12px 0 0;
   padding: 12px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, black 12%);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-surface-2) 12%);
   border-radius: 6px;
   font-size: 13px;
   color: var(--theme-sem-text-secondary);
@@ -169,7 +169,7 @@ defineExpose({ show })
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, opacity 0.2s;
   border: none;
 }
 

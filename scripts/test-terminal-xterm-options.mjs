@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {
+  createXtermSearchOptions,
   TERMINAL_FONT_FAMILY,
   XTERM_OPTS
 } from '../src/components/terminal/terminalXtermOptions.mjs'
@@ -32,6 +33,17 @@ assert.match(
   TERMINAL_FONT_FAMILY,
   /SF Mono|Monaco|Menlo/,
   'terminal font stack should retain native monospace fonts first'
+)
+
+const searchOptions = createXtermSearchOptions()
+assert.ok(searchOptions.decorations, 'terminal search options should expose themed decorations')
+assert.ok(
+  searchOptions.decorations.matchBackground,
+  'terminal search matches should have a visible theme-aware background'
+)
+assert.ok(
+  searchOptions.decorations.activeMatchBorder,
+  'the active terminal search match should have a visible theme-aware border'
 )
 
 console.log('terminal xterm options assertions passed')

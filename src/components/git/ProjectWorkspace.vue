@@ -253,7 +253,7 @@
               ref="commitMessageRef"
               v-model="commitMessage"
               class="workspace-git-actions__message"
-              placeholder="输入提交信息..."
+              placeholder="输入提交信息…"
               :disabled="gitActionLoading"
             />
             <div class="workspace-git-actions__bottom">
@@ -1965,13 +1965,13 @@ function createTreeDragPreview(text) {
     left: '-9999px',
     padding: '4px 8px',
     borderRadius: '8px',
-    background: 'rgba(40, 47, 63, 0.72)',
-    border: '1px solid rgba(120, 156, 255, 0.38)',
-    color: 'rgba(245, 248, 255, 0.9)',
+    background: 'color-mix(in srgb, var(--theme-sem-bg-menu) 88%, transparent)',
+    border: '1px solid var(--theme-sem-info-border)',
+    color: 'var(--theme-sem-text-primary)',
     fontSize: '11px',
     fontWeight: '500',
     lineHeight: '1.2',
-    boxShadow: '0 6px 16px rgba(0, 0, 0, 0.32)',
+    boxShadow: '0 6px 16px color-mix(in srgb, var(--theme-sem-bg-overlay) 68%, transparent)',
     pointerEvents: 'none',
     zIndex: '99999',
     maxWidth: '180px',
@@ -3216,6 +3216,11 @@ watch(
   outline: none;
 }
 
+.tree-pane:focus-visible {
+  outline: 2px solid var(--theme-sem-accent-primary);
+  outline-offset: -2px;
+}
+
 .tree-pane--modified {
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
@@ -3325,7 +3330,7 @@ watch(
   border: 1px solid var(--theme-sem-border-default);
   border-radius: 14px;
   background: var(--theme-sem-bg-menu);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 16px 40px color-mix(in srgb, var(--theme-sem-bg-overlay) 68%, transparent);
   z-index: 20;
 }
 
@@ -3367,12 +3372,13 @@ watch(
 }
 
 .tree-search--invalid {
-  border-color: rgba(255, 123, 123, 0.7);
+  border-color: var(--theme-sem-accent-danger);
 }
 
 .tree-search:focus-within {
-  border-color: var(--theme-sem-border-strong);
+  border-color: var(--theme-sem-accent-primary);
   background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, var(--theme-sem-hover) 18%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-accent-primary) 22%, transparent);
 }
 
 .tree-search__input {
@@ -3528,7 +3534,7 @@ watch(
 }
 
 .workspace-tree-row--drop-target {
-  background: rgba(95, 146, 255, 0.2);
+  background: var(--theme-sem-info-bg);
   box-shadow: none;
 }
 
@@ -3557,75 +3563,75 @@ watch(
 }
 
 .workspace-tree-row__icon--folder {
-  color: #d8b15c;
+  color: var(--theme-sem-accent-warning);
 }
 
 .workspace-tree-row__icon--folder-open {
-  color: #f0c96a;
+  color: var(--theme-sem-accent-warning-strong);
 }
 
 .workspace-tree-row__icon--image {
-  color: #db7ef2;
+  color: var(--theme-sem-accent-primary);
 }
 
 .workspace-tree-row__icon--json {
-  color: #7ed9a6;
+  color: var(--theme-sem-accent-success);
 }
 
 .workspace-tree-row__icon--sheet {
-  color: #63d18b;
+  color: var(--theme-sem-accent-success-strong);
 }
 
 .workspace-tree-row__icon--archive {
-  color: #d9a564;
+  color: var(--theme-sem-accent-warning);
 }
 
 .workspace-tree-row__icon--terminal {
-  color: #65c4ff;
+  color: var(--theme-sem-accent-info);
 }
 
 .workspace-tree-row__icon--text {
-  color: #b8c0cf;
+  color: var(--theme-sem-text-secondary);
 }
 
 .workspace-tree-row__icon--script {
-  color: #f2d06b;
+  color: var(--theme-sem-accent-warning);
 }
 
 .workspace-tree-row__icon--web {
-  color: #72c3ff;
+  color: var(--theme-sem-accent-info);
 }
 
 .workspace-tree-row__icon--python {
-  color: #7cc7ff;
+  color: var(--theme-sem-accent-info);
 }
 
 .workspace-tree-row__icon--go {
-  color: #6ed3d8;
+  color: var(--theme-sem-accent-primary-strong);
 }
 
 .workspace-tree-row__icon--rust {
-  color: #d48c62;
+  color: var(--theme-sem-accent-danger);
 }
 
 .workspace-tree-row__icon--java {
-  color: #ff9b7a;
+  color: var(--theme-sem-accent-danger);
 }
 
 .workspace-tree-row__icon--swift {
-  color: #ff9968;
+  color: var(--theme-sem-accent-danger-strong);
 }
 
 .workspace-tree-row__icon--native {
-  color: #8eb1ff;
+  color: var(--theme-sem-accent-primary);
 }
 
 .workspace-tree-row__icon--sql {
-  color: #79b8ff;
+  color: var(--theme-sem-accent-info);
 }
 
 .workspace-tree-row__icon--markdown {
-  color: #8fb7ff;
+  color: var(--theme-sem-accent-primary);
 }
 
 .workspace-tree-row__icon--file {
@@ -3666,8 +3672,9 @@ watch(
   outline: none;
 }
 
-.workspace-tree-row__input:focus {
-  border-color: rgba(77, 135, 255, 0.75);
+.workspace-tree-row__input:focus-visible {
+  border-color: var(--theme-sem-accent-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-accent-primary) 22%, transparent);
 }
 
 .workspace-git-actions {
@@ -3700,8 +3707,9 @@ watch(
   outline: none;
 }
 
-.workspace-git-actions__message:focus {
+.workspace-git-actions__message:focus-visible {
   border-color: var(--theme-comp-workspace-git-input-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-comp-workspace-git-input-focus) 22%, transparent);
 }
 
 .workspace-git-actions__message::placeholder {
@@ -3769,7 +3777,7 @@ watch(
   padding: 6px 0;
   border-radius: 8px;
   background: var(--theme-sem-bg-menu);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--theme-sem-bg-overlay) 68%, transparent);
   border: 1px solid var(--theme-sem-border-default);
   z-index: 3000;
 }
@@ -3860,8 +3868,8 @@ watch(
 }
 
 .splitter:hover {
-  background: rgba(77, 135, 255, 0.85);
-  box-shadow: 0 0 0 1px rgba(77, 135, 255, 0.25);
+  background: var(--theme-sem-accent-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-sem-accent-primary) 28%, transparent);
 }
 
 .editor-pane {
@@ -3940,7 +3948,7 @@ watch(
 
 .tab-dirty-dot {
   flex-shrink: 0;
-  color: #ffb857;
+  color: var(--theme-sem-accent-warning);
   font-size: 14px;
   line-height: 1;
 }
@@ -3990,7 +3998,7 @@ watch(
   align-items: stretch;
   justify-content: center;
   padding: 24px;
-  background: rgba(7, 10, 16, 0.72);
+  background: var(--theme-sem-bg-overlay);
   backdrop-filter: blur(10px);
 }
 
@@ -4002,8 +4010,8 @@ watch(
   padding: 18px;
   border: 1px solid var(--theme-sem-border-default);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 94%, black 6%);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 92%, var(--theme-sem-surface-2) 8%);
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--theme-sem-bg-overlay) 74%, transparent);
 }
 
 .workspace-search-panel__header {
@@ -4062,11 +4070,12 @@ watch(
 }
 
 .workspace-search-panel__input-wrap:focus-within {
-  border-color: var(--theme-sem-border-strong);
+  border-color: var(--theme-sem-accent-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-accent-primary) 22%, transparent);
 }
 
 .workspace-search-panel__input-wrap--invalid {
-  border-color: rgba(255, 123, 123, 0.7);
+  border-color: var(--theme-sem-accent-danger);
 }
 
 .workspace-search-panel__input-icon {
@@ -4094,7 +4103,7 @@ watch(
 }
 
 .workspace-search-panel__hint--error {
-  color: #ff8d8d;
+  color: var(--theme-sem-accent-danger);
 }
 
 .workspace-search-panel__results {
@@ -4198,18 +4207,18 @@ watch(
 }
 
 .workspace-search-result__mark--name {
-  color: #ffd47d;
-  background: rgba(255, 196, 87, 0.18);
+  color: var(--theme-sem-accent-warning);
+  background: var(--theme-sem-warning-bg);
 }
 
 .workspace-search-result__mark--path {
-  color: #92c5ff;
-  background: rgba(108, 179, 255, 0.16);
+  color: var(--theme-sem-accent-info);
+  background: var(--theme-sem-info-bg);
 }
 
 .workspace-search-result__mark--content {
-  color: #9ff0b6;
-  background: rgba(74, 196, 110, 0.18);
+  color: var(--theme-sem-accent-success);
+  background: var(--theme-sem-success-bg);
 }
 
 .workspace-search-result__badges {
@@ -4233,11 +4242,11 @@ watch(
 }
 
 .workspace-search-result__badge--name {
-  color: #ffd47d;
+  color: var(--theme-sem-accent-warning);
 }
 
 .workspace-search-result__badge--content {
-  color: #98e9ae;
+  color: var(--theme-sem-accent-success);
 }
 
 .preview-empty {

@@ -182,7 +182,7 @@ function createPaneDragPreview(sessionId) {
   clone.style.opacity = '0.94'
   clone.style.transform = 'scale(0.9)'
   clone.style.transformOrigin = 'top left'
-  clone.style.boxShadow = '0 18px 44px rgba(0, 0, 0, 0.42)'
+  clone.style.boxShadow = '0 18px 44px color-mix(in srgb, var(--theme-sem-bg-overlay) 76%, transparent)'
   clone.style.backdropFilter = 'blur(2px)'
   clone.style.transition = 'none'
   document.body.appendChild(clone)

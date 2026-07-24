@@ -779,7 +779,7 @@ const escapeHtml = (text) => {
   border-radius: 14px;
   min-width: 400px;
   max-width: 600px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--theme-sem-bg-overlay) 72%, transparent);
 }
 
 .dialog-header-simple {
@@ -836,7 +836,7 @@ const escapeHtml = (text) => {
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
 }
 
 .cancel-btn-large {
@@ -874,7 +874,7 @@ const escapeHtml = (text) => {
   border-radius: 12px;
   padding: 6px 0;
   min-width: 150px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--theme-sem-bg-overlay) 68%, transparent);
   z-index: 1000;
 }
 
@@ -929,8 +929,8 @@ const escapeHtml = (text) => {
 }
 
 .restore-checkbox:checked {
-  background: #667eea;
-  border-color: #667eea;
+  background: var(--theme-sem-accent-primary);
+  border-color: var(--theme-sem-accent-primary);
 }
 
 .restore-checkbox:checked::after {
@@ -939,7 +939,7 @@ const escapeHtml = (text) => {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: var(--theme-sem-text-primary);
+  color: var(--theme-sem-text-on-accent);
   font-size: 11px;
   font-weight: bold;
 }

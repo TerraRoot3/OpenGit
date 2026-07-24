@@ -456,8 +456,8 @@ onBeforeUnmount(() => {
 }
 
 .search-box:focus-within {
-  border-color: transparent;
-  box-shadow: none;
+  border-color: var(--theme-sem-accent-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-accent-primary) 22%, transparent);
   outline: none;
 }
 
@@ -790,7 +790,7 @@ onBeforeUnmount(() => {
   color: var(--theme-sem-text-muted);
   margin-left: 4px;
   margin-right: 4px;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, transform 0.2s ease;
 }
 
 .pending-files-icon:hover {
@@ -830,7 +830,7 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   background: var(--theme-sem-bg-menu);
   border: 1px solid var(--theme-sem-border-default);
-  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 18px 36px color-mix(in srgb, var(--theme-sem-bg-overlay) 68%, transparent);
 }
 
 .context-menu-item {

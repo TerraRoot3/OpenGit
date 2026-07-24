@@ -161,6 +161,12 @@ function resolveWorkspaceEditorLineNumber () {
   return normalizeMonacoColor(muted, '#858585')
 }
 
+function resolveWorkspaceThemeColor (name, fallback) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return fallback
+  const value = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value || fallback
+}
+
 function normalizeMonacoColor (value, fallback) {
   const normalized = String(value || '').trim()
   if (!normalized) return fallback
@@ -302,11 +308,11 @@ async function loadFileDiffMetadata (filePath, model) {
             className: 'workspace-diff-line workspace-diff-line--added',
             linesDecorationsClassName: 'workspace-diff-gutter workspace-diff-gutter--added',
             overviewRuler: {
-              color: 'rgba(72, 177, 112, 0.95)',
+              color: resolveWorkspaceThemeColor('--theme-sem-file-added', '#48b170'),
               position: monaco.editor.OverviewRulerLane.Right
             },
             minimap: {
-              color: 'rgba(72, 177, 112, 0.8)',
+              color: resolveWorkspaceThemeColor('--theme-sem-file-added', '#48b170'),
               position: monaco.editor.MinimapPosition.Inline
             }
           }
@@ -350,8 +356,10 @@ async function loadFileDiffMetadata (filePath, model) {
       const gutterClass = oldCount === 0
         ? 'workspace-diff-gutter workspace-diff-gutter--added'
         : 'workspace-diff-gutter workspace-diff-gutter--modified'
-      const lineColor = oldCount === 0 ? 'rgba(72, 177, 112, 0.95)' : 'rgba(214, 180, 67, 0.95)'
-      const minimapColor = oldCount === 0 ? 'rgba(72, 177, 112, 0.8)' : 'rgba(214, 180, 67, 0.8)'
+      const lineColor = oldCount === 0
+        ? resolveWorkspaceThemeColor('--theme-sem-file-added', '#48b170')
+        : resolveWorkspaceThemeColor('--theme-sem-file-modified', '#d6b443')
+      const minimapColor = lineColor
       nextChangeLines.add(startLine)
       decorations.push({
         range: new monaco.Range(startLine, 1, endLine, model.getLineMaxColumn(endLine)),
@@ -382,7 +390,7 @@ async function loadFileDiffMetadata (filePath, model) {
           glyphMarginClassName: 'workspace-diff-glyph workspace-diff-glyph--deleted',
           glyphMarginHoverMessage: [{ value: `此处删除了 ${oldCount} 行` }],
           overviewRuler: {
-            color: 'rgba(222, 109, 115, 0.95)',
+            color: resolveWorkspaceThemeColor('--theme-sem-file-deleted', '#de6d73'),
             position: monaco.editor.OverviewRulerLane.Right
           }
         }
@@ -600,6 +608,10 @@ watch(
     if (!editor) return
     applyWorkspaceEditorTheme()
     await nextTick()
+    const model = editor.getModel()
+    if (model && props.activeTab?.path) {
+      await loadFileDiffMetadata(props.activeTab.path, model)
+    }
     editor?.layout()
   }
 )
@@ -684,8 +696,8 @@ watch(
   padding: 6px 8px;
   border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 90%, black 10%);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 90%, var(--theme-sem-surface-2) 10%);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--theme-sem-bg-overlay) 68%, transparent);
 }
 
 .editor-save-bar__status {
@@ -694,7 +706,7 @@ watch(
 }
 
 .editor-save-bar__status.dirty {
-  color: #ffb857;
+  color: var(--theme-sem-accent-warning);
 }
 
 .editor-save-bar__btn {
@@ -729,8 +741,8 @@ watch(
   padding: 6px 8px;
   border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 90%, black 10%);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 90%, var(--theme-sem-surface-2) 10%);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--theme-sem-bg-overlay) 68%, transparent);
 }
 
 .editor-change-nav__btn {
@@ -768,11 +780,11 @@ watch(
 }
 
 .monaco-container :deep(.workspace-diff-line--added) {
-  background: rgba(72, 177, 112, 0.16);
+  background: var(--theme-sem-success-bg);
 }
 
 .monaco-container :deep(.workspace-diff-line--modified) {
-  background: rgba(214, 180, 67, 0.14);
+  background: var(--theme-sem-warning-bg);
 }
 
 .monaco-container :deep(.workspace-diff-gutter) {
@@ -782,15 +794,15 @@ watch(
 }
 
 .monaco-container :deep(.workspace-diff-gutter--added) {
-  background: #48b170;
+  background: var(--theme-sem-file-added);
 }
 
 .monaco-container :deep(.workspace-diff-gutter--modified) {
-  background: #d6b443;
+  background: var(--theme-sem-file-modified);
 }
 
 .monaco-container :deep(.workspace-diff-gutter--deleted) {
-  background: #de6d73;
+  background: var(--theme-sem-file-deleted);
 }
 
 .monaco-container :deep(.workspace-diff-glyph--deleted::before) {
@@ -802,8 +814,8 @@ watch(
   height: 14px;
   margin-left: 4px;
   border-radius: 999px;
-  background: rgba(222, 109, 115, 0.18);
-  color: #ffb1b4;
+  background: var(--theme-sem-danger-bg);
+  color: var(--theme-sem-file-deleted);
   font-size: 12px;
   font-weight: 700;
   line-height: 1;

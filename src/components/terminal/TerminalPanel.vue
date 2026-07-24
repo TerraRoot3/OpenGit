@@ -241,6 +241,7 @@ import { useTerminalRouter } from '../../composables/useTerminalRouter'
 import { buildDropPayload } from './terminalInteractions.mjs'
 import { shouldCreateInitialTerminal } from './terminalInitialBootstrap.mjs'
 import {
+  createXtermSearchOptions,
   createXtermTheme,
   DEFAULT_TERMINAL_SCROLLBACK,
   TERMINAL_SCROLLBACK_CONFIG_KEY,
@@ -685,7 +686,7 @@ const createPaneDragPreview = (termId) => {
   clone.style.opacity = '0.94'
   clone.style.transform = 'scale(0.88)'
   clone.style.transformOrigin = 'top left'
-  clone.style.boxShadow = '0 18px 44px rgba(0, 0, 0, 0.42)'
+  clone.style.boxShadow = '0 18px 44px color-mix(in srgb, var(--theme-sem-bg-overlay) 76%, transparent)'
   clone.style.backdropFilter = 'blur(2px)'
   clone.style.transition = 'none'
   document.body.appendChild(clone)
@@ -772,17 +773,6 @@ watch(
   },
   { immediate: true }
 )
-
-const SEARCH_OPTIONS = {
-  decorations: {
-    matchBackground: '#334155',
-    matchBorder: '#475569',
-    matchOverviewRuler: '#475569',
-    activeMatchBackground: '#0e7490',
-    activeMatchBorder: '#67e8f9',
-    activeMatchColorOverviewRuler: '#22d3ee'
-  }
-}
 
 const markPtyClosedLocally = (ptyId) => {
   if (!ptyId || typeof ptyId !== 'string') return
@@ -1841,9 +1831,9 @@ const runTerminalSearch = (direction = 'next', incremental = false) => {
   }
 
   const matched = direction === 'previous'
-    ? term.searchAddon.findPrevious(query, SEARCH_OPTIONS)
+    ? term.searchAddon.findPrevious(query, createXtermSearchOptions())
     : term.searchAddon.findNext(query, {
-        ...SEARCH_OPTIONS,
+        ...createXtermSearchOptions(),
         incremental
       })
 
@@ -3039,6 +3029,9 @@ watch(
   () => themeStore.resolvedTheme.value,
   () => {
     refreshAllTerminalThemes()
+    if (showSearchBar.value && searchQuery.value.trim()) {
+      nextTick(() => runTerminalSearch('next', true))
+    }
   }
 )
 
@@ -3135,28 +3128,28 @@ defineExpose({
 .terminal-pane-codex-status--running {
   width: 12px;
   height: 12px;
-  border: 2px solid color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  border: 2px solid var(--theme-sem-accent-primary-strong);
   border-top-color: transparent;
   background: transparent;
   box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
   animation: spin 0.8s linear infinite;
 }
 .terminal-pane-codex-status--running-dark {
-  border-color: rgba(255, 255, 255, 0.96);
+  border-color: var(--theme-sem-text-primary);
   border-top-color: transparent;
-  box-shadow: 0 0 12px rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--theme-sem-text-primary) 28%, transparent);
 }
 .terminal-pane-codex-status--running-light {
-  border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 92%, white 8%);
+  border-color: var(--theme-sem-accent-primary-strong);
   border-top-color: transparent;
   box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-primary) 42%, transparent);
 }
 .terminal-pane-codex-status--awaiting_confirmation {
-  background: color-mix(in srgb, var(--theme-sem-accent-danger) 88%, #ff5a5f 12%);
+  background: var(--theme-sem-accent-danger-strong);
   box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-danger) 52%, transparent);
 }
 .terminal-pane-codex-status--ended {
-  background: color-mix(in srgb, var(--theme-sem-accent-success) 82%, #2ee680 18%);
+  background: var(--theme-sem-accent-success-strong);
   box-shadow: 0 0 10px color-mix(in srgb, var(--theme-sem-accent-success) 44%, transparent);
 }
 
@@ -3273,12 +3266,12 @@ defineExpose({
   padding: 0 8px;
   border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, white 12%);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-surface-2) 12%);
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .terminal-search.is-not-found {
-  background: rgba(239, 68, 68, 0.14);
-  border-color: rgba(239, 68, 68, 0.32);
+  background: var(--theme-sem-danger-bg);
+  border-color: color-mix(in srgb, var(--theme-sem-accent-danger) 58%, var(--theme-sem-border-default) 42%);
 }
 .terminal-search-icon {
   flex-shrink: 0;
@@ -3299,8 +3292,9 @@ defineExpose({
   color: var(--theme-sem-text-muted);
 }
 .terminal-search:focus-within {
-  border-color: var(--theme-sem-border-strong);
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, white 18%);
+  border-color: var(--theme-sem-accent-primary);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 82%, var(--theme-sem-surface-2) 18%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-accent-primary) 22%, transparent);
 }
 .terminal-search-btn {
   display: flex;
@@ -3321,8 +3315,8 @@ defineExpose({
   color: var(--theme-sem-text-primary);
 }
 .terminal-search-btn.close:hover {
-  background: rgba(239, 68, 68, 0.18);
-  color: #fecaca;
+  background: var(--theme-sem-danger-bg);
+  color: var(--theme-sem-accent-danger);
 }
 .terminal-path {
   color: var(--theme-sem-text-muted);
@@ -3352,7 +3346,8 @@ defineExpose({
   color: var(--theme-sem-text-primary);
 }
 .terminal-btn:focus-visible {
-  outline: none;
+  outline: 2px solid var(--theme-sem-accent-primary);
+  outline-offset: 2px;
 }
 .terminal-btn-split {
   width: 30px;
@@ -3379,7 +3374,7 @@ defineExpose({
   background: var(--theme-sem-bg-project);
 }
 .terminal-body.drag-over {
-  background: rgba(14, 116, 144, 0.14);
+  background: color-mix(in srgb, var(--theme-sem-info-bg) 78%, var(--theme-sem-bg-project) 22%);
   box-shadow: none;
 }
 .terminal-single-pane {
@@ -3412,7 +3407,7 @@ defineExpose({
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: rgba(214, 176, 74, 0.05);
+  background: color-mix(in srgb, var(--theme-sem-warning-bg) 52%, transparent);
   pointer-events: none;
   z-index: 2;
 }
@@ -3425,7 +3420,7 @@ defineExpose({
   height: 20px;
   border: none;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, var(--theme-sem-bg-overlay) 72%, transparent);
   color: var(--theme-sem-text-secondary);
   display: flex;
   align-items: center;
@@ -3438,7 +3433,8 @@ defineExpose({
   opacity: 1;
 }
 .pane-close-btn:hover {
-  background: rgba(220, 80, 80, 0.85);
+  background: var(--theme-sem-accent-danger-strong);
+  color: var(--theme-sem-text-on-accent);
 }
 .terminal-body :deep(.xterm) {
   height: 100%;
@@ -3466,7 +3462,7 @@ defineExpose({
   border-radius: 10px;
   min-width: 140px;
   z-index: 100;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-sem-bg-overlay) 68%, transparent);
   padding: 4px 0;
 }
 .cwd-item {
@@ -3481,4 +3477,14 @@ defineExpose({
   border-radius: 8px;
 }
 .cwd-item:hover { background: var(--theme-sem-hover); }
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-pane-codex-status--running {
+    animation: none;
+  }
+
+  .split-btn-icon {
+    transition: none;
+  }
+}
 </style>

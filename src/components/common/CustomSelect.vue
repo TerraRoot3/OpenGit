@@ -176,6 +176,11 @@ onUnmounted(() => {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-sem-border-strong) 72%, transparent);
 }
 
+.select-trigger:focus-within {
+  border-color: var(--theme-sem-accent-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-accent-primary) 22%, transparent);
+}
+
 .select-input {
   flex: 1;
   padding: 10px 12px;
@@ -212,7 +217,7 @@ onUnmounted(() => {
   background: var(--theme-sem-bg-menu);
   border: 1px solid var(--theme-sem-border-default);
   border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-sem-bg-overlay) 68%, transparent);
   z-index: 100;
 }
 

@@ -1,10 +1,15 @@
 <template>
   <div v-if="show" class="clone-dialog-overlay">
-    <div class="clone-dialog">
+    <div
+      class="clone-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="clone-progress-title"
+    >
             <!-- 标题和关闭按钮 -->
             <div class="clone-header">
-              <h3>📥 正在克隆项目...</h3>
-              <button class="close-btn" @click="close">
+              <h3 id="clone-progress-title">📥 正在克隆项目…</h3>
+              <button class="close-btn" type="button" aria-label="关闭克隆进度" @click="close">
                 <X :size="16" />
               </button>
             </div>
@@ -44,7 +49,7 @@
       <div class="git-output">
         <div class="output-content">
           <pre v-if="gitOutput" ref="outputPre">{{ gitOutput }}</pre>
-          <div v-else class="no-output">等待Git命令执行...</div>
+          <div v-else class="no-output">等待 Git 命令执行…</div>
         </div>
       </div>
       
@@ -425,7 +430,7 @@ const scrollToBottom = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--theme-sem-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -436,14 +441,16 @@ const scrollToBottom = () => {
 
 .clone-dialog {
   background: var(--theme-sem-bg-dialog);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 12px;
   width: 500px;
   max-width: calc(100vw - 40px);
   max-height: calc(100vh - 40px);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 40px color-mix(in srgb, var(--theme-sem-bg-overlay) 72%, transparent);
   overflow: hidden;
+  overscroll-behavior: contain;
   margin: auto;
 }
 
@@ -453,7 +460,7 @@ const scrollToBottom = () => {
   justify-content: space-between;
   padding: 20px 24px;
   background: linear-gradient(135deg, var(--theme-sem-accent-primary-strong) 0%, var(--theme-sem-accent-primary) 100%);
-  color: white;
+  color: var(--theme-sem-text-on-accent);
 }
 
 .clone-header h3 {
@@ -465,7 +472,7 @@ const scrollToBottom = () => {
 .close-btn {
   background: none;
   border: none;
-  color: white;
+  color: var(--theme-sem-text-on-accent);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -476,20 +483,25 @@ const scrollToBottom = () => {
 }
 
 .close-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: color-mix(in srgb, var(--theme-sem-text-on-accent) 20%, transparent);
+}
+
+.close-btn:focus-visible {
+  outline: 2px solid var(--theme-sem-text-on-accent);
+  outline-offset: 2px;
 }
 
 /* 进度条样式 */
 .progress-section {
   padding: 16px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--theme-sem-border-default);
   background: var(--theme-sem-bg-dialog);
 }
 
 .progress-bar {
   width: 100%;
   height: 8px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--theme-sem-hover);
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 8px;
@@ -546,7 +558,7 @@ const scrollToBottom = () => {
 .tick-line {
   width: 1px;
   height: 12px;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--theme-sem-border-strong);
   margin-bottom: 4px;
   transition: background-color 0.3s ease;
 }
@@ -557,7 +569,7 @@ const scrollToBottom = () => {
 
 .tick-label {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-weight: 500;
   transition: color 0.3s ease;
 }
@@ -570,15 +582,15 @@ const scrollToBottom = () => {
 
 .git-output {
   padding: 20px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--theme-sem-border-default);
   background: var(--theme-sem-bg-dialog);
 }
 
 .output-content {
   height: 200px;
   overflow-y: auto;
-  background: color-mix(in srgb, var(--theme-sem-bg-project) 92%, black 8%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--theme-sem-bg-project) 78%, var(--theme-sem-surface-2) 22%);
+  border: 1px solid var(--theme-sem-border-default);
   border-radius: 4px;
   padding: 12px;
 }
@@ -588,7 +600,7 @@ const scrollToBottom = () => {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 11px;
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-sem-text-secondary);
   white-space: pre-wrap;
   word-wrap: break-word;
   height: 100%;
@@ -596,7 +608,7 @@ const scrollToBottom = () => {
 }
 
 .no-output {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-style: italic;
   text-align: center;
   padding: 20px;
@@ -617,7 +629,7 @@ const scrollToBottom = () => {
 .completed-header h4 {
   margin: 0;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   font-weight: 600;
 }
 
@@ -631,7 +643,7 @@ const scrollToBottom = () => {
   align-items: flex-start;
   gap: 8px;
   padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--theme-sem-border-default);
 }
 
 .completed-item:last-child {
@@ -664,13 +676,13 @@ const scrollToBottom = () => {
 .project-name {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-sem-text-primary);
   margin-bottom: 2px;
 }
 
 .project-path {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-sem-text-muted);
   font-family: monospace;
   margin-bottom: 2px;
   word-break: break-all;
@@ -708,26 +720,26 @@ const scrollToBottom = () => {
 
 @keyframes dots {
   0%, 20% {
-    color: color-mix(in srgb, var(--theme-sem-accent-primary) 100%, white 0%);
+    color: var(--theme-sem-accent-primary);
     text-shadow:
       0 0 0 color-mix(in srgb, var(--theme-sem-accent-primary) 0%, transparent),
       0 0 0 color-mix(in srgb, var(--theme-sem-accent-primary) 0%, transparent);
   }
   40% {
-    color: rgba(108, 92, 231, 1);
+    color: var(--theme-sem-accent-primary);
     text-shadow:
-      1px 0 0 rgba(108, 92, 231, 0),
-      2px 0 0 rgba(108, 92, 231, 0);
+      1px 0 0 transparent,
+      2px 0 0 transparent;
   }
   60% {
     text-shadow:
-      1px 0 0 rgba(108, 92, 231, 1),
-      2px 0 0 rgba(108, 92, 231, 0);
+      1px 0 0 var(--theme-sem-accent-primary),
+      2px 0 0 transparent;
   }
   80%, 100% {
     text-shadow:
-      1px 0 0 rgba(108, 92, 231, 1),
-      2px 0 0 rgba(108, 92, 231, 1);
+      1px 0 0 var(--theme-sem-accent-primary),
+      2px 0 0 var(--theme-sem-accent-primary);
   }
 }
 
@@ -740,18 +752,28 @@ const scrollToBottom = () => {
 
 .completed-list::-webkit-scrollbar-track,
 .output-content::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-sem-border-default);
   border-radius: 3px;
 }
 
 .completed-list::-webkit-scrollbar-thumb,
 .output-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--theme-sem-border-strong);
   border-radius: 3px;
 }
 
 .completed-list::-webkit-scrollbar-thumb:hover,
 .output-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: color-mix(in srgb, var(--theme-sem-border-strong) 62%, var(--theme-sem-text-muted) 38%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill,
+  .tick-line,
+  .tick-label,
+  .dots-animation {
+    animation: none;
+    transition: none;
+  }
 }
 </style>

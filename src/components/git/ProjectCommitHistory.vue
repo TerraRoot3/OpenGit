@@ -2066,7 +2066,7 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--theme-sem-hover) 42%, transparent);
   z-index: 30;
   border-right: 2px solid var(--theme-sem-border-default);
-  transition: all 0.2s;
+  transition: background-color 0.2s, border-color 0.2s;
 }
 
 .git-log th .resizer:hover {
@@ -2410,9 +2410,9 @@ onUnmounted(() => {
   color: var(--theme-sem-text-primary);
 }
 
-.search-input:focus {
-  border-color: var(--theme-sem-border-strong);
-  box-shadow: none;
+.search-input:focus-visible {
+  border-color: var(--theme-sem-accent-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-accent-primary) 22%, transparent);
 }
 
 .clear-search-btn {
@@ -2477,17 +2477,21 @@ onUnmounted(() => {
   -webkit-appearance: none;
   -moz-appearance: none;
   background-color: color-mix(in srgb, var(--theme-sem-bg-project) 88%, var(--theme-sem-hover) 12%);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='rgba(120,134,156,0.88)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--theme-sem-text-muted) 50%),
+    linear-gradient(135deg, var(--theme-sem-text-muted) 50%, transparent 50%);
   background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 12px 8px;
+  background-position:
+    calc(100% - 15px) center,
+    calc(100% - 10px) center;
+  background-size: 5px 5px;
   color: var(--theme-sem-text-primary);
   outline: none;
 }
 
-.scope-select:focus {
-  border-color: var(--theme-sem-border-strong);
-  box-shadow: none;
+.scope-select:focus-visible {
+  border-color: var(--theme-sem-accent-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-sem-accent-primary) 22%, transparent);
 }
 
 .filter-checkbox {
@@ -2633,7 +2637,7 @@ onUnmounted(() => {
   border-radius: 12px;
   padding: 6px 0;
   min-width: 160px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--theme-sem-bg-overlay) 68%, transparent);
   z-index: 1000;
 }
 
