@@ -1,6 +1,9 @@
 const DEFAULT_MESSAGE_CHUNK_LENGTH = 3500
 const MESSAGE_DEDUP_TTL_MS = 24 * 60 * 60 * 1000
 const MAX_DEDUP_MESSAGES = 2000
+const FEISHU_PING_TIMEOUT_SECONDS = 15
+const FEISHU_HANDSHAKE_TIMEOUT_MS = 60 * 1000
+const FEISHU_TYPING_REACTION = 'Typing'
 
 function parseMaybeJson(value) {
   if (!value) return null
@@ -56,6 +59,17 @@ function parseFeishuMessageEvent(payload = {}) {
   const mentions = Array.isArray(message.mentions)
     ? message.mentions
     : (Array.isArray(content.mentions) ? content.mentions : [])
+  const mentionedOpenIds = Array.from(new Set(
+    mentions
+      .map((mention) => String(
+        mention?.id?.open_id
+        || mention?.id?.openId
+        || mention?.open_id
+        || mention?.openId
+        || ''
+      ).trim())
+      .filter(Boolean)
+  ))
   const messageType = String(message.message_type || '').trim().toLowerCase()
   const chatType = String(message.chat_type || '').trim().toLowerCase()
   const rawText = typeof content.text === 'string'
@@ -71,6 +85,7 @@ function parseFeishuMessageEvent(payload = {}) {
     messageType,
     text: stripFeishuMentions(rawText, mentions),
     mentioned: mentions.length > 0,
+    mentionedOpenIds,
     senderType: String(sender.sender_type || '').trim().toLowerCase(),
     senderOpenId: String(senderId.open_id || senderId.openId || '').trim(),
     senderUserId: String(senderId.user_id || senderId.userId || '').trim(),
@@ -78,10 +93,17 @@ function parseFeishuMessageEvent(payload = {}) {
   }
 }
 
-function isFeishuInstructionAllowed(payload = {}, config = {}) {
+function isFeishuInstructionAllowed(payload = {}, config = {}, botOpenId = '') {
   if (!payload.chatId || !payload.text || payload.messageType !== 'text') return false
   if (payload.senderType && payload.senderType !== 'user') return false
-  if (payload.chatType === 'group' && !payload.mentioned) return false
+  if (payload.chatType === 'group') {
+    const normalizedBotOpenId = String(botOpenId || '').trim()
+    if (
+      !normalizedBotOpenId
+      || !Array.isArray(payload.mentionedOpenIds)
+      || !payload.mentionedOpenIds.includes(normalizedBotOpenId)
+    ) return false
+  }
 
   const allowedChatIds = new Set(normalizeStringList(config.allowedChatIds))
   if (allowedChatIds.size > 0 && !allowedChatIds.has(payload.chatId)) return false
@@ -93,6 +115,21 @@ function isFeishuInstructionAllowed(payload = {}, config = {}) {
     payload.senderUserId,
     payload.senderUnionId
   ].some((senderId) => senderId && allowedSenderIds.has(senderId))
+}
+
+async function resolveFeishuBotOpenId(apiClient) {
+  if (!apiClient?.request) throw new Error('飞书客户端不支持读取机器人身份')
+  const response = await apiClient.request({
+    url: '/open-apis/bot/v3/info',
+    method: 'GET'
+  })
+  if (response?.code && response.code !== 0) {
+    throw new Error(response.msg || `飞书机器人身份读取失败 (${response.code})`)
+  }
+  const bot = response?.bot || response?.data?.bot || {}
+  const openId = String(bot.open_id || bot.openId || '').trim()
+  if (!openId) throw new Error('飞书机器人身份缺少 open_id')
+  return openId
 }
 
 function splitFeishuText(value, maxLength = DEFAULT_MESSAGE_CHUNK_LENGTH) {
@@ -129,6 +166,7 @@ function createCodexFeishuBridge({
   let lark = larkSdk
   let apiClient = null
   let wsClient = null
+  let botOpenId = ''
   let status = 'disabled'
   let lastError = ''
   let restartSequence = 0
@@ -187,33 +225,91 @@ function createCodexFeishuBridge({
     }
   }
 
-  const processInstruction = async (payload) => {
-    let result
-    try {
-      result = await onInstruction(payload)
-    } catch (error) {
-      const message = error?.message || String(error)
-      safeError('[Codex Feishu] 指令执行失败:', message)
-      try {
-        await sendChunks(payload.chatId, `Codex 执行失败\n\n${message}`)
-      } catch (sendError) {
-        safeError('[Codex Feishu] 失败消息回传失败:', sendError.message)
+  const addTypingReaction = async (messageId, client = apiClient) => {
+    const normalizedMessageId = String(messageId || '').trim()
+    if (!normalizedMessageId || !client) return ''
+    const response = await client.im.v1.messageReaction.create({
+      path: { message_id: normalizedMessageId },
+      data: {
+        reaction_type: {
+          emoji_type: FEISHU_TYPING_REACTION
+        }
       }
-      return
+    })
+    if (response?.code && response.code !== 0) {
+      throw new Error(response.msg || `飞书处理中表情添加失败 (${response.code})`)
     }
+    return String(
+      response?.data?.reaction_id
+      || response?.reaction_id
+      || ''
+    ).trim()
+  }
 
+  const removeTypingReaction = async (messageId, reactionId, client = apiClient) => {
+    const normalizedMessageId = String(messageId || '').trim()
+    const normalizedReactionId = String(reactionId || '').trim()
+    if (!normalizedMessageId || !normalizedReactionId || !client) return
+    const response = await client.im.v1.messageReaction.delete({
+      path: {
+        message_id: normalizedMessageId,
+        reaction_id: normalizedReactionId
+      }
+    })
+    if (response?.code && response.code !== 0) {
+      throw new Error(response.msg || `飞书处理中表情移除失败 (${response.code})`)
+    }
+  }
+
+  const processInstruction = async (payload) => {
+    const reactionClient = apiClient
+    let typingReactionId = ''
     try {
-      const summary = String(result?.text || '').trim() || '任务已完成。'
-      await sendChunks(payload.chatId, summary)
-    } catch (error) {
-      safeError('[Codex Feishu] 执行结果回传失败:', error.message)
+      try {
+        typingReactionId = await addTypingReaction(payload.messageId, reactionClient)
+      } catch (error) {
+        safeError('[Codex Feishu] 处理中表情添加失败:', error.message)
+      }
+
+      let result
+      try {
+        result = await onInstruction(payload)
+      } catch (error) {
+        const message = error?.message || String(error)
+        safeError('[Codex Feishu] 指令执行失败:', message)
+        try {
+          await sendChunks(payload.chatId, `Codex 执行失败\n\n${message}`)
+        } catch (sendError) {
+          safeError('[Codex Feishu] 失败消息回传失败:', sendError.message)
+        }
+        return
+      }
+
+      try {
+        const summary = String(result?.text || '').trim() || '任务已完成。'
+        await sendChunks(payload.chatId, summary)
+      } catch (error) {
+        safeError('[Codex Feishu] 执行结果回传失败:', error.message)
+      }
+    } finally {
+      if (typingReactionId) {
+        try {
+          await removeTypingReaction(
+            payload.messageId,
+            typingReactionId,
+            reactionClient
+          )
+        } catch (error) {
+          safeError('[Codex Feishu] 处理中表情移除失败:', error.message)
+        }
+      }
     }
   }
 
   const handleMessageEvent = async (data) => {
     const payload = parseFeishuMessageEvent(data)
     const config = getConfig?.() || {}
-    if (!payload || !isFeishuInstructionAllowed(payload, config)) return
+    if (!payload || !isFeishuInstructionAllowed(payload, config, botOpenId)) return
     if (isDuplicateMessage(payload.messageId)) return
     safeLog('[Codex Feishu] 收到允许的文本指令:', {
       chatType: payload.chatType,
@@ -228,6 +324,7 @@ function createCodexFeishuBridge({
     const activeWsClient = wsClient
     wsClient = null
     apiClient = null
+    botOpenId = ''
     if (activeWsClient) {
       try {
         if (typeof activeWsClient.close === 'function') {
@@ -271,6 +368,7 @@ function createCodexFeishuBridge({
         domain: lark.Domain.Feishu,
         loggerLevel: lark.LoggerLevel?.error
       })
+      botOpenId = await resolveFeishuBotOpenId(apiClient)
       const dispatcher = new lark.EventDispatcher({}).register({
         'im.message.receive_v1': handleMessageEvent
       })
@@ -280,7 +378,10 @@ function createCodexFeishuBridge({
         domain: lark.Domain.Feishu,
         loggerLevel: lark.LoggerLevel?.error,
         autoReconnect: true,
-        handshakeTimeoutMs: 20 * 1000,
+        handshakeTimeoutMs: FEISHU_HANDSHAKE_TIMEOUT_MS,
+        wsConfig: {
+          pingTimeout: FEISHU_PING_TIMEOUT_SECONDS
+        },
         onReady: () => {
           if (sequence !== restartSequence) return
           setStatus('connected')
@@ -305,6 +406,7 @@ function createCodexFeishuBridge({
     } catch (error) {
       wsClient = null
       apiClient = null
+      botOpenId = ''
       setStatus('error', error?.message || String(error))
       throw error
     }
@@ -340,6 +442,7 @@ module.exports = {
   createCodexFeishuBridge,
   parseFeishuMessageEvent,
   isFeishuInstructionAllowed,
+  resolveFeishuBotOpenId,
   splitFeishuText,
   stripFeishuMentions
 }
