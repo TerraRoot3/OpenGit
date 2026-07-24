@@ -16,6 +16,8 @@ From this file onward:
 
 ### Fixed
 
+- 修复 Codex 会话列表仍显示已归档、已删除或非交互线程的问题，并按最新 app-server 协议读取详情及执行重命名、归档和删除。
+
 ### Refactored
 
 ### Docs

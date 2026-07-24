@@ -1,10 +1,14 @@
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
-const { execFileSync } = require('child_process')
+const { execFileSync, spawn } = require('child_process')
+const { version: OPEN_GIT_VERSION = '0.0.0' } = require('../../package.json')
 
 const SESSION_CACHE_TTL = 15 * 1000
 const SUMMARY_CACHE_VERSION = 1
+const CODEX_APP_SERVER_TIMEOUT_MS = 12 * 1000
+const CODEX_APP_SERVER_PAGE_LIMIT = 100
+const CODEX_APP_SERVER_MAX_PAGES = 20
 const SQLITE_BIN_CANDIDATES = process.platform === 'darwin'
   ? ['/usr/bin/sqlite3', 'sqlite3']
   : ['sqlite3', '/usr/bin/sqlite3']
@@ -12,17 +16,19 @@ const SQLITE_SEPARATOR = '\u001f'
 const SQLITE_TIMEOUT_MS = 1500
 const SQLITE_MAX_BUFFER = 2 * 1024 * 1024
 
-let codexSessionsCache = { loadedAt: 0, sessions: [] }
+let codexSessionsCache = { loadedAt: 0, homeDir: '', source: '', sessions: [] }
 let claudeHistoryCache = { loadedAt: 0, entries: new Map() }
 let codexHistoryCache = { loadedAt: 0, entries: new Map() }
 let summaryCacheStore = { filePath: '', loaded: false, dirty: false, entries: new Map() }
 const summaryRefreshJobs = new Map()
 let sqliteBinary = null
+let codexSessionsLoadJob = null
 
 function resetSessionCaches() {
-  codexSessionsCache = { loadedAt: 0, sessions: [] }
+  codexSessionsCache = { loadedAt: 0, homeDir: '', source: '', sessions: [] }
   claudeHistoryCache = { loadedAt: 0, entries: new Map() }
   codexHistoryCache = { loadedAt: 0, entries: new Map() }
+  codexSessionsLoadJob = null
 }
 
 function configureSummaryCache(filePath = '') {
@@ -153,11 +159,6 @@ function readJsonlFileUntil(filePath, onItem, chunkSize = 64 * 1024) {
   }
 }
 
-function appendJsonlRecord(filePath, record) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.appendFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8')
-}
-
 function sqlQuote(value) {
   return `'${String(value || '').replace(/'/g, "''")}'`
 }
@@ -166,6 +167,305 @@ function resolveCodexStateDbPath(homeDir = os.homedir()) {
   const normalizedHomeDir = normalizeProjectPath(homeDir)
   if (!normalizedHomeDir) return ''
   return path.join(normalizedHomeDir, '.codex', 'state_5.sqlite')
+}
+
+function normalizeUnixTimestamp(value) {
+  const timestamp = Number(value) || 0
+  if (!timestamp) return 0
+  return timestamp > 0 && timestamp < 1e11 ? timestamp * 1000 : timestamp
+}
+
+function isExecutableFile(filePath = '') {
+  if (!filePath) return false
+  try {
+    const stat = fs.statSync(filePath)
+    if (!stat.isFile()) return false
+    if (process.platform === 'win32') return true
+    fs.accessSync(filePath, fs.constants.X_OK)
+    return true
+  } catch (error) {
+    return false
+  }
+}
+
+function resolveCodexExecutable(homeDir = os.homedir()) {
+  const normalizedHomeDir = normalizeProjectPath(homeDir)
+  const executableNames = process.platform === 'win32'
+    ? ['codex.exe', 'codex.cmd', 'codex']
+    : ['codex']
+  const candidates = []
+
+  if (process.env.CODEX_BINARY) {
+    candidates.push(process.env.CODEX_BINARY)
+  }
+
+  for (const directory of String(process.env.PATH || '').split(path.delimiter)) {
+    if (!directory) continue
+    for (const executableName of executableNames) {
+      candidates.push(path.join(directory, executableName))
+    }
+  }
+
+  if (normalizedHomeDir) {
+    const homeCandidates = [
+      path.join(normalizedHomeDir, '.local', 'bin'),
+      path.join(normalizedHomeDir, '.npm-global', 'bin'),
+      path.join(normalizedHomeDir, '.volta', 'bin'),
+      path.join(normalizedHomeDir, '.asdf', 'shims'),
+      path.join(normalizedHomeDir, '.bun', 'bin')
+    ]
+    for (const directory of homeCandidates) {
+      for (const executableName of executableNames) {
+        candidates.push(path.join(directory, executableName))
+      }
+    }
+
+    const nvmVersionsRoot = path.join(normalizedHomeDir, '.nvm', 'versions', 'node')
+    try {
+      const nvmCandidates = fs.readdirSync(nvmVersionsRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join(nvmVersionsRoot, entry.name, 'bin', 'codex'))
+        .filter(isExecutableFile)
+        .sort((left, right) => {
+          try {
+            return fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs
+          } catch (error) {
+            return 0
+          }
+        })
+      candidates.push(...nvmCandidates)
+    } catch (error) {}
+  }
+
+  if (process.platform === 'darwin') {
+    candidates.push('/opt/homebrew/bin/codex', '/usr/local/bin/codex')
+  } else if (process.platform !== 'win32') {
+    candidates.push('/usr/local/bin/codex', '/usr/bin/codex')
+  }
+
+  return candidates.find(isExecutableFile) || 'codex'
+}
+
+function createCodexRpcError(payload = null, fallbackMessage = 'codex app-server request failed') {
+  const error = new Error(payload?.message || fallbackMessage)
+  if (payload?.code != null) {
+    error.rpcCode = payload.code
+  }
+  return error
+}
+
+function runCodexAppServerRpc({
+  homeDir = os.homedir(),
+  timeoutMs = CODEX_APP_SERVER_TIMEOUT_MS,
+  onReady,
+  onResponse
+} = {}) {
+  return new Promise((resolve, reject) => {
+    const normalizedHomeDir = normalizeProjectPath(homeDir)
+    const executable = resolveCodexExecutable(normalizedHomeDir)
+    const child = spawn(executable, ['app-server', '--stdio'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        CODEX_HOME: path.join(normalizedHomeDir, '.codex')
+      },
+      shell: process.platform === 'win32' && /\.cmd$/i.test(executable),
+      windowsHide: true
+    })
+
+    let settled = false
+    let stdoutRemainder = ''
+    let stderrText = ''
+    let nextRequestId = 1
+
+    const cleanup = () => {
+      clearTimeout(timeout)
+      try {
+        child.stdin.end()
+      } catch (error) {}
+      try {
+        child.kill('SIGTERM')
+      } catch (error) {}
+    }
+
+    const finish = (error = null, value) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      if (error) {
+        reject(error)
+      } else {
+        resolve(value)
+      }
+    }
+
+    const send = (message) => {
+      if (settled || child.stdin.destroyed) return
+      child.stdin.write(`${JSON.stringify(message)}\n`)
+    }
+
+    const controller = {
+      request(method, params = {}) {
+        if (!method || settled) return 0
+        const id = nextRequestId
+        nextRequestId += 1
+        send({ method, id, params })
+        return id
+      },
+      resolve(value) {
+        finish(null, value)
+      },
+      reject(error) {
+        finish(error instanceof Error ? error : new Error(String(error || 'codex app-server request failed')))
+      }
+    }
+
+    const handleMessage = (message) => {
+      if (!message || typeof message !== 'object') return
+
+      if (message.id === 0) {
+        if (message.error) {
+          finish(createCodexRpcError(message.error, 'codex app-server initialization failed'))
+          return
+        }
+        send({ method: 'initialized', params: {} })
+        try {
+          onReady?.(controller)
+        } catch (error) {
+          controller.reject(error)
+        }
+        return
+      }
+
+      if (message.id == null) return
+      try {
+        onResponse?.(message, controller)
+      } catch (error) {
+        controller.reject(error)
+      }
+    }
+
+    const timeout = setTimeout(() => {
+      finish(new Error('codex app-server request timed out'))
+    }, Math.max(1000, Number(timeoutMs) || CODEX_APP_SERVER_TIMEOUT_MS))
+
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => {
+      stdoutRemainder += chunk
+      const lines = stdoutRemainder.split('\n')
+      stdoutRemainder = lines.pop() || ''
+      for (const rawLine of lines) {
+        const line = rawLine.trim()
+        if (!line) continue
+        try {
+          handleMessage(JSON.parse(line))
+        } catch (error) {}
+      }
+    })
+
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk) => {
+      stderrText = `${stderrText}${chunk}`.slice(-4000)
+    })
+
+    child.stdin.on('error', (error) => {
+      if (!settled) finish(error)
+    })
+    child.on('error', (error) => finish(error))
+    child.on('close', (code) => {
+      if (settled) return
+      const detail = stderrText.trim()
+      finish(new Error(detail || `codex app-server exited with code ${code}`))
+    })
+
+    send({
+      method: 'initialize',
+      id: 0,
+      params: {
+        clientInfo: {
+          name: 'open_git',
+          title: 'OpenGit',
+          version: OPEN_GIT_VERSION
+        }
+      }
+    })
+  })
+}
+
+function callCodexAppServer({
+  homeDir = os.homedir(),
+  method = '',
+  params = {},
+  timeoutMs = CODEX_APP_SERVER_TIMEOUT_MS
+} = {}) {
+  if (!method) {
+    return Promise.reject(new Error('codex app-server method is required'))
+  }
+
+  let requestId = 0
+  return runCodexAppServerRpc({
+    homeDir,
+    timeoutMs,
+    onReady(controller) {
+      requestId = controller.request(method, params)
+    },
+    onResponse(message, controller) {
+      if (message.id !== requestId) return
+      if (message.error) {
+        controller.reject(createCodexRpcError(message.error))
+        return
+      }
+      controller.resolve(message.result)
+    }
+  })
+}
+
+function listCodexThreadsFromAppServer({
+  homeDir = os.homedir(),
+  timeoutMs = CODEX_APP_SERVER_TIMEOUT_MS
+} = {}) {
+  const threads = []
+  let listRequestId = 0
+  let pageCount = 0
+
+  return runCodexAppServerRpc({
+    homeDir,
+    timeoutMs,
+    onReady(controller) {
+      const requestPage = (cursor = null) => {
+        pageCount += 1
+        if (pageCount > CODEX_APP_SERVER_MAX_PAGES) {
+          controller.reject(new Error('codex thread list exceeded pagination limit'))
+          return
+        }
+        listRequestId = controller.request('thread/list', {
+          cursor,
+          limit: CODEX_APP_SERVER_PAGE_LIMIT,
+          sortKey: 'recency_at',
+          sortDirection: 'desc',
+          archived: false
+        })
+      }
+      controller.requestPage = requestPage
+      requestPage(null)
+    },
+    onResponse(message, controller) {
+      if (message.id !== listRequestId) return
+      if (message.error) {
+        controller.reject(createCodexRpcError(message.error, 'codex thread list failed'))
+        return
+      }
+
+      const pageThreads = Array.isArray(message.result?.data) ? message.result.data : []
+      threads.push(...pageThreads)
+      const nextCursor = message.result?.nextCursor
+      if (nextCursor) {
+        controller.requestPage(nextCursor)
+      } else {
+        controller.resolve(threads)
+      }
+    }
+  })
 }
 
 function execSqlite(databasePath, sql, { readonly = true } = {}) {
@@ -546,6 +846,81 @@ function extractCodexTranscript(filePath) {
   return messages
 }
 
+function extractCodexAppServerUserText(content = []) {
+  if (!Array.isArray(content)) return ''
+  const parts = []
+  for (const input of content) {
+    if (!input || input.type !== 'text') continue
+    const text = normalizeSessionText(input.text)
+    if (text) parts.push(text)
+  }
+  return truncateText(parts.join('\n\n'))
+}
+
+function extractCodexAppServerTranscript(thread = {}) {
+  const messages = []
+  const turns = Array.isArray(thread?.turns) ? thread.turns : []
+
+  for (const turn of turns) {
+    const items = Array.isArray(turn?.items) ? turn.items : []
+    const startedAt = normalizeIsoString(normalizeUnixTimestamp(turn?.startedAt))
+    const completedAt = normalizeIsoString(
+      normalizeUnixTimestamp(turn?.completedAt || turn?.startedAt)
+    )
+
+    for (const item of items) {
+      if (item?.type === 'userMessage') {
+        const text = extractCodexAppServerUserText(item.content)
+        if (text) {
+          messages.push({
+            role: 'user',
+            text,
+            timestamp: startedAt
+          })
+        }
+        continue
+      }
+
+      if (item?.type === 'agentMessage') {
+        const text = normalizeSessionText(item.text)
+        if (text) {
+          messages.push({
+            role: 'assistant',
+            text,
+            timestamp: completedAt
+          })
+        }
+      }
+    }
+  }
+
+  return messages
+}
+
+async function readCodexThreadFromAppServer({
+  homeDir = os.homedir(),
+  sessionId = '',
+  rpcCall = callCodexAppServer
+} = {}) {
+  const normalizedSessionId = String(sessionId || '').trim()
+  if (!normalizedSessionId) {
+    throw new Error('invalid codex thread read request')
+  }
+
+  const result = await rpcCall({
+    homeDir,
+    method: 'thread/read',
+    params: {
+      threadId: normalizedSessionId,
+      includeTurns: true
+    }
+  })
+  if (!result?.thread) {
+    throw new Error('codex thread unavailable')
+  }
+  return result.thread
+}
+
 function extractClaudeContentText(content) {
   if (typeof content === 'string') return normalizeSessionText(content)
   if (!Array.isArray(content)) return ''
@@ -677,14 +1052,23 @@ function resolveAiSessionRoots(provider = '', homeDir = os.homedir()) {
 
 function loadCodexThreadRows(homeDir = os.homedir(), { archived = false } = {}) {
   const stateDbPath = resolveCodexStateDbPath(homeDir)
-  const sql = [
-    'SELECT id, rollout_path, cwd, title, first_user_message, preview, created_at_ms, updated_at_ms, archived',
+  const buildSql = (titleExpression) => [
+    `SELECT id, rollout_path, cwd, ${titleExpression}, first_user_message, preview, created_at_ms, updated_at_ms, archived`,
     'FROM threads',
     `WHERE archived = ${archived ? 1 : 0}`,
+    "AND source IN ('cli', 'vscode')",
     'ORDER BY updated_at_ms DESC, created_at_ms DESC'
   ].join(' ')
 
-  const stdout = execSqlite(stateDbPath, sql, { readonly: true })
+  const stdout = execSqlite(
+    stateDbPath,
+    buildSql("COALESCE(NULLIF(name, ''), title)"),
+    { readonly: true }
+  ) || execSqlite(
+    stateDbPath,
+    buildSql('title'),
+    { readonly: true }
+  )
   if (!stdout) return []
 
   const rows = []
@@ -772,13 +1156,10 @@ function buildCodexIndex(homeDir) {
 }
 
 function loadCodexSessionsFromFiles(homeDir) {
-  const { rootDir: sessionsRoot, archiveDir } = resolveAiSessionRoots('codex', homeDir)
+  const { rootDir: sessionsRoot } = resolveAiSessionRoots('codex', homeDir)
   const indexMap = buildCodexIndex(homeDir)
   const historyMap = loadCodexHistory(homeDir)
-  const files = [
-    ...walkFiles(sessionsRoot, (fullPath) => fullPath.endsWith('.jsonl')),
-    ...walkFiles(archiveDir, (fullPath) => fullPath.endsWith('.jsonl'))
-  ]
+  const files = walkFiles(sessionsRoot, (fullPath) => fullPath.endsWith('.jsonl'))
   const sessionMap = new Map()
   let hasPendingSummaryRefresh = false
 
@@ -813,7 +1194,6 @@ function loadCodexSessionsFromFiles(homeDir) {
     })
     hasPendingSummaryRefresh = hasPendingSummaryRefresh || summaryState.pendingRefresh
     const fallbackTitle = extractCodexSummary(filePath)
-    const archived = isPathInsideRoot(filePath, archiveDir)
 
     mergeSessionEntry(sessionMap, {
       provider: 'codex',
@@ -824,7 +1204,7 @@ function loadCodexSessionsFromFiles(homeDir) {
       summary: summaryState.summary,
       sourcePath: filePath,
       sourceMtimeMs: statTimestamp,
-      archived
+      archived: false
     })
   }
 
@@ -834,117 +1214,95 @@ function loadCodexSessionsFromFiles(homeDir) {
   }
 }
 
-function resolveUniqueArchivePath(archiveDir = '', fileName = '') {
-  const parsed = path.parse(fileName || 'session.jsonl')
-  let candidate = path.join(archiveDir, fileName)
-  let suffix = 1
-
-  while (fs.existsSync(candidate)) {
-    candidate = path.join(archiveDir, `${parsed.name}-${suffix}${parsed.ext || '.jsonl'}`)
-    suffix += 1
-  }
-
-  return candidate
-}
-
-function renameCodexSession({
+async function renameCodexSession({
   homeDir = os.homedir(),
-  sourcePath = '',
   sessionId = '',
   title = '',
-  updatedAt = ''
+  rpcCall = callCodexAppServer
 } = {}) {
   const normalizedTitle = typeof title === 'string' ? title.trim() : ''
   const normalizedSessionId = String(sessionId || '').trim()
-  const normalizedSourcePath = normalizeProjectPath(sourcePath)
-  const { rootDir, indexPath } = resolveAiSessionRoots('codex', homeDir)
-  const stateDbPath = resolveCodexStateDbPath(homeDir)
 
   if (!normalizedSessionId || !normalizedTitle) {
     throw new Error('invalid codex rename request')
   }
 
-  if (!rootDir || !normalizedSourcePath || !isPathInsideRoot(normalizedSourcePath, rootDir)) {
-    throw new Error('codex session source is not allowed')
-  }
-
-  if (!fs.existsSync(normalizedSourcePath)) {
-    throw new Error('codex session source unavailable')
-  }
-
-  const normalizedUpdatedAt = normalizeIsoString(updatedAt) || new Date().toISOString()
-  appendJsonlRecord(indexPath, {
-    id: normalizedSessionId,
-    thread_name: normalizedTitle,
-    updated_at: normalizedUpdatedAt
+  await rpcCall({
+    homeDir,
+    method: 'thread/name/set',
+    params: {
+      threadId: normalizedSessionId,
+      name: normalizedTitle
+    }
   })
-  execSqlite(
-    stateDbPath,
-    `UPDATE threads SET title = ${sqlQuote(normalizedTitle)} WHERE id = ${sqlQuote(normalizedSessionId)};`,
-    { readonly: false }
-  )
 
   resetSessionCaches()
 
   return {
     renamed: true,
-    title: normalizedTitle,
-    updatedAt: normalizedUpdatedAt
+    title: normalizedTitle
   }
 }
 
-function archiveCodexSessionSource({
+async function archiveCodexSessionSource({
   homeDir = os.homedir(),
-  sourcePath = ''
+  sessionId = '',
+  rpcCall = callCodexAppServer
 } = {}) {
-  const normalizedSourcePath = normalizeProjectPath(sourcePath)
-  const { rootDir, archiveDir } = resolveAiSessionRoots('codex', homeDir)
-  const stateDbPath = resolveCodexStateDbPath(homeDir)
-
-  if (!rootDir || !archiveDir || !normalizedSourcePath || !isPathInsideRoot(normalizedSourcePath, rootDir)) {
-    throw new Error('codex session source is not allowed')
+  const normalizedSessionId = String(sessionId || '').trim()
+  if (!normalizedSessionId) {
+    throw new Error('invalid codex archive request')
   }
 
-  if (!fs.existsSync(normalizedSourcePath)) {
-    return {
-      archived: false,
-      archivedPath: ''
+  await rpcCall({
+    homeDir,
+    method: 'thread/archive',
+    params: {
+      threadId: normalizedSessionId
     }
-  }
-
-  fs.mkdirSync(archiveDir, { recursive: true })
-  const archivedPath = resolveUniqueArchivePath(archiveDir, path.basename(normalizedSourcePath))
-  fs.renameSync(normalizedSourcePath, archivedPath)
-  const archivedAtMs = Date.now()
-  execSqlite(
-    stateDbPath,
-    [
-      'UPDATE threads',
-      `SET archived = 1, archived_at = ${Math.floor(archivedAtMs / 1000)}, rollout_path = ${sqlQuote(archivedPath)}`,
-      `WHERE rollout_path = ${sqlQuote(normalizedSourcePath)};`
-    ].join(' '),
-    { readonly: false }
-  )
-  pruneEmptyDirectories(path.dirname(normalizedSourcePath), rootDir)
-  deleteSessionSummaryCache({ provider: 'codex', sourcePath: normalizedSourcePath })
-  deleteSessionSummaryCache({ provider: 'codex', sourcePath: archivedPath })
+  })
+  deleteSessionSummaryCache({ provider: 'codex', sessionId: normalizedSessionId })
   flushSummaryCache()
   resetSessionCaches()
 
   return {
-    archived: true,
-    archivedPath
+    archived: true
   }
 }
 
-function deleteAiSessionSource({ provider = '', sourcePath = '', homeDir = os.homedir() } = {}) {
+async function deleteAiSessionSource({
+  provider = '',
+  sourcePath = '',
+  sessionId = '',
+  homeDir = os.homedir(),
+  rpcCall = callCodexAppServer
+} = {}) {
   const normalizedSourcePath = normalizeProjectPath(sourcePath)
-  if (!normalizedSourcePath) {
-    throw new Error('invalid session source path')
-  }
 
   if (provider === 'codex') {
-    return archiveCodexSessionSource({ homeDir, sourcePath: normalizedSourcePath })
+    const normalizedSessionId = String(sessionId || '').trim()
+    if (!normalizedSessionId) {
+      throw new Error('invalid codex delete request')
+    }
+    await rpcCall({
+      homeDir,
+      method: 'thread/delete',
+      params: {
+        threadId: normalizedSessionId
+      }
+    })
+    deleteSessionSummaryCache({
+      provider: 'codex',
+      sessionId: normalizedSessionId,
+      sourcePath: normalizedSourcePath
+    })
+    flushSummaryCache()
+    resetSessionCaches()
+    return { deleted: true }
+  }
+
+  if (!normalizedSourcePath) {
+    throw new Error('invalid session source path')
   }
 
   const { rootDir } = resolveAiSessionRoots(provider, homeDir)
@@ -974,9 +1332,107 @@ function mergeSessionEntry(targetMap, entry) {
   }
 }
 
-function loadCodexSessions(homeDir) {
+function normalizeCodexAppServerThread(thread = {}) {
+  const sessionId = String(thread?.id || thread?.sessionId || '').trim()
+  const cwd = normalizeProjectPath(thread?.cwd || '')
+  const sourcePath = normalizeProjectPath(thread?.path || '')
+  if (!sessionId || !cwd) return null
+
+  let statTimestamp = 0
+  if (sourcePath) {
+    try {
+      statTimestamp = fs.statSync(sourcePath).mtimeMs
+    } catch (error) {}
+  }
+
+  const preview = truncateText(thread?.preview || '')
+  const title = typeof thread?.name === 'string' ? thread.name.trim() : ''
+  const updatedAtMs = normalizeUnixTimestamp(
+    thread?.recencyAt || thread?.updatedAt || thread?.createdAt
+  )
+
+  return {
+    provider: 'codex',
+    sessionId,
+    title: title || preview || path.basename(cwd) || sessionId,
+    cwd,
+    updatedAt: normalizeIsoString(updatedAtMs, statTimestamp),
+    summary: preview,
+    sourcePath,
+    sourceMtimeMs: statTimestamp,
+    archived: false
+  }
+}
+
+async function loadCodexSessionsLatest(homeDir = os.homedir(), {
+  listThreads = listCodexThreadsFromAppServer
+} = {}) {
+  const normalizedHomeDir = normalizeProjectPath(homeDir)
   const now = Date.now()
-  if ((now - codexSessionsCache.loadedAt) < SESSION_CACHE_TTL) {
+  if (
+    codexSessionsCache.source === 'app-server'
+    && codexSessionsCache.homeDir === normalizedHomeDir
+    && (now - codexSessionsCache.loadedAt) < SESSION_CACHE_TTL
+  ) {
+    return {
+      sessions: codexSessionsCache.sessions,
+      hasPendingSummaryRefresh: false
+    }
+  }
+
+  const useSharedLoadJob = listThreads === listCodexThreadsFromAppServer
+  if (useSharedLoadJob && codexSessionsLoadJob) {
+    return codexSessionsLoadJob
+  }
+
+  const loadJob = (async () => {
+    try {
+      const threads = await listThreads({ homeDir: normalizedHomeDir })
+      const sessionMap = new Map()
+      for (const thread of threads) {
+        const session = normalizeCodexAppServerThread(thread)
+        if (!session) continue
+        mergeSessionEntry(sessionMap, session)
+      }
+
+      codexSessionsCache = {
+        loadedAt: Date.now(),
+        homeDir: normalizedHomeDir,
+        source: 'app-server',
+        sessions: [...sessionMap.values()]
+          .sort((left, right) => toTimestamp(right.updatedAt) - toTimestamp(left.updatedAt))
+      }
+
+      return {
+        sessions: codexSessionsCache.sessions,
+        hasPendingSummaryRefresh: false
+      }
+    } catch (error) {
+      return loadCodexSessions(normalizedHomeDir)
+    }
+  })()
+
+  if (useSharedLoadJob) {
+    codexSessionsLoadJob = loadJob
+  }
+
+  try {
+    return await loadJob
+  } finally {
+    if (useSharedLoadJob && codexSessionsLoadJob === loadJob) {
+      codexSessionsLoadJob = null
+    }
+  }
+}
+
+function loadCodexSessions(homeDir) {
+  const normalizedHomeDir = normalizeProjectPath(homeDir)
+  const now = Date.now()
+  if (
+    codexSessionsCache.source === 'legacy'
+    && codexSessionsCache.homeDir === normalizedHomeDir
+    && (now - codexSessionsCache.loadedAt) < SESSION_CACHE_TTL
+  ) {
     return {
       sessions: codexSessionsCache.sessions,
       hasPendingSummaryRefresh: hasPendingSummaryRefreshForSessions(codexSessionsCache.sessions)
@@ -984,11 +1440,12 @@ function loadCodexSessions(homeDir) {
   }
 
   const historyMap = loadCodexHistory(homeDir)
-  const threadRows = [
-    ...loadCodexThreadRows(homeDir, { archived: false }),
-    ...loadCodexThreadRows(homeDir, { archived: true })
-  ]
-  const fallbackResult = loadCodexSessionsFromFiles(homeDir)
+  const stateDbPath = resolveCodexStateDbPath(homeDir)
+  const hasStateDb = !!(stateDbPath && fs.existsSync(stateDbPath))
+  const threadRows = loadCodexThreadRows(homeDir, { archived: false })
+  const fallbackResult = hasStateDb
+    ? { sessions: [], hasPendingSummaryRefresh: false }
+    : loadCodexSessionsFromFiles(homeDir)
   const sessionMap = new Map()
   let hasPendingSummaryRefresh = false
 
@@ -997,9 +1454,8 @@ function loadCodexSessions(homeDir) {
     const cwd = row.cwd
     if (!sessionId || !cwd) continue
     const historyEntry = historyMap.get(sessionId)
-    const hasHistoryTrace = Number(historyEntry?.count || 0) > 0
     const rolloutExists = !!(row.rolloutPath && fs.existsSync(row.rolloutPath))
-    if (!rolloutExists && !hasHistoryTrace) continue
+    if (!rolloutExists) continue
 
     let statTimestamp = 0
     try {
@@ -1036,21 +1492,19 @@ function loadCodexSessions(homeDir) {
       summary,
       sourcePath: row.rolloutPath,
       sourceMtimeMs: statTimestamp,
-      archived: row.archived === true
+      archived: false
     })
   }
 
   for (const session of fallbackResult.sessions) {
     if (!session?.sessionId || sessionMap.has(session.sessionId)) continue
-    const historyEntry = historyMap.get(session.sessionId)
-    if (session.archived && (!historyEntry || Number(historyEntry.count || 0) < 2)) {
-      continue
-    }
     mergeSessionEntry(sessionMap, session)
   }
 
   codexSessionsCache = {
     loadedAt: now,
+    homeDir: normalizedHomeDir,
+    source: 'legacy',
     sessions: [...sessionMap.values()].sort((a, b) => toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt))
   }
 
@@ -1191,12 +1645,9 @@ function registerAiSessionHandlers({
       }
 
       const homeDir = os.homedir()
-      const codexResult = loadCodexSessions(homeDir)
-      const projectCodexSessions = codexResult.sessions
+      const codexResult = await loadCodexSessionsLatest(homeDir)
+      const codexSessions = codexResult.sessions
         .filter((session) => isPathInsideProject(session.cwd, normalizedProjectPath))
-      const activeCodexSessions = projectCodexSessions.filter((session) => session.archived !== true)
-      const archivedCodexSessions = projectCodexSessions.filter((session) => session.archived === true)
-      const codexSessions = (activeCodexSessions.length > 0 ? activeCodexSessions : archivedCodexSessions)
         .slice(0, 100)
       const claudeResult = loadClaudeSessions(homeDir, normalizedProjectPath)
       const claudeSessions = claudeResult.sessions.slice(0, 100)
@@ -1235,15 +1686,19 @@ function registerAiSessionHandlers({
     }
   })
 
-  ipcMain.handle('get-project-ai-session-detail', async (event, { provider, sourcePath, projectPath } = {}) => {
+  ipcMain.handle('get-project-ai-session-detail', async (
+    event,
+    { provider, sourcePath, sessionId, projectPath } = {}
+  ) => {
     try {
       const normalizedProjectPath = normalizeProjectPath(projectPath)
       const normalizedSourcePath = normalizeProjectPath(sourcePath)
+      const normalizedSessionId = String(sessionId || '').trim()
       const homeDir = os.homedir()
       const codexRoot = path.join(homeDir, '.codex', 'sessions')
       const claudeRoot = path.join(homeDir, '.claude', 'projects')
 
-      if (!normalizedProjectPath || !normalizedSourcePath) {
+      if (!normalizedProjectPath) {
         return {
           success: false,
           error: 'invalid session detail request',
@@ -1253,25 +1708,47 @@ function registerAiSessionHandlers({
         }
       }
 
-      const allowed = provider === 'codex'
-        ? isPathInsideRoot(normalizedSourcePath, codexRoot)
-        : provider === 'claude'
-          ? isPathInsideRoot(normalizedSourcePath, claudeRoot)
-          : false
+      let messages = []
+      if (provider === 'codex') {
+        if (!normalizedSessionId) {
+          throw new Error('invalid codex thread read request')
+        }
 
-      if (!allowed || !fs.existsSync(normalizedSourcePath)) {
+        try {
+          const thread = await readCodexThreadFromAppServer({
+            homeDir,
+            sessionId: normalizedSessionId
+          })
+          if (!isPathInsideProject(thread.cwd, normalizedProjectPath)) {
+            throw new Error('codex thread is outside the current project')
+          }
+          messages = extractCodexAppServerTranscript(thread)
+        } catch (error) {
+          const canUseLegacySource = normalizedSourcePath
+            && isPathInsideRoot(normalizedSourcePath, codexRoot)
+            && fs.existsSync(normalizedSourcePath)
+          if (!canUseLegacySource || error.message === 'codex thread is outside the current project') {
+            throw error
+          }
+          messages = extractCodexTranscript(normalizedSourcePath)
+        }
+      } else if (provider === 'claude') {
+        const allowed = normalizedSourcePath
+          && isPathInsideRoot(normalizedSourcePath, claudeRoot)
+          && fs.existsSync(normalizedSourcePath)
+        if (!allowed) {
+          throw new Error('session source unavailable')
+        }
+        messages = extractClaudeTranscript(normalizedSourcePath)
+      } else {
         return {
           success: false,
-          error: 'session source unavailable',
+          error: 'unsupported session provider',
           data: {
             messages: []
           }
         }
       }
-
-      const messages = provider === 'claude'
-        ? extractClaudeTranscript(normalizedSourcePath)
-        : extractCodexTranscript(normalizedSourcePath)
 
       return {
         success: true,
@@ -1292,9 +1769,9 @@ function registerAiSessionHandlers({
     }
   })
 
-  ipcMain.handle('delete-project-ai-session', async (event, { provider, sourcePath } = {}) => {
+  ipcMain.handle('delete-project-ai-session', async (event, { provider, sourcePath, sessionId } = {}) => {
     try {
-      const result = deleteAiSessionSource({ provider, sourcePath })
+      const result = await deleteAiSessionSource({ provider, sourcePath, sessionId })
       return {
         success: true,
         data: result
@@ -1311,12 +1788,12 @@ function registerAiSessionHandlers({
     }
   })
 
-  ipcMain.handle('rename-project-ai-session', async (event, { provider, sourcePath, sessionId, title, updatedAt } = {}) => {
+  ipcMain.handle('rename-project-ai-session', async (event, { provider, sessionId, title } = {}) => {
     try {
       if (provider !== 'codex') {
         throw new Error('rename is only supported for codex sessions')
       }
-      const result = renameCodexSession({ sourcePath, sessionId, title, updatedAt })
+      const result = await renameCodexSession({ sessionId, title })
       return {
         success: true,
         data: result
@@ -1333,12 +1810,12 @@ function registerAiSessionHandlers({
     }
   })
 
-  ipcMain.handle('archive-project-ai-session', async (event, { provider, sourcePath } = {}) => {
+  ipcMain.handle('archive-project-ai-session', async (event, { provider, sessionId } = {}) => {
     try {
       if (provider !== 'codex') {
         throw new Error('archive is only supported for codex sessions')
       }
-      const result = archiveCodexSessionSource({ sourcePath })
+      const result = await archiveCodexSessionSource({ sessionId })
       return {
         success: true,
         data: result
@@ -1371,12 +1848,20 @@ module.exports = {
     extractCodexMessageText,
     extractCodexSummary,
     extractCodexTranscript,
+    extractCodexAppServerUserText,
+    extractCodexAppServerTranscript,
     extractClaudeContentText,
     extractClaudeSummary,
     extractClaudeTranscript,
     resolveAiSessionRoots,
+    resolveCodexExecutable,
+    callCodexAppServer,
+    listCodexThreadsFromAppServer,
+    readCodexThreadFromAppServer,
+    normalizeCodexAppServerThread,
     renameCodexSession,
     archiveCodexSessionSource,
-    loadCodexSessions
+    loadCodexSessions,
+    loadCodexSessionsLatest
   }
 }

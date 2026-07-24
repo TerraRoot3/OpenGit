@@ -173,7 +173,7 @@
             @keydown.escape.prevent="closeRenameDialog"
           />
           <div class="rename-session-hint">
-            会写入本机 `~/.codex/session_index.jsonl`，和 Codex 的会话标题保持一致。
+            会通过 Codex 更新会话名称，并与 Codex 中显示的标题保持一致。
           </div>
         </div>
         <div class="dialog-footer">
@@ -195,7 +195,7 @@
           <div class="delete-session-summary">
             {{ getSessionSummary(archiveTargetSession) }}
           </div>
-          <p class="warning-text">归档后会移动到本机 Codex 的 archived_sessions，并在列表中标记为已归档。</p>
+          <p class="warning-text">归档后该会话会从当前项目的活跃会话列表中移除，可在 Codex 的归档会话中找到。</p>
         </div>
         <div class="dialog-footer">
           <button class="cancel-btn-large" :disabled="archiveLoading" @click="closeArchiveConfirm">取消</button>
@@ -216,7 +216,11 @@
           <div class="delete-session-summary">
             {{ getSessionSummary(deleteTargetSession) }}
           </div>
-          <p class="warning-text">此操作会删除本地会话记录文件，删除后无法恢复。</p>
+          <p class="warning-text">
+            {{ isCodexSession(deleteTargetSession)
+              ? '此操作会通过 Codex 永久删除会话，删除后无法恢复。'
+              : '此操作会删除本地会话记录文件，删除后无法恢复。' }}
+          </p>
         </div>
         <div class="dialog-footer">
           <button class="cancel-btn-large" :disabled="deleteLoading" @click="closeDeleteConfirm">取消</button>
@@ -589,7 +593,7 @@ const closeDeleteConfirm = () => {
 const confirmRenameSession = async () => {
   const session = renameTargetSession.value
   const title = renameDraft.value.trim()
-  if (!session?.sourcePath || !window.electronAPI?.renameProjectAiSession || renameLoading.value) return
+  if (!session?.sessionId || !window.electronAPI?.renameProjectAiSession || renameLoading.value) return
   if (!title) {
     errorMessage.value = '会话名称不能为空'
     return
@@ -600,10 +604,8 @@ const confirmRenameSession = async () => {
   try {
     const result = await window.electronAPI.renameProjectAiSession({
       provider: session.provider,
-      sourcePath: session.sourcePath,
       sessionId: session.sessionId,
-      title,
-      updatedAt: session.updatedAt
+      title
     })
 
     if (!result?.success) {
@@ -623,14 +625,14 @@ const confirmRenameSession = async () => {
 
 const confirmArchiveSession = async () => {
   const session = archiveTargetSession.value
-  if (!session?.sourcePath || !window.electronAPI?.archiveProjectAiSession || archiveLoading.value) return
+  if (!session?.sessionId || !window.electronAPI?.archiveProjectAiSession || archiveLoading.value) return
 
   archiveLoading.value = true
 
   try {
     const result = await window.electronAPI.archiveProjectAiSession({
       provider: session.provider,
-      sourcePath: session.sourcePath
+      sessionId: session.sessionId
     })
 
     if (!result?.success) {
@@ -655,14 +657,16 @@ const confirmArchiveSession = async () => {
 
 const confirmDeleteSession = async () => {
   const session = deleteTargetSession.value
-  if (!session?.sourcePath || !window.electronAPI?.deleteProjectAiSession || deleteLoading.value) return
+  const hasStableIdentifier = isCodexSession(session) ? session?.sessionId : session?.sourcePath
+  if (!hasStableIdentifier || !window.electronAPI?.deleteProjectAiSession || deleteLoading.value) return
 
   deleteLoading.value = true
 
   try {
     const result = await window.electronAPI.deleteProjectAiSession({
       provider: session.provider,
-      sourcePath: session.sourcePath
+      sourcePath: session.sourcePath,
+      sessionId: session.sessionId
     })
 
     if (!result?.success) {
@@ -685,7 +689,8 @@ const confirmDeleteSession = async () => {
 }
 
 const loadSessionDetail = async (session) => {
-  if (!window.electronAPI?.getProjectAiSessionDetail || !session?.sourcePath) {
+  const hasStableIdentifier = isCodexSession(session) ? session?.sessionId : session?.sourcePath
+  if (!window.electronAPI?.getProjectAiSessionDetail || !hasStableIdentifier) {
     detailLoading.value = false
     detailError.value = '当前环境不支持读取会话详情'
     return
@@ -695,6 +700,7 @@ const loadSessionDetail = async (session) => {
     const result = await window.electronAPI.getProjectAiSessionDetail({
       provider: session.provider,
       sourcePath: session.sourcePath,
+      sessionId: session.sessionId,
       projectPath: props.projectPath
     })
 

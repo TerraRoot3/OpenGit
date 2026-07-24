@@ -190,18 +190,48 @@ try {
   fs.mkdirSync(codexSessionDir, { recursive: true })
   const codexDeleteFile = path.join(codexSessionDir, 'delete-me.jsonl')
   fs.writeFileSync(codexDeleteFile, 'test')
+  const claudeSessionDir = path.join(fakeHomeDir, '.claude', 'projects', '-tmp-project')
+  fs.mkdirSync(claudeSessionDir, { recursive: true })
+  const claudeDeleteFile = path.join(claudeSessionDir, 'delete-me.jsonl')
+  fs.writeFileSync(claudeDeleteFile, 'test')
 
   const originalHomedir = os.homedir
   os.homedir = () => fakeHomeDir
 
   try {
-    const deleteResult = deleteAiSessionSource({
+    const rpcRequests = []
+    const deleteResult = await deleteAiSessionSource({
       provider: 'codex',
-      sourcePath: codexDeleteFile
+      sourcePath: codexDeleteFile,
+      sessionId: 'codex-delete-session',
+      rpcCall: async (request) => {
+        rpcRequests.push(request)
+        return {}
+      }
     })
 
-    assert.equal(deleteResult.deleted, true, 'delete handler should report deleted session files')
-    assert.equal(fs.existsSync(codexDeleteFile), false, 'delete handler should remove the session file')
+    assert.equal(deleteResult.deleted, true, 'Codex delete should report a successful app-server request')
+    assert.deepEqual(
+      {
+        method: rpcRequests[0].method,
+        params: rpcRequests[0].params
+      },
+      {
+        method: 'thread/delete',
+        params: {
+          threadId: 'codex-delete-session'
+        }
+      },
+      'Codex delete should use the stable session id'
+    )
+    assert.equal(fs.existsSync(codexDeleteFile), true, 'Codex should own deletion of its rollout file')
+
+    const claudeDeleteResult = await deleteAiSessionSource({
+      provider: 'claude',
+      sourcePath: claudeDeleteFile
+    })
+    assert.equal(claudeDeleteResult.deleted, true, 'Claude delete should still report deleted session files')
+    assert.equal(fs.existsSync(claudeDeleteFile), false, 'Claude delete should still remove its local session file')
   } finally {
     os.homedir = originalHomedir
   }
