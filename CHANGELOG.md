@@ -16,6 +16,8 @@ From this file onward:
 
 ### Fixed
 
+- 修复 Codex 长输出终端在收放左侧栏、连续拖动宽度时不能实时稳定保持贴底的问题。
+
 ### Refactored
 
 ### Docs

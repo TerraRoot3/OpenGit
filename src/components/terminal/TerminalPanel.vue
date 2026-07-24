@@ -251,8 +251,8 @@ import { isBufferViewportAtBottom } from './terminalViewportState.mjs'
 import {
   scheduleViewportRevealSync,
   cancelViewportRevealSync,
-  forceTerminalRenderGeometrySync,
-  forceViewportScrollAreaSync
+  forceViewportScrollAreaSync,
+  runViewportSyncPass
 } from './terminalViewportSync.mjs'
 import {
   resolveSinglePaneResizeRecoveryAction,
@@ -2009,39 +2009,39 @@ const syncSinglePaneViewport = (term, {
   forceViewportReconcile = true
 } = {}) => {
   if (!term?.xterm) return false
-  forceTerminalRenderGeometrySync(term)
-  try {
-    term.fitAddon?.fit?.()
-  } catch {}
-  try {
-    if (Number.isFinite(term.xterm.rows) && term.xterm.rows > 0) {
-      term.xterm.refresh(0, term.xterm.rows - 1)
+  const didSync = runViewportSyncPass({
+    term,
+    focus,
+    stickToBottom,
+    forceViewportReconcile,
+    reconcileViewport(immediate) {
+      forceViewportScrollAreaSync(term, immediate)
     }
-  } catch {}
-  if (focus) {
-    try {
-      term.xterm.focus()
-    } catch {}
-  }
-  if (stickToBottom) {
-    try {
-      term.xterm.scrollToBottom()
-    } catch {}
-    try {
-      if (Number.isFinite(term.xterm.rows) && term.xterm.rows > 0) {
-        term.xterm.refresh(0, term.xterm.rows - 1)
-      }
-    } catch {}
-  }
-  try {
-    if (stickToBottom || forceViewportReconcile) {
-      forceViewportScrollAreaSync(term, true)
-    }
-  } catch {}
+  })
+  if (!didSync) return false
   if (notifyPty) {
     applySinglePanePtyResizeIfChanged(term)
   }
   return true
+}
+
+const syncCurrentSinglePaneViewportDuringResize = () => {
+  const term = currentTerminal.value || terminals.value[0]
+  if (!term?.xterm) return false
+  const stickToBottom = singlePaneResizeRestoreToBottomLatched || shouldRestoreViewportToBottom({
+    restoreViewportToBottom: term.restoreViewportToBottom || singlePaneViewportRecoveryPending,
+    bufferAtBottom: isBufferViewportAtBottom(term.xterm?.buffer)
+  })
+  const didSync = syncSinglePaneViewport(term, {
+    notifyPty: false,
+    focus: false,
+    stickToBottom,
+    forceViewportReconcile: true
+  })
+  if (didSync) {
+    throttleSinglePanePtyResize(term)
+  }
+  return didSync
 }
 
 const reconcileCurrentSinglePaneViewport = ({ focus = false } = {}) => {
@@ -2817,8 +2817,10 @@ const handleContainerResize = () => {
         applyLayout(false)
         return
       }
-      // 灵动终端在项目内导航开关这类宽度变化后，还需要在尺寸稳定后补一次 reveal，
-      // 否则长输出终端可能停在旧 viewport 顶部。
+      // 持续拖宽度/收放导航时，先在当前动画帧按真实 rect reflow 并维持原有贴底意图；
+      // PTY resize 单独限频，避免把每帧几何变化都变成 SIGWINCH。
+      syncCurrentSinglePaneViewportDuringResize()
+      // 尺寸稳定后再补一次 reveal，覆盖 CSS 动画结束与 PTY 回流输出。
       scheduleSinglePaneViewportRevealAfterResize()
     })
     return

@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import {
   forceTerminalRenderGeometrySync,
+  fitTerminalViewport,
+  proposeTerminalViewportDimensions,
   runViewportSyncPass,
   scheduleViewportRevealSync,
-  forceViewportScrollAreaSync
+  forceViewportScrollAreaSync,
+  restoreTerminalViewportToBottom
 } from '../src/components/terminal/terminalViewportSync.mjs'
 
 const createStubTerm = () => {
@@ -29,6 +32,145 @@ const createStubTerm = () => {
     }
   }
   return { term, events }
+}
+
+{
+  const events = []
+  const term = {
+    xterm: {
+      rows: 24,
+      scrollToBottom() {
+        events.push('scrollToBottom')
+      },
+      refresh(start, end) {
+        events.push(`refresh:${start}-${end}`)
+      }
+    }
+  }
+
+  assert.equal(
+    restoreTerminalViewportToBottom(term, (immediate) => {
+      events.push(`syncScrollArea:${immediate}`)
+    }),
+    true,
+    'bottom restore should reconcile both sides of the logical scroll operation'
+  )
+  assert.deepEqual(
+    events,
+    [
+      'syncScrollArea:true',
+      'scrollToBottom',
+      'refresh:0-23',
+      'syncScrollArea:true'
+    ],
+    'continuous reflow should synchronize stale DOM geometry before and after restoring the buffer bottom'
+  )
+}
+
+{
+  const resizeCalls = []
+  const term = {
+    fitAddon: {
+      fit() {
+        resizeCalls.push('fallbackFit')
+      }
+    },
+    xterm: {
+      cols: 120,
+      rows: 30,
+      options: {
+        scrollback: 1500
+      },
+      element: {
+        parentElement: {
+          getBoundingClientRect() {
+            return { width: 640.8, height: 288.4 }
+          }
+        }
+      },
+      _core: {
+        viewport: {
+          scrollBarWidth: 14
+        },
+        _renderService: {
+          dimensions: {
+            css: {
+              cell: {
+                width: 8,
+                height: 16
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const dims = proposeTerminalViewportDimensions(term, (element) => ({
+    getPropertyValue(name) {
+      if (element === term.xterm.element) {
+        if (name === 'padding-top' || name === 'padding-bottom') return '4px'
+        if (name === 'padding-left' || name === 'padding-right') return '6px'
+      }
+      if (name === 'width') return '900px'
+      if (name === 'height') return '420px'
+      return '0px'
+    }
+  }))
+
+  assert.deepEqual(
+    dims,
+    { cols: 76, rows: 17 },
+    'viewport dimensions should be derived from the live parent rect rather than stale computed style sizes'
+  )
+
+  term.xterm._core._renderService.clear = () => {
+    resizeCalls.push('clear')
+  }
+  term.xterm.resize = (cols, rows) => {
+    resizeCalls.push(`resize:${cols}x${rows}`)
+    term.xterm.cols = cols
+    term.xterm.rows = rows
+  }
+
+  assert.equal(
+    fitTerminalViewport(term),
+    true,
+    'fit should succeed when live rect-based dimensions are available'
+  )
+  assert.deepEqual(
+    resizeCalls,
+    ['clear', 'resize:78x18'],
+    'fit should resize xterm from the live parent rect instead of delegating to the addon-fit fallback'
+  )
+}
+
+{
+  const { term, events } = createStubTerm()
+  assert.equal(
+    runViewportSyncPass({
+      term,
+      stickToBottom: true,
+      forceViewportReconcile: true,
+      reconcileViewport(immediate) {
+        events.push(`syncScrollArea:${immediate}`)
+      }
+    }),
+    true,
+    'live resize sync should fit and restore the bottom in the same animation frame'
+  )
+  assert.deepEqual(
+    events,
+    [
+      'fit',
+      'refresh:0-23',
+      'syncScrollArea:true',
+      'scrollToBottom',
+      'refresh:0-23',
+      'syncScrollArea:true'
+    ],
+    'live resize sync should not wait for the delayed reveal before reconciling a bottom-pinned viewport'
+  )
 }
 
 {
@@ -279,6 +421,7 @@ const createStubTerm = () => {
       'fit',
       'refresh:0-23',
       'resize:80x24',
+      'syncScrollArea:true',
       'scrollToBottom',
       'refresh:0-23',
       'syncScrollArea:true'
@@ -294,6 +437,7 @@ const createStubTerm = () => {
       'fit',
       'refresh:0-23',
       'resize:80x24',
+      'syncScrollArea:true',
       'scrollToBottom',
       'refresh:0-23',
       'syncScrollArea:true',
@@ -316,12 +460,14 @@ const createStubTerm = () => {
       'fit',
       'refresh:0-23',
       'resize:80x24',
+      'syncScrollArea:true',
       'scrollToBottom',
       'refresh:0-23',
       'syncScrollArea:true',
       'fit',
       'refresh:0-23',
       'resize:80x24',
+      'syncScrollArea:true',
       'scrollToBottom',
       'refresh:0-23',
       'syncScrollArea:true'
@@ -384,6 +530,7 @@ const createStubTerm = () => {
       'refresh:0-23',
       'resize:80x24',
       'focus',
+      'syncScrollArea:true',
       'scrollToBottom',
       'refresh:0-23',
       'syncScrollArea:true'
@@ -400,6 +547,7 @@ const createStubTerm = () => {
       'refresh:0-23',
       'resize:80x24',
       'focus',
+      'syncScrollArea:true',
       'scrollToBottom',
       'refresh:0-23',
       'syncScrollArea:true',
@@ -423,12 +571,14 @@ const createStubTerm = () => {
       'refresh:0-23',
       'resize:80x24',
       'focus',
+      'syncScrollArea:true',
       'scrollToBottom',
       'refresh:0-23',
       'syncScrollArea:true',
       'fit',
       'refresh:0-23',
       'resize:80x24',
+      'syncScrollArea:true',
       'scrollToBottom',
       'refresh:0-23',
       'syncScrollArea:true'

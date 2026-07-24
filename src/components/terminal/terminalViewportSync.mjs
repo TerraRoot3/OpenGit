@@ -1,6 +1,104 @@
 export const TERMINAL_VIEWPORT_SYNC_DELAY_MS = 120
 
 const isPositiveInteger = (value) => Number.isFinite(value) && value > 0
+const isPositiveNumber = (value) => Number.isFinite(value) && value > 0
+
+const readStyleDimensionPx = (style, name) => {
+  if (!style || typeof style.getPropertyValue !== 'function') return 0
+  const raw = Number.parseFloat(style.getPropertyValue(name))
+  return Number.isFinite(raw) ? raw : 0
+}
+
+const resolveElementSizeFromRect = (element) => {
+  const rect = element?.getBoundingClientRect?.()
+  const width = Number(rect?.width)
+  const height = Number(rect?.height)
+  if (!isPositiveNumber(width) || !isPositiveNumber(height)) return null
+  return { width, height }
+}
+
+export const proposeTerminalViewportDimensions = (
+  term,
+  getComputedStyleImpl = globalThis.window?.getComputedStyle?.bind(globalThis.window)
+) => {
+  const xterm = term?.xterm
+  const core = xterm?._core
+  const element = xterm?.element
+  const parent = element?.parentElement
+  const renderDimensions = core?._renderService?.dimensions?.css
+  const cellWidth = Number(renderDimensions?.cell?.width)
+  const cellHeight = Number(renderDimensions?.cell?.height)
+
+  if (!xterm || !core || !element || !parent) return null
+  if (!isPositiveNumber(cellWidth) || !isPositiveNumber(cellHeight)) return null
+
+  const parentRect = resolveElementSizeFromRect(parent)
+  if (!parentRect) return null
+
+  const parentStyle = typeof getComputedStyleImpl === 'function' ? getComputedStyleImpl(parent) : null
+  const elementStyle = typeof getComputedStyleImpl === 'function' ? getComputedStyleImpl(element) : null
+
+  const parentWidth = isPositiveNumber(parentRect.width)
+    ? parentRect.width
+    : readStyleDimensionPx(parentStyle, 'width')
+  const parentHeight = isPositiveNumber(parentRect.height)
+    ? parentRect.height
+    : readStyleDimensionPx(parentStyle, 'height')
+  if (!isPositiveNumber(parentWidth) || !isPositiveNumber(parentHeight)) return null
+
+  const verticalPadding =
+    readStyleDimensionPx(elementStyle, 'padding-top') +
+    readStyleDimensionPx(elementStyle, 'padding-bottom')
+  const horizontalPadding =
+    readStyleDimensionPx(elementStyle, 'padding-left') +
+    readStyleDimensionPx(elementStyle, 'padding-right')
+  const scrollBarWidth = xterm.options?.scrollback === 0 ? 0 : Number(core.viewport?.scrollBarWidth) || 0
+
+  const availableWidth = Math.max(0, parentWidth - horizontalPadding - scrollBarWidth)
+  const availableHeight = Math.max(0, parentHeight - verticalPadding)
+  if (!isPositiveNumber(availableWidth) || !isPositiveNumber(availableHeight)) return null
+
+  return {
+    cols: Math.max(2, Math.floor(availableWidth / cellWidth)),
+    rows: Math.max(1, Math.floor(availableHeight / cellHeight))
+  }
+}
+
+export const fitTerminalViewport = (term) => {
+  const xterm = term?.xterm
+  const core = xterm?._core
+  if (!term?.fitAddon || !xterm) return false
+
+  const proposed = proposeTerminalViewportDimensions(term)
+  if (!proposed) {
+    try {
+      term.fitAddon.fit()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  if (xterm.cols === proposed.cols && xterm.rows === proposed.rows) {
+    return true
+  }
+
+  try {
+    core?._renderService?.clear?.()
+  } catch {}
+
+  try {
+    xterm.resize(proposed.cols, proposed.rows)
+    return true
+  } catch {
+    try {
+      term.fitAddon.fit()
+      return true
+    } catch {
+      return false
+    }
+  }
+}
 
 export const forceTerminalRenderGeometrySync = (term) => {
   const xterm = term?.xterm
@@ -64,18 +162,48 @@ export const forceViewportScrollAreaSync = (term, immediate = true) => {
   return synced
 }
 
+export const restoreTerminalViewportToBottom = (
+  term,
+  reconcileViewport = (immediate) => forceViewportScrollAreaSync(term, immediate)
+) => {
+  if (!term?.xterm) return false
+
+  if (typeof reconcileViewport === 'function') {
+    try {
+      reconcileViewport(true)
+    } catch {}
+  }
+
+  try {
+    term.xterm.scrollToBottom()
+  } catch {}
+  try {
+    if (isPositiveInteger(term.xterm.rows)) {
+      term.xterm.refresh(0, term.xterm.rows - 1)
+    }
+  } catch {}
+
+  if (typeof reconcileViewport === 'function') {
+    try {
+      reconcileViewport(true)
+    } catch {}
+  }
+
+  return true
+}
+
 export const runViewportSyncPass = ({
   term,
   resizePty,
-  focus = false
+  focus = false,
+  stickToBottom = false,
+  forceViewportReconcile = false,
+  reconcileViewport
 } = {}) => {
   if (!term?.fitAddon || !term?.xterm) return false
 
   forceTerminalRenderGeometrySync(term)
-
-  try {
-    term.fitAddon.fit()
-  } catch {}
+  fitTerminalViewport(term)
 
   try {
     if (isPositiveInteger(term.xterm.rows)) {
@@ -97,6 +225,14 @@ export const runViewportSyncPass = ({
     } catch {}
   }
 
+  if (stickToBottom) {
+    restoreTerminalViewportToBottom(term, reconcileViewport)
+  } else if (forceViewportReconcile && typeof reconcileViewport === 'function') {
+    try {
+      reconcileViewport(true)
+    } catch {}
+  }
+
   return true
 }
 
@@ -109,17 +245,8 @@ const runViewportRestorePass = ({
   if (!term?.xterm) return false
 
   if (stickToBottom) {
-    try {
-      term.xterm.scrollToBottom()
-    } catch {}
-    try {
-      if (isPositiveInteger(term.xterm.rows)) {
-        term.xterm.refresh(0, term.xterm.rows - 1)
-      }
-    } catch {}
-  }
-
-  if ((stickToBottom || forceViewportReconcile) && typeof reconcileViewport === 'function') {
+    restoreTerminalViewportToBottom(term, reconcileViewport)
+  } else if (forceViewportReconcile && typeof reconcileViewport === 'function') {
     try {
       reconcileViewport(true)
     } catch {}
