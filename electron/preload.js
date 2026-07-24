@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     send: (data) => ipcRenderer.invoke('codex-main-send', data),
     interrupt: (data) => ipcRenderer.invoke('codex-main-interrupt', data),
     newSession: () => ipcRenderer.invoke('codex-main-new-session'),
+    deleteSession: (data) => ipcRenderer.invoke('codex-main-delete-session', data),
     restart: () => ipcRenderer.invoke('codex-main-restart'),
     getConfig: () => ipcRenderer.invoke('codex-main-get-config'),
     saveConfig: (data) => ipcRenderer.invoke('codex-main-save-config', data),

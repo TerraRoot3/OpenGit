@@ -214,6 +214,40 @@ assert.notEqual(
   'different Feishu configurations must receive different Codex threads'
 )
 
+const deletionStore = new MemoryStore()
+const deletionService = new CodexMainSessionService({
+  store: deletionStore,
+  getMainWindow: () => null
+})
+const deletionRequests = []
+deletionService.startServer = async () => true
+deletionService.request = async (method, params) => {
+  deletionRequests.push({ method, params })
+  return {}
+}
+const removableSession = deletionService.createNewSession()
+deletionService.getSession(removableSession.id).threadId = 'thread-removable'
+const removalResult = await deletionService.deleteSession(removableSession.id)
+assert.equal(removalResult.deleted, true)
+assert.equal(removalResult.reset, false)
+assert.equal(deletionService.getSession(removableSession.id), null)
+assert.equal(deletionService.activeSessionId, 'main')
+assert.deepEqual(deletionRequests[0], {
+  method: 'thread/delete',
+  params: { threadId: 'thread-removable' }
+})
+
+deletionService.getSession('main').threadId = 'thread-main'
+deletionService.loadedSessionIds.add('main')
+const mainRemovalResult = await deletionService.deleteSession('main')
+assert.equal(mainRemovalResult.reset, true)
+assert.equal(deletionService.getSession('main').threadId, '')
+assert.equal(deletionService.loadedSessionIds.has('main'), false)
+assert.deepEqual(deletionRequests[1], {
+  method: 'thread/delete',
+  params: { threadId: 'thread-main' }
+})
+
 const bridgeOptions = []
 let bridgeStartCount = 0
 let bridgeStopCount = 0

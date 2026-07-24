@@ -527,6 +527,54 @@ class CodexMainSessionService {
     return this.getPublicSession(session)
   }
 
+  async deleteSession(sessionId) {
+    const session = this.getSession(sessionId)
+    if (!session) throw new Error('会话不存在或已失效')
+    const queue = this.getSessionQueue(session.id)
+    if (
+      this.activeTasks.has(session.id)
+      || this.processingSessionIds.has(session.id)
+      || queue.length > 0
+    ) {
+      throw new Error('当前会话仍有执行中或排队中的任务，请先等待完成或中断任务')
+    }
+
+    if (this.ensureThreadPromises.has(session.id)) {
+      await this.ensureThreadPromises.get(session.id)
+    }
+    const threadId = String(session.threadId || '').trim()
+    if (threadId) {
+      await this.request('thread/delete', { threadId }, 60 * 1000)
+    }
+
+    const isMainSession = session.id === MAIN_SESSION_ID
+    if (isMainSession) {
+      this.sessions.set(MAIN_SESSION_ID, createDefaultSession())
+    } else {
+      this.sessions.delete(session.id)
+    }
+    this.loadedSessionIds.delete(session.id)
+    this.ensureThreadPromises.delete(session.id)
+    this.sessionQueues.delete(session.id)
+    for (const messageKey of Array.from(this.liveMessages.keys())) {
+      if (messageKey.startsWith(`${session.id}:`)) {
+        this.liveMessages.delete(messageKey)
+      }
+    }
+
+    if (this.activeSessionId === session.id && !isMainSession) {
+      this.activeSessionId = this.listSessions()[0]?.id || MAIN_SESSION_ID
+    }
+    this.persistSessions()
+    this.broadcast('history-reset', { sessionId: session.id })
+    this.broadcastState()
+    return {
+      deleted: true,
+      reset: isMainSession,
+      activeSessionId: this.activeSessionId
+    }
+  }
+
   getState() {
     const activeSession = this.getSession() || this.getSession(MAIN_SESSION_ID)
     const activeTask = activeSession
@@ -1443,6 +1491,15 @@ function registerCodexMainSessionHandlers({
       return { success: true, session, state: service.getState() }
     } catch (error) {
       return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('codex-main-delete-session', async (event, payload = {}) => {
+    try {
+      const result = await service.deleteSession(payload?.sessionId)
+      return { success: true, ...result, state: service.getState() }
+    } catch (error) {
+      return { success: false, error: error.message, state: service.getState() }
     }
   })
 

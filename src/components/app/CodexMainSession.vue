@@ -23,37 +23,63 @@
         </div>
 
         <div class="session-list">
-          <button
+          <div
             v-for="session in state.sessions"
             :key="session.id"
             class="session-item"
             :class="{ active: session.id === state.activeSessionId }"
-            type="button"
-            @click="switchSession(session.id)"
           >
-            <span class="session-item-icon" :class="{ feishu: session.source === 'feishu' }">
-              <Link2 v-if="session.source === 'feishu'" :size="14" aria-hidden="true" />
-              <MessageSquare v-else :size="14" aria-hidden="true" />
-            </span>
-            <span class="session-item-copy">
-              <span class="session-item-title">
-                <strong :title="session.title">{{ session.title }}</strong>
-                <Loader2
-                  v-if="session.turnStatus === 'running'"
-                  :size="12"
-                  class="spinning"
-                  aria-hidden="true"
-                />
-                <span v-else-if="session.queueLength > 0" class="session-queue-badge">
-                  {{ session.queueLength }}
-                </span>
+            <button
+              class="session-select-action"
+              type="button"
+              @click="switchSession(session.id)"
+            >
+              <span class="session-item-icon" :class="{ feishu: session.source === 'feishu' }">
+                <Link2 v-if="session.source === 'feishu'" :size="14" aria-hidden="true" />
+                <MessageSquare v-else :size="14" aria-hidden="true" />
               </span>
-              <small :title="session.lastMessage || session.chatId">
-                {{ session.lastMessage || sessionMetaLabel(session) }}
-              </small>
-            </span>
-            <time>{{ formatSessionTime(session.updatedAt) }}</time>
-          </button>
+              <span class="session-item-copy">
+                <span class="session-item-title">
+                  <strong :title="session.title">{{ session.title }}</strong>
+                  <Loader2
+                    v-if="session.turnStatus === 'running'"
+                    :size="12"
+                    class="spinning"
+                    aria-hidden="true"
+                  />
+                  <span v-else-if="session.queueLength > 0" class="session-queue-badge">
+                    {{ session.queueLength }}
+                  </span>
+                </span>
+                <small :title="session.lastMessage || session.chatId">
+                  {{ session.lastMessage || sessionMetaLabel(session) }}
+                </small>
+              </span>
+              <time>{{ formatSessionTime(session.updatedAt) }}</time>
+            </button>
+            <button
+              class="session-delete-action"
+              type="button"
+              :aria-label="session.id === 'main' ? '清空主会话' : `删除会话 ${session.title}`"
+              :title="session.turnStatus === 'running' || session.queueLength > 0
+                ? '会话有任务执行中，暂时不能删除'
+                : (session.id === 'main' ? '清空主会话' : '删除会话')"
+              :disabled="
+                deletingSessionId === session.id
+                || session.turnStatus === 'running'
+                || session.queueLength > 0
+              "
+              @click="deleteSession(session)"
+            >
+              <Loader2
+                v-if="deletingSessionId === session.id"
+                :size="13"
+                class="spinning"
+                aria-hidden="true"
+              />
+              <Trash2 v-else :size="13" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         <div class="session-sidebar-footer">
@@ -540,6 +566,7 @@ const isSending = ref(false)
 const isRestarting = ref(false)
 const isRefreshingAccount = ref(false)
 const isSavingSettings = ref(false)
+const deletingSessionId = ref('')
 let shouldStickToBottom = true
 let removeEventListener = null
 let historyLoadSequence = 0
@@ -909,6 +936,47 @@ const createNewSession = async () => {
     resizeComposer()
   } catch (error) {
     pageError.value = error?.message || '新建会话失败'
+  }
+}
+
+const deleteSession = async (session) => {
+  const sessionId = String(session?.id || '').trim()
+  if (!codexApi || !sessionId || deletingSessionId.value) return
+  const isMainSession = sessionId === 'main'
+  const confirmed = await showConfirm({
+    title: isMainSession ? '清空主会话' : '删除会话',
+    message: isMainSession
+      ? '确定清空主会话吗？对应的 Codex 会话记录和全部上下文都会被永久删除。'
+      : `确定删除“${session.title || '未命名会话'}”吗？对应的 Codex 会话记录和全部上下文都会被永久删除。`,
+    type: 'warning',
+    confirmText: isMainSession ? '清空会话' : '删除会话',
+    cancelText: '取消'
+  })
+  if (!confirmed) return
+
+  const wasActive = state.activeSessionId === sessionId
+  deletingSessionId.value = sessionId
+  pageError.value = ''
+  try {
+    const result = await codexApi.deleteSession({ sessionId })
+    if (result?.state) applyState(result.state)
+    if (!result?.success) throw new Error(result?.error || '会话删除失败')
+    historyLoadSequence += 1
+    messageCache.delete(sessionId)
+    if (wasActive) {
+      messages.value = []
+      shouldStickToBottom = true
+      if (!result.reset && state.activeSessionId) {
+        await loadHistory(state.activeSessionId)
+      } else {
+        isLoadingHistory.value = false
+        await scrollToBottom(true)
+      }
+    }
+  } catch (error) {
+    pageError.value = error?.message || '会话删除失败'
+  } finally {
+    deletingSessionId.value = ''
   }
 }
 
@@ -1341,17 +1409,14 @@ button:disabled {
   display: grid;
   width: 100%;
   min-width: 0;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 26px;
   align-items: center;
-  gap: 8px;
-  padding: 9px 8px;
+  gap: 2px;
+  padding: 4px;
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
   color: var(--theme-sem-text-secondary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
 .session-item + .session-item {
@@ -1366,6 +1431,52 @@ button:disabled {
   border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 28%, var(--theme-sem-border-default));
   background: color-mix(in srgb, var(--theme-sem-accent-primary) 11%, var(--theme-sem-surface-2));
   color: var(--theme-sem-text-primary);
+}
+
+.session-select-action {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-delete-action {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--theme-sem-text-muted);
+  opacity: 0.58;
+  cursor: pointer;
+}
+
+.session-item:hover .session-delete-action,
+.session-delete-action:focus-visible {
+  color: var(--theme-sem-accent-danger);
+  opacity: 1;
+}
+
+.session-delete-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--theme-sem-accent-danger) 12%, transparent);
+}
+
+.session-delete-action:disabled {
+  color: var(--theme-sem-text-muted);
+  cursor: not-allowed;
+  opacity: 0.36;
 }
 
 .session-item-icon {
@@ -2181,9 +2292,9 @@ button:disabled {
 
 .session-item {
   min-height: 52px;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: 9px;
-  padding: 8px;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  gap: 3px;
+  padding: 4px;
   border-radius: 11px;
   transition:
     background-color 140ms ease,
@@ -2200,6 +2311,12 @@ button:disabled {
   border-color: color-mix(in srgb, var(--theme-sem-accent-primary) 24%, var(--theme-sem-border-default));
   background: color-mix(in srgb, var(--theme-sem-accent-primary) 10%, var(--theme-sem-surface-2));
   box-shadow: inset 3px 0 0 var(--theme-sem-accent-primary);
+}
+
+.session-select-action {
+  min-height: 42px;
+  gap: 9px;
+  padding: 4px;
 }
 
 .session-item-icon {
