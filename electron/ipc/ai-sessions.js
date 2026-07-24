@@ -1408,7 +1408,16 @@ async function loadCodexSessionsLatest(homeDir = os.homedir(), {
         hasPendingSummaryRefresh: false
       }
     } catch (error) {
-      return loadCodexSessions(normalizedHomeDir)
+      if (
+        codexSessionsCache.source === 'app-server'
+        && codexSessionsCache.homeDir === normalizedHomeDir
+      ) {
+        return {
+          sessions: codexSessionsCache.sessions,
+          hasPendingSummaryRefresh: false
+        }
+      }
+      throw error
     }
   })()
 

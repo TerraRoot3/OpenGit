@@ -230,6 +230,17 @@ async function run() {
     'app-server second timestamps should normalize to milliseconds'
   )
 
+  __testables.resetSessionCaches()
+  await assert.rejects(
+    () => __testables.loadCodexSessionsLatest(homeDir, {
+      listThreads: async () => {
+        throw new Error('app-server unavailable')
+      }
+    }),
+    /app-server unavailable/,
+    'app-server failures must not fall back to stale local rows'
+  )
+
   const thread = {
     id: fallbackSessionId,
     cwd: '/tmp/fallback-project',
