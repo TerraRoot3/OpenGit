@@ -23,15 +23,18 @@
               @click="selectPipeline(pipeline.id)"
             >
               <div class="pipeline-row top">
-                <div class="pipeline-ref">
+                <div class="pipeline-workflow">
                   <span :class="['status-dot', statusClass(pipeline.status)]"></span>
-                  <span>{{ getPipelineDisplayRef(pipeline) }}</span>
+                  <span class="pipeline-workflow-name">{{ getPipelineTitle(pipeline) }}</span>
                 </div>
                 <span class="pipeline-time">{{ formatTime(pipeline.updatedAt || pipeline.createdAt) }}</span>
               </div>
               <div class="pipeline-row bottom">
-                <span :class="['pipeline-status', statusTextClass(pipeline.status)]">{{ getStatusLabel(pipeline.status) }}</span>
-                <span class="pipeline-id">#{{ pipeline.id }}</span>
+                <div class="pipeline-meta">
+                  <span :class="['pipeline-status', statusTextClass(pipeline.status)]">{{ getStatusLabel(pipeline.status) }}</span>
+                  <span v-if="getPipelineSecondary(pipeline)" class="pipeline-target">{{ getPipelineSecondary(pipeline) }}</span>
+                </div>
+                <span class="pipeline-id">#{{ getPipelineDisplayNumber(pipeline) }}</span>
               </div>
             </button>
 
@@ -43,15 +46,18 @@
               @click="selectPipeline(pipeline.id)"
             >
               <div class="pipeline-row top">
-                <div class="pipeline-ref">
+                <div class="pipeline-workflow">
                   <span :class="['status-dot', statusClass(pipeline.status)]"></span>
-                  <span>{{ getPipelineDisplayRef(pipeline) }}</span>
+                  <span class="pipeline-workflow-name">{{ getPipelineTitle(pipeline) }}</span>
                 </div>
                 <span class="pipeline-time">{{ formatTime(pipeline.updatedAt || pipeline.createdAt) }}</span>
               </div>
               <div class="pipeline-row bottom">
-                <span :class="['pipeline-status', statusTextClass(pipeline.status)]">{{ getStatusLabel(pipeline.status) }}</span>
-                <span class="pipeline-id">#{{ pipeline.id }}</span>
+                <div class="pipeline-meta">
+                  <span :class="['pipeline-status', statusTextClass(pipeline.status)]">{{ getStatusLabel(pipeline.status) }}</span>
+                  <span v-if="getPipelineSecondary(pipeline)" class="pipeline-target">{{ getPipelineSecondary(pipeline) }}</span>
+                </div>
+                <span class="pipeline-id">#{{ getPipelineDisplayNumber(pipeline) }}</span>
               </div>
             </button>
 
@@ -59,7 +65,7 @@
               v-if="!loading && activePipelines.length === 0 && recentPipelines.length === 0"
               class="pipeline-tip"
             >
-              当前项目暂无可展示的流水线
+              {{ emptyMessage }}
             </div>
           </template>
         </div>
@@ -68,7 +74,10 @@
       <div class="pipeline-detail-panel">
         <div class="pipeline-detail-header">
           <div class="header-left">
-            <span v-if="selectedPipeline">流水线 #{{ selectedPipeline.id }}</span>
+            <template v-if="selectedPipeline">
+              <span class="pipeline-header-title">{{ getPipelineTitle(selectedPipeline) }}</span>
+              <span class="pipeline-header-number">{{ selectedPipeline.providerLabel || pipelineProviderLabel }} · #{{ getPipelineDisplayNumber(selectedPipeline) }}</span>
+            </template>
             <span v-else>选择流水线查看详情</span>
           </div>
           <button
@@ -92,12 +101,12 @@
               </span>
             </div>
             <div class="summary-card">
-              <span class="summary-label">目标</span>
-              <span class="summary-value">{{ getPipelineDisplayRef(selectedPipeline) }}</span>
+              <span class="summary-label">{{ selectedPipeline.provider === 'github' ? '工作流' : '目标' }}</span>
+              <span class="summary-value">{{ selectedPipeline.provider === 'github' ? getPipelineTitle(selectedPipeline) : getPipelineDisplayRef(selectedPipeline) }}</span>
             </div>
             <div class="summary-card">
-              <span class="summary-label">来源</span>
-              <span class="summary-value">{{ selectedPipeline.source || '-' }}</span>
+              <span class="summary-label">{{ selectedPipeline.provider === 'github' ? '目标' : '来源' }}</span>
+              <span class="summary-value">{{ selectedPipeline.provider === 'github' ? getPipelineDisplayRef(selectedPipeline) : (selectedPipeline.source || '-') }}</span>
             </div>
             <div class="summary-card">
               <span class="summary-label">耗时</span>
@@ -120,7 +129,15 @@
                 </div>
               </div>
               <div class="job-list">
-                <div v-for="job in stage.jobs" :key="job.id" class="job-item">
+                <button
+                  v-for="job in stage.jobs"
+                  :key="job.id"
+                  type="button"
+                  :class="['job-item', { clickable: job.webUrl }]"
+                  :disabled="!job.webUrl"
+                  :title="job.webUrl ? `在 ${pipelineProviderLabel} 中打开 ${job.name}` : ''"
+                  @click="openPipelineWebUrl(job.webUrl)"
+                >
                   <div class="job-main">
                     <span :class="['status-dot', statusClass(job.status)]"></span>
                     <span class="job-name">{{ job.name }}</span>
@@ -129,7 +146,7 @@
                     <span :class="['job-status', statusTextClass(job.status)]">{{ getStatusLabel(job.status) }}</span>
                     <span class="job-duration">{{ formatJobDuration(job) }}</span>
                   </div>
-                </div>
+                </button>
               </div>
             </div>
           </div>
@@ -163,16 +180,23 @@ const selectedPipelineId = ref(null)
 const pipelineDetail = ref(null)
 const pipelineProvider = ref('')
 const isDocumentVisible = ref(typeof document === 'undefined' ? true : document.visibilityState === 'visible')
+const PIPELINE_ACTIVE_POLL_INTERVAL_MS = 15000
+const PIPELINE_IDLE_POLL_INTERVAL_MS = 120000
 let pollTimer = null
 
 const totalPipelineCount = computed(() => activePipelines.value.length + recentPipelines.value.length)
 const pipelineProviderLabel = computed(() => {
   if (pipelineDetail.value?.providerLabel) return pipelineDetail.value.providerLabel
   if (selectedPipeline.value?.providerLabel) return selectedPipeline.value.providerLabel
-  if (pipelineProvider.value === 'github') return 'GitHub'
+  if (pipelineProvider.value === 'github') return 'GitHub Actions'
   if (pipelineProvider.value === 'gitlab') return 'GitLab'
   return '流水线'
 })
+const emptyMessage = computed(() => (
+  pipelineProvider.value === 'github'
+    ? '当前 GitHub 仓库暂无 Actions 运行记录'
+    : '当前项目暂无可展示的流水线'
+))
 const selectedPipeline = computed(() => {
   const pipeline = activePipelines.value.find(item => item.id === selectedPipelineId.value)
     || recentPipelines.value.find(item => item.id === selectedPipelineId.value)
@@ -190,7 +214,9 @@ const clearPollTimer = () => {
 const schedulePoll = () => {
   clearPollTimer()
   if (!props.isActive || !isDocumentVisible.value || typeof window === 'undefined') return
-  const delay = activePipelines.value.length > 0 ? 6000 : 60000
+  const delay = activePipelines.value.length > 0
+    ? PIPELINE_ACTIVE_POLL_INTERVAL_MS
+    : PIPELINE_IDLE_POLL_INTERVAL_MS
   pollTimer = window.setTimeout(() => {
     pollTimer = null
     loadPipelines({ silent: true })
@@ -218,6 +244,23 @@ const getPipelineDisplayRef = (pipeline) => {
   if (!pipeline) return '-'
   if (!pipeline.ref) return pipeline.name || `运行 #${pipeline.iid || pipeline.id}`
   return pipeline.isTag ? `标签 · ${pipeline.ref}` : `分支 · ${pipeline.ref}`
+}
+
+const getPipelineDisplayNumber = (pipeline) => (
+  pipeline?.runNumber || pipeline?.iid || pipeline?.id || '-'
+)
+
+const getPipelineTitle = (pipeline) => {
+  if (!pipeline) return '-'
+  if (pipeline.provider === 'github') {
+    return pipeline.workflowName || pipeline.name || pipeline.displayTitle || getPipelineDisplayRef(pipeline)
+  }
+  return getPipelineDisplayRef(pipeline)
+}
+
+const getPipelineSecondary = (pipeline) => {
+  if (!pipeline || pipeline.provider !== 'github') return ''
+  return getPipelineDisplayRef(pipeline)
 }
 
 const formatTime = (value) => {
@@ -436,6 +479,26 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.pipeline-header-title,
+.pipeline-workflow-name,
+.pipeline-target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipeline-header-title {
+  color: var(--theme-sem-text-primary);
+}
+
+.pipeline-header-number {
+  color: var(--theme-sem-text-muted);
+  font-size: 11px;
+  font-weight: normal;
+  flex-shrink: 0;
 }
 
 .panel-count {
@@ -505,7 +568,7 @@ onUnmounted(() => {
 .pipeline-item.active .pipeline-row,
 .pipeline-item.active .pipeline-label,
 .pipeline-item.active .pipeline-meta,
-.pipeline-item.active .pipeline-ref {
+.pipeline-item.active .pipeline-workflow {
   color: var(--theme-comp-selected-text);
 }
 
@@ -520,13 +583,27 @@ onUnmounted(() => {
   margin-top: 6px;
 }
 
-.pipeline-ref {
+.pipeline-workflow,
+.pipeline-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-width: 0;
-  color: var(--theme-sem-text-secondary);
+}
+
+.pipeline-workflow {
+  gap: 8px;
+  color: var(--theme-sem-text-primary);
   font-size: 12px;
+  font-weight: 500;
+}
+
+.pipeline-meta {
+  gap: 7px;
+}
+
+.pipeline-target {
+  color: var(--theme-sem-text-muted);
+  font-size: 11px;
 }
 
 .pipeline-time,
@@ -655,9 +732,26 @@ onUnmounted(() => {
 }
 
 .job-item {
+  width: 100%;
+  border: 0;
   padding: 8px 10px;
   border-radius: 10px;
   background: color-mix(in srgb, var(--theme-sem-hover) 34%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.job-item.clickable {
+  cursor: pointer;
+}
+
+.job-item.clickable:hover {
+  background: var(--theme-sem-hover);
+}
+
+.job-item:disabled {
+  opacity: 1;
 }
 
 .job-main {

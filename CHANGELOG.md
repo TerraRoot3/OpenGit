@@ -16,10 +16,13 @@ From this file onward:
 
 ### Changed
 
+- 项目流水线适配 GitHub Actions：优先识别 GitHub remote，支持 SSH URL 与 GitHub Enterprise，并在未单独配置 Token 时复用本机 `gh` 登录；列表突出工作流、分支或标签和运行编号，任务可直接用系统浏览器打开，同时放宽前台运行与空闲状态下的轮询间隔。
+
 ### Fixed
 
 - 修复同一飞书群内多个机器人只要消息包含任意 `@` 就会同时响应的问题；每个连接会读取自身机器人 `open_id`，群消息仅在明确提及当前机器人时进入对应 Codex 会话。
 - 为飞书长连接补充心跳失活超时，收不到 pong 或其他服务端消息时主动断开并进入 SDK 自动重连。
+- 修复 GitHub 仓库会先误入 GitLab 流水线解析、匿名 Actions API 额度容易耗尽，以及 GitHub 运行列表显示内部大 ID、版本标签被标成分支的问题。
 
 ### Refactored
 

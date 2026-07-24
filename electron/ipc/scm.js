@@ -1,6 +1,8 @@
 function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, executeGitCommand, executeGitCommandWithOutput, checkAndFixRemoteUrl, getGitlabProjectId, safeLog, safeError }) {
   const fsp = fs.promises
   const ACTIVE_PIPELINE_STATUSES = new Set(['running', 'pending', 'preparing', 'waiting_for_resource', 'created'])
+  const GITHUB_AUTH_CACHE_TTL_MS = 10 * 60 * 1000
+  const githubAuthCache = new Map()
   const getMainWindow = () => {
     const windows = BrowserWindow.getAllWindows()
     return windows.find(w => w.webContents.getURL().includes('localhost:5173')) || windows[0]
@@ -38,66 +40,162 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
     return null
   }
 
-  const parseGithubRemote = (remoteUrl = '') => {
+  const normalizeBaseUrl = (value = '') => {
+    try {
+      const parsed = new URL(String(value || '').trim())
+      return `${parsed.protocol}//${parsed.host}`.replace(/\/+$/, '')
+    } catch {
+      return String(value || '').trim().replace(/\/+$/, '')
+    }
+  }
+
+  const getGithubConfigs = (repoPath = '') => {
+    const configs = []
+    if (repoPath) {
+      const projectConfigKey = `gitlab-config-${repoPath.replace(/[^a-zA-Z0-9]/g, '_')}`
+      const projectConfig = store.get(projectConfigKey, null)
+      if (projectConfig?.platform === 'github') configs.push(projectConfig)
+    }
+    const currentConfig = store.get('gitlab-config', null)
+    if (currentConfig?.platform === 'github') configs.push(currentConfig)
+    const history = store.get('gitlabHistory', [])
+    for (const config of Array.isArray(history) ? history : []) {
+      if (config?.platform === 'github') configs.push(config)
+    }
+    return configs
+  }
+
+  const getKnownGithubHosts = (repoPath = '') => {
+    const hosts = new Set(['github.com'])
+    for (const config of getGithubConfigs(repoPath)) {
+      try {
+        const host = new URL(String(config?.url || '')).hostname.toLowerCase()
+        if (host) hosts.add(host)
+      } catch {}
+    }
+    return hosts
+  }
+
+  const parseGithubRemote = (remoteUrl = '', repoPath = '') => {
     const normalized = typeof remoteUrl === 'string' ? remoteUrl.trim() : ''
     if (!normalized) return null
+    let hostname = ''
+    let pathname = ''
 
-    let match = normalized.match(/^git@github\.com:(.+?)(?:\.git)?$/)
-    if (match) {
-      const repoPath = match[1].replace(/\.git$/, '')
-      const [owner, repo] = repoPath.split('/')
-      if (owner && repo) {
-        return {
-          baseUrl: 'https://github.com',
-          repoPath,
-          owner,
-          repo
-        }
+    const scpMatch = normalized.match(/^(?:[^@]+@)?([^:]+):(.+)$/)
+    if (scpMatch && !normalized.includes('://')) {
+      hostname = scpMatch[1]
+      pathname = scpMatch[2]
+    } else {
+      try {
+        const parsed = new URL(normalized)
+        hostname = parsed.hostname
+        pathname = parsed.pathname
+      } catch {
+        return null
       }
     }
 
-    match = normalized.match(/^https:\/\/github\.com\/(.+?)(?:\.git)?$/)
-    if (match) {
-      const repoPath = match[1].replace(/\.git$/, '')
-      const [owner, repo] = repoPath.split('/')
-      if (owner && repo) {
-        return {
-          baseUrl: 'https://github.com',
-          repoPath,
-          owner,
-          repo
-        }
-      }
+    const normalizedHost = String(hostname || '').trim().toLowerCase()
+    if (!normalizedHost || !getKnownGithubHosts(repoPath).has(normalizedHost)) return null
+    const segments = String(pathname || '')
+      .replace(/^\/+|\/+$/g, '')
+      .replace(/\.git$/i, '')
+      .split('/')
+      .filter(Boolean)
+    if (segments.length !== 2) return null
+    const [owner, repo] = segments
+    return {
+      baseUrl: `https://${normalizedHost}`,
+      apiBaseUrl: normalizedHost === 'github.com'
+        ? 'https://api.github.com'
+        : `https://${normalizedHost}/api/v3`,
+      hostname: normalizedHost,
+      repoPath: `${owner}/${repo}`,
+      owner,
+      repo
     }
-
-    return null
   }
 
   const findMatchingGitlabConfig = ({ baseUrl = '', repoPath = '' } = {}) => {
     if (!baseUrl) return null
     const projectConfigKey = `gitlab-config-${repoPath.replace(/[^a-zA-Z0-9]/g, '_')}`
     const projectConfig = store.get(projectConfigKey, null)
-    if (projectConfig?.url === baseUrl && projectConfig?.token) {
+    if (
+      projectConfig?.platform !== 'github'
+      && projectConfig?.platform !== 'gitee'
+      && normalizeBaseUrl(projectConfig?.url) === normalizeBaseUrl(baseUrl)
+      && projectConfig?.token
+    ) {
       return projectConfig
     }
 
     const currentGitlabConfig = store.get('gitlab-config', null)
-    if (currentGitlabConfig?.url === baseUrl && currentGitlabConfig?.token) {
+    if (
+      currentGitlabConfig?.platform !== 'github'
+      && currentGitlabConfig?.platform !== 'gitee'
+      && normalizeBaseUrl(currentGitlabConfig?.url) === normalizeBaseUrl(baseUrl)
+      && currentGitlabConfig?.token
+    ) {
       return currentGitlabConfig
     }
 
     const gitlabHistory = store.get('gitlabHistory', [])
-    return gitlabHistory.find(config => config?.url === baseUrl && config?.token) || null
+    return gitlabHistory.find(config => (
+      config?.platform !== 'github'
+      && config?.platform !== 'gitee'
+      && normalizeBaseUrl(config?.url) === normalizeBaseUrl(baseUrl)
+      && config?.token
+    )) || null
   }
 
-  const findMatchingGithubConfig = () => {
-    const currentGitlabConfig = store.get('gitlab-config', null)
-    if (currentGitlabConfig?.platform === 'github' && currentGitlabConfig?.token) {
-      return currentGitlabConfig
-    }
+  const findMatchingGithubConfig = (baseUrl = 'https://github.com', repoPath = '') => {
+    const normalizedBaseUrl = normalizeBaseUrl(baseUrl)
+    return getGithubConfigs(repoPath).find(config => (
+      normalizeBaseUrl(config?.url || 'https://github.com') === normalizedBaseUrl
+      && config?.token
+    )) || null
+  }
 
-    const gitlabHistory = store.get('gitlabHistory', [])
-    return gitlabHistory.find(config => config?.platform === 'github' && config?.token) || null
+  const resolveGhExecutable = () => {
+    const candidates = process.platform === 'win32'
+      ? [
+          process.env.GH_PATH,
+          process.env.ProgramFiles
+            ? path.join(process.env.ProgramFiles, 'GitHub CLI', 'gh.exe')
+            : '',
+          'gh.exe'
+        ]
+      : [
+          process.env.GH_PATH,
+          '/opt/homebrew/bin/gh',
+          '/usr/local/bin/gh',
+          '/usr/bin/gh',
+          'gh'
+        ]
+    return candidates.find(candidate => (
+      candidate && (candidate === 'gh' || candidate === 'gh.exe' || fs.existsSync(candidate))
+    )) || 'gh'
+  }
+
+  const resolveGhAuthToken = async (hostname, repoPath) => {
+    const normalizedHost = String(hostname || 'github.com').trim().toLowerCase()
+    const cached = githubAuthCache.get(normalizedHost)
+    if (cached && cached.expiresAt > Date.now()) return cached.token
+
+    const result = await executeGitCommand([
+      resolveGhExecutable(),
+      'auth',
+      'token',
+      '--hostname',
+      normalizedHost
+    ], repoPath)
+    const token = result.success ? String(result.stdout || '').trim() : ''
+    githubAuthCache.set(normalizedHost, {
+      token,
+      expiresAt: Date.now() + (token ? GITHUB_AUTH_CACHE_TTL_MS : 60 * 1000)
+    })
+    return token
   }
 
   const resolveGitlabRepoContext = async (repoPath) => {
@@ -153,22 +251,31 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
       return { success: false, message: '未检测到 origin remote' }
     }
 
-    const parsedRemote = parseGithubRemote(remoteResult.stdout.trim())
+    const parsedRemote = parseGithubRemote(remoteResult.stdout.trim(), repoPath)
     if (!parsedRemote?.owner || !parsedRemote?.repo) {
       return { success: false, message: '无法解析 GitHub remote' }
     }
 
-    const matchedConfig = findMatchingGithubConfig()
+    const matchedConfig = findMatchingGithubConfig(parsedRemote.baseUrl, repoPath)
+    const ghToken = await resolveGhAuthToken(parsedRemote.hostname, repoPath)
+    const tokens = Array.from(new Set([
+      String(matchedConfig?.token || '').trim(),
+      ghToken
+    ].filter(Boolean)))
 
     return {
       success: true,
       baseUrl: parsedRemote.baseUrl,
+      apiBaseUrl: parsedRemote.apiBaseUrl,
+      hostname: parsedRemote.hostname,
       repoPath,
       remoteUrl: remoteResult.stdout.trim(),
       projectPath: parsedRemote.repoPath,
       owner: parsedRemote.owner,
       repo: parsedRemote.repo,
-      token: matchedConfig?.token || ''
+      tokens,
+      hasSavedToken: Boolean(matchedConfig?.token),
+      hasGhToken: Boolean(ghToken)
     }
   }
 
@@ -182,6 +289,58 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
       headers.Authorization = `Bearer ${token}`
     }
     return headers
+  }
+
+  const requestGithubApi = async (context, apiPath) => {
+    const tokens = Array.from(new Set([
+      ...(Array.isArray(context?.tokens) ? context.tokens : []),
+      ''
+    ]))
+    let lastFailure = null
+    for (const token of tokens) {
+      const response = await fetch(`${context.apiBaseUrl}${apiPath}`, {
+        headers: buildGithubHeaders(token)
+      })
+      if (response.ok) {
+        return {
+          success: true,
+          response,
+          authSource: token
+            ? (token === context.tokens?.[0] && context.hasSavedToken ? 'saved' : 'gh')
+            : 'anonymous'
+        }
+      }
+      const errorText = await response.text()
+      lastFailure = {
+        status: response.status,
+        statusText: response.statusText,
+        errorText
+      }
+      if (![401, 403, 404].includes(response.status)) break
+    }
+    return {
+      success: false,
+      ...(lastFailure || {
+        status: 0,
+        statusText: 'Unknown Error',
+        errorText: ''
+      })
+    }
+  }
+
+  const formatGithubApiFailure = (result, context, resourceLabel = 'Actions') => {
+    const statusText = [result?.status, result?.statusText]
+      .filter(Boolean)
+      .join(' ')
+    if ([401, 403].includes(result?.status)) {
+      return context?.tokens?.length === 0
+        ? `无法读取 GitHub ${resourceLabel}：请在远端仓库中配置 GitHub Token，或先在系统终端执行 gh auth login`
+        : `无法读取 GitHub ${resourceLabel}：当前凭据无效或缺少 Actions 读取权限`
+    }
+    if (result?.status === 404) {
+      return `无法读取 GitHub ${resourceLabel}：仓库不存在、未启用 Actions，或当前凭据无权访问`
+    }
+    return `获取 GitHub ${resourceLabel} 失败${statusText ? `：${statusText}` : ''}`
   }
 
   const formatPipeline = (pipeline = {}) => ({
@@ -235,33 +394,48 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
     return normalizedConclusion || 'unknown'
   }
 
-  const formatGithubRun = (run = {}) => ({
-    id: run.id,
-    iid: run.run_number,
-    status: normalizeGithubStatus({ status: run.status, conclusion: run.conclusion }),
-    ref: run.head_branch || '',
-    sha: run.head_sha || '',
-    source: run.event || '',
-    webUrl: run.html_url || '',
-    createdAt: run.created_at || '',
-    updatedAt: run.updated_at || '',
-    startedAt: run.run_started_at || run.created_at || '',
-    finishedAt: run.status === 'completed' ? (run.updated_at || '') : '',
-    name: run.name || run.display_title || '',
-    isTag: false,
-    coverage: null,
-    provider: 'github',
-    providerLabel: 'GitHub',
-    workflowName: run.name || '',
-    displayTitle: run.display_title || '',
-    nativeStatus: run.status || '',
-    nativeConclusion: run.conclusion || ''
-  })
+  const looksLikeVersionTag = (ref = '') => (
+    /^v?\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?$/.test(String(ref || '').trim())
+  )
+
+  const formatGithubRun = (run = {}) => {
+    const rawRef = String(run.head_branch || '').trim()
+    const ref = rawRef.replace(/^refs\/(?:heads|tags)\//, '')
+    const isTag = rawRef.startsWith('refs/tags/')
+      || run.event === 'release'
+      || looksLikeVersionTag(ref)
+    const runNumber = run.run_number || run.id
+
+    return {
+      id: run.id,
+      iid: runNumber,
+      runNumber,
+      runAttempt: run.run_attempt || 1,
+      status: normalizeGithubStatus({ status: run.status, conclusion: run.conclusion }),
+      ref,
+      sha: run.head_sha || '',
+      source: run.event || '',
+      webUrl: run.html_url || '',
+      createdAt: run.created_at || '',
+      updatedAt: run.updated_at || '',
+      startedAt: run.run_started_at || run.created_at || '',
+      finishedAt: run.status === 'completed' ? (run.updated_at || '') : '',
+      name: run.name || run.display_title || '',
+      isTag,
+      coverage: null,
+      provider: 'github',
+      providerLabel: 'GitHub Actions',
+      workflowName: run.name || '',
+      displayTitle: run.display_title || '',
+      nativeStatus: run.status || '',
+      nativeConclusion: run.conclusion || ''
+    }
+  }
 
   const formatGithubJob = (job = {}) => ({
     id: job.id,
     name: job.name || '',
-    stage: 'jobs',
+    stage: 'Jobs',
     status: normalizeGithubStatus({ status: job.status, conclusion: job.conclusion }),
     allowFailure: false,
     createdAt: job.started_at || '',
@@ -671,6 +845,46 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
 
   ipcMain.handle('project-pipelines', async (event, { projectPath, limit = 12 } = {}) => {
     try {
+      const githubContext = await resolveGithubRepoContext(projectPath)
+      if (githubContext.success) {
+        const perPage = Math.max(1, Math.min(limit, 30))
+        const runsResult = await requestGithubApi(
+          githubContext,
+          `/repos/${encodeURIComponent(githubContext.owner)}/${encodeURIComponent(githubContext.repo)}/actions/runs?per_page=${perPage}`
+        )
+
+        if (!runsResult.success) {
+          safeError('❌ 获取 GitHub Actions runs 失败:', runsResult.status, runsResult.errorText)
+          return {
+            success: false,
+            message: formatGithubApiFailure(runsResult, githubContext)
+          }
+        }
+
+        const payload = await runsResult.response.json()
+        const pipelines = Array.isArray(payload?.workflow_runs) ? payload.workflow_runs.map(formatGithubRun) : []
+        const activePipelines = pipelines.filter(pipeline => ACTIVE_PIPELINE_STATUSES.has(pipeline.status))
+        const recentPipelines = pipelines.filter(pipeline => !ACTIVE_PIPELINE_STATUSES.has(pipeline.status))
+
+        return {
+          success: true,
+          data: {
+            provider: 'github',
+            providerLabel: 'GitHub Actions',
+            authSource: runsResult.authSource,
+            context: {
+              baseUrl: githubContext.baseUrl,
+              projectPath: githubContext.projectPath,
+              owner: githubContext.owner,
+              repo: githubContext.repo
+            },
+            activePipelines,
+            recentPipelines,
+            currentRunning: activePipelines[0] || null
+          }
+        }
+      }
+
       const gitlabContext = await resolveGitlabRepoContext(projectPath)
       if (gitlabContext.success) {
         const pipelinesUrl = `${gitlabContext.baseUrl}/api/v4/projects/${gitlabContext.projectId}/pipelines?per_page=${Math.max(1, Math.min(limit, 30))}&order_by=updated_at&sort=desc`
@@ -712,53 +926,6 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
         }
       }
 
-      const githubContext = await resolveGithubRepoContext(projectPath)
-      if (githubContext.success) {
-        const runsUrl = `${GITHUB_API_URL}/repos/${githubContext.owner}/${githubContext.repo}/actions/runs?per_page=${Math.max(1, Math.min(limit, 30))}`
-        const response = await fetch(runsUrl, {
-          headers: buildGithubHeaders(githubContext.token)
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          safeError('❌ 获取 GitHub Actions runs 失败:', response.status, errorText)
-          if (response.status === 403 || response.status === 404) {
-            return {
-              success: false,
-              message: githubContext.token
-                ? `获取 GitHub Actions 失败: ${response.status} ${response.statusText}`
-                : '当前 GitHub 仓库的 Actions 需要配置 GitHub Token 或仓库未启用 Actions'
-            }
-          }
-          return {
-            success: false,
-            message: `获取 GitHub Actions 失败: ${response.status} ${response.statusText}`
-          }
-        }
-
-        const payload = await response.json()
-        const pipelines = Array.isArray(payload?.workflow_runs) ? payload.workflow_runs.map(formatGithubRun) : []
-        const activePipelines = pipelines.filter(pipeline => ACTIVE_PIPELINE_STATUSES.has(pipeline.status))
-        const recentPipelines = pipelines.filter(pipeline => !ACTIVE_PIPELINE_STATUSES.has(pipeline.status))
-
-        return {
-          success: true,
-          data: {
-            provider: 'github',
-            providerLabel: 'GitHub',
-            context: {
-              baseUrl: githubContext.baseUrl,
-              projectPath: githubContext.projectPath,
-              owner: githubContext.owner,
-              repo: githubContext.repo
-            },
-            activePipelines,
-            recentPipelines,
-            currentRunning: activePipelines[0] || null
-          }
-        }
-      }
-
       return {
         success: false,
         message: '当前仓库暂不支持流水线'
@@ -776,6 +943,53 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
     try {
       if (!pipelineId) {
         return { success: false, message: '缺少 pipelineId' }
+      }
+
+      const githubContext = await resolveGithubRepoContext(projectPath)
+      if (githubContext.success) {
+        const apiPath = `/repos/${encodeURIComponent(githubContext.owner)}/${encodeURIComponent(githubContext.repo)}/actions/runs/${encodeURIComponent(pipelineId)}`
+        const [detailResult, jobsResult] = await Promise.all([
+          requestGithubApi(githubContext, apiPath),
+          requestGithubApi(githubContext, `${apiPath}/jobs?per_page=100`)
+        ])
+
+        if (!detailResult.success) {
+          safeError('❌ 获取 GitHub Actions run 详情失败:', detailResult.status, detailResult.errorText)
+          return {
+            success: false,
+            message: formatGithubApiFailure(detailResult, githubContext, 'Actions 详情')
+          }
+        }
+
+        if (!jobsResult.success) {
+          safeError('❌ 获取 GitHub Actions jobs 失败:', jobsResult.status, jobsResult.errorText)
+          return {
+            success: false,
+            message: formatGithubApiFailure(jobsResult, githubContext, 'Actions Jobs')
+          }
+        }
+
+        const pipeline = formatGithubRun(await detailResult.response.json())
+        const jobsPayload = await jobsResult.response.json()
+        const jobs = Array.isArray(jobsPayload?.jobs) ? jobsPayload.jobs.map(formatGithubJob) : []
+
+        return {
+          success: true,
+          data: {
+            provider: 'github',
+            providerLabel: 'GitHub Actions',
+            authSource: detailResult.authSource,
+            context: {
+              baseUrl: githubContext.baseUrl,
+              projectPath: githubContext.projectPath,
+              owner: githubContext.owner,
+              repo: githubContext.repo
+            },
+            pipeline,
+            jobs,
+            stages: groupJobsByStage(jobs)
+          }
+        }
       }
 
       const gitlabContext = await resolveGitlabRepoContext(projectPath)
@@ -829,55 +1043,6 @@ function registerScmHandlers({ ipcMain, BrowserWindow, fs, path, store, fetch, e
               baseUrl: gitlabContext.baseUrl,
               projectPath: gitlabContext.projectPath,
               projectId: gitlabContext.projectId
-            },
-            pipeline,
-            jobs,
-            stages: groupJobsByStage(jobs)
-          }
-        }
-      }
-
-      const githubContext = await resolveGithubRepoContext(projectPath)
-      if (githubContext.success) {
-        const detailUrl = `${GITHUB_API_URL}/repos/${githubContext.owner}/${githubContext.repo}/actions/runs/${pipelineId}`
-        const jobsUrl = `${GITHUB_API_URL}/repos/${githubContext.owner}/${githubContext.repo}/actions/runs/${pipelineId}/jobs?per_page=100`
-        const [detailResponse, jobsResponse] = await Promise.all([
-          fetch(detailUrl, { headers: buildGithubHeaders(githubContext.token) }),
-          fetch(jobsUrl, { headers: buildGithubHeaders(githubContext.token) })
-        ])
-
-        if (!detailResponse.ok) {
-          const errorText = await detailResponse.text()
-          safeError('❌ 获取 GitHub Actions run 详情失败:', detailResponse.status, errorText)
-          return {
-            success: false,
-            message: `获取 GitHub Actions 详情失败: ${detailResponse.status} ${detailResponse.statusText}`
-          }
-        }
-
-        if (!jobsResponse.ok) {
-          const errorText = await jobsResponse.text()
-          safeError('❌ 获取 GitHub Actions jobs 失败:', jobsResponse.status, errorText)
-          return {
-            success: false,
-            message: `获取 GitHub Actions jobs 失败: ${jobsResponse.status} ${jobsResponse.statusText}`
-          }
-        }
-
-        const pipeline = formatGithubRun(await detailResponse.json())
-        const jobsPayload = await jobsResponse.json()
-        const jobs = Array.isArray(jobsPayload?.jobs) ? jobsPayload.jobs.map(formatGithubJob) : []
-
-        return {
-          success: true,
-          data: {
-            provider: 'github',
-            providerLabel: 'GitHub',
-            context: {
-              baseUrl: githubContext.baseUrl,
-              projectPath: githubContext.projectPath,
-              owner: githubContext.owner,
-              repo: githubContext.repo
             },
             pipeline,
             jobs,
