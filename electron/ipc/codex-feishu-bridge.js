@@ -212,11 +212,18 @@ function isFeishuInstructionAllowed(payload = {}, config = {}, botOpenId = '') {
   ) return false
   if (payload.senderType && payload.senderType !== 'user') return false
   if (payload.chatType === 'group') {
+    const mentionedOpenIds = Array.isArray(payload.mentionedOpenIds)
+      ? payload.mentionedOpenIds
+      : []
+    const hasExplicitMention = payload.mentioned === true
+      || mentionedOpenIds.length > 0
     const normalizedBotOpenId = String(botOpenId || '').trim()
     if (
-      !normalizedBotOpenId
-      || !Array.isArray(payload.mentionedOpenIds)
-      || !payload.mentionedOpenIds.includes(normalizedBotOpenId)
+      hasExplicitMention
+      && (
+        !normalizedBotOpenId
+        || !mentionedOpenIds.includes(normalizedBotOpenId)
+      )
     ) return false
   }
 
@@ -316,28 +323,54 @@ function createCodexFeishuBridge({
     return false
   }
 
-  const sendText = async (chatId, text, client = apiClient) => {
+  const sendText = async (
+    chatId,
+    text,
+    client = apiClient,
+    { replyToMessageId = '' } = {}
+  ) => {
     if (!client) throw new Error('飞书消息客户端未连接')
-    const response = await client.im.v1.message.create({
-      params: { receive_id_type: 'chat_id' },
-      data: {
-        receive_id: chatId,
-        msg_type: 'text',
-        content: JSON.stringify({ text: String(text || '') })
-      }
-    })
+    const normalizedReplyMessageId = String(replyToMessageId || '').trim()
+    const data = {
+      msg_type: 'text',
+      content: JSON.stringify({ text: String(text || '') })
+    }
+    const response = normalizedReplyMessageId && client.im.v1.message.reply
+      ? await client.im.v1.message.reply({
+          path: { message_id: normalizedReplyMessageId },
+          data
+        })
+      : await client.im.v1.message.create({
+          params: { receive_id_type: 'chat_id' },
+          data: {
+            receive_id: chatId,
+            ...data
+          }
+        })
     if (response?.code && response.code !== 0) {
       throw new Error(response.msg || `飞书消息发送失败 (${response.code})`)
     }
     return response
   }
 
-  const sendChunks = async (chatId, text, client = apiClient) => {
+  const sendChunks = async (
+    chatId,
+    text,
+    client = apiClient,
+    options = {}
+  ) => {
     const chunks = splitFeishuText(text)
+    const responses = []
     for (const [index, chunk] of chunks.entries()) {
       const prefix = chunks.length > 1 ? `[${index + 1}/${chunks.length}] ` : ''
-      await sendText(chatId, `${prefix}${chunk}`, client)
+      responses.push(await sendText(
+        chatId,
+        `${prefix}${chunk}`,
+        client,
+        options
+      ))
     }
+    return responses
   }
 
   const addTypingReaction = async (messageId, client = apiClient) => {
@@ -686,7 +719,21 @@ function createCodexFeishuBridge({
     start,
     stop,
     restart,
-    getStatus
+    getStatus,
+    sendText: async (chatId, text, options = {}) => {
+      const responses = await sendChunks(chatId, text, apiClient, options)
+      const messageIds = responses
+        .map((response) => String(
+          response?.data?.message_id
+          || response?.message_id
+          || ''
+        ).trim())
+        .filter(Boolean)
+      return {
+        messageId: messageIds[0] || '',
+        messageIds
+      }
+    }
   }
 }
 

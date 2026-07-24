@@ -491,7 +491,7 @@
             </article>
 
             <p class="settings-note">
-              群聊中只有 @ 机器人后的文本会进入队列。不同飞书配置和 chat_id 都使用独立 Codex 会话。
+              群聊中的普通消息默认进入队列；明确 @ 机器人时，仅被点名的机器人响应。不同飞书配置和 chat_id 都使用独立 Codex 会话。
             </p>
           </section>
         </div>

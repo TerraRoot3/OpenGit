@@ -9,6 +9,34 @@ const endedAtMillis = Date.parse('2026-05-31T09:00:10.000Z')
 const endedAtSeconds = Math.floor(endedAtMillis / 1000)
 const runningAtMillis = Date.parse('2026-05-31T09:00:20.000Z')
 const runningAtSeconds = Math.floor(runningAtMillis / 1000)
+const separator = '\u001f'
+
+assert.deepEqual(
+  __testables.parseThreadRow([
+    'thread-1',
+    '/tmp/api-go',
+    String(startedAt),
+    String(endedAtMillis),
+    '/tmp/rollout.jsonl',
+    Buffer.from('第一行\n第二行').toString('hex'),
+    Buffer.from('预览').toString('hex'),
+    Buffer.from('vscode').toString('hex'),
+    '',
+    Buffer.from('api-go 修复').toString('hex')
+  ].join(separator)),
+  {
+    id: 'thread-1',
+    cwd: '/tmp/api-go',
+    createdAt: startedAt,
+    updatedAt: endedAtMillis,
+    rolloutPath: '/tmp/rollout.jsonl',
+    title: '第一行\n第二行',
+    preview: '预览',
+    source: 'vscode',
+    threadSource: '',
+    name: 'api-go 修复'
+  }
+)
 
 assert.equal(
   __testables.parseMillis(String(endedAtSeconds)),

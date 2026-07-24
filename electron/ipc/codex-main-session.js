@@ -10,6 +10,10 @@ const {
 const {
   collectOutboxAttachments
 } = require('./codex-feishu-attachments')
+const {
+  CodexSessionOrchestrator,
+  CODEX_SESSION_DYNAMIC_TOOLS
+} = require('./codex-session-orchestrator')
 const { version: OPEN_GIT_VERSION = '0.0.0' } = require('../../package.json')
 
 const CONFIG_STORE_KEY = 'codex-main-session-config-v1'
@@ -22,11 +26,15 @@ const SERVER_START_TIMEOUT_MS = 20 * 1000
 const SERVER_STOP_TIMEOUT_MS = 2 * 1000
 const MAX_STDERR_LENGTH = 6000
 const MAX_HISTORY_MESSAGES = 400
+const CODEX_SESSION_TOOL_VERSION = 1
 
 const MAIN_SESSION_INSTRUCTIONS = [
   '你是 OpenGit 内置的持久 Codex 会话。',
   '你会接收 OpenGit 页面或当前飞书会话转发的用户指令，并应在当前工作目录中主动完成任务。',
   '任务执行期间可以使用 Codex 可用的工具；在真正缺少用户选择或外部权限时才说明阻塞。',
+  '当用户询问其他 Codex 会话、要求监控会话或向会话继续发送指令时，使用 OpenGit 提供的 list_codex_sessions、monitor_codex_session、cancel_codex_session_monitor 和 send_codex_session_message 工具。',
+  '监控只能在用户明确要求后启动；候选会话不唯一时先列出并让用户选择，不要猜测目标 threadId。',
+  '如果飞书指令包含“OpenGit Codex 监控回复上下文”，用户说继续、补充或修改任务时，直接使用上下文中的 threadId 发送消息；用户要求结束后继续通知时设置 monitorAfterSend。',
   '飞书任务可能附带本地文件与本轮专属 outbox；需要回传附件时，只把最终交付文件写入指定 outbox，不要写入临时产物，也不要读取或发送 outbox 之外的本机文件。',
   '每轮最终回答必须是可直接转发给用户的简洁结果总结：先说结果，再列出关键变更、验证状态和仍需用户处理的事项。',
   '不要在最终回答中泄露 access token、refresh token、App Secret 或其他凭据。'
@@ -209,6 +217,17 @@ function buildCodexTaskInput(task = {}) {
     '[来自飞书的指令]',
     String(task.text || '').trim()
   ]
+  const monitorContext = task?.metadata?.monitorContext
+  if (monitorContext?.threadId) {
+    sections.push(
+      '',
+      '[OpenGit Codex 监控回复上下文]',
+      `用户回复的是 Codex 会话：${monitorContext.title || monitorContext.threadId}`,
+      `threadId：${monitorContext.threadId}`,
+      monitorContext.cwd ? `工作目录：${monitorContext.cwd}` : '',
+      '如果用户要求继续、补充或修改该任务，请使用 send_codex_session_message 将本轮指令发送到上述 threadId；需要再次等待结果时设置 monitorAfterSend=true。'
+    )
+  }
   if (attachments.length > 0) {
     sections.push('', '[本轮飞书附件]')
     for (const [index, attachment] of attachments.entries()) {
@@ -316,6 +335,7 @@ function createDefaultSession(threadId = '') {
     chatId: '',
     chatType: '',
     threadId: String(threadId || '').trim(),
+    toolVersion: CODEX_SESSION_TOOL_VERSION,
     lastMessage: '',
     createdAt: now,
     updatedAt: now
@@ -363,6 +383,7 @@ function normalizeStoredSessions(value) {
         ? String(item.chatType || '').trim().toLowerCase()
         : '',
       threadId: String(item.threadId || '').trim(),
+      toolVersion: Math.max(0, Number(item.toolVersion) || 0),
       lastMessage: compactSessionText(item.lastMessage),
       createdAt,
       updatedAt: Number(item.updatedAt) || createdAt
@@ -435,8 +456,10 @@ class CodexMainSessionService {
     this.processingSessionIds = new Set()
     this.activeTasks = new Map()
     this.activeTasksByThreadId = new Map()
+    this.managedExternalTurns = new Map()
     this.liveMessages = new Map()
     this.feishuBridge = null
+    this.sessionOrchestrator = null
     this.config = normalizeCodexMainConfig(
       this.store.get(CONFIG_STORE_KEY, DEFAULT_CONFIG),
       DEFAULT_CONFIG
@@ -451,6 +474,12 @@ class CodexMainSessionService {
     this.activeSessionId = this.sessions.has(storedActiveSessionId)
       ? storedActiveSessionId
       : MAIN_SESSION_ID
+    this.sessionOrchestrator = new CodexSessionOrchestrator({
+      service: this,
+      store: this.store,
+      safeLog: this.safeLog,
+      safeError: this.safeError
+    })
     this.persistSessions()
     this.store.delete(THREAD_STORE_KEY)
   }
@@ -526,6 +555,7 @@ class CodexMainSessionService {
       chatId: '',
       chatType: '',
       threadId: '',
+      toolVersion: CODEX_SESSION_TOOL_VERSION,
       lastMessage: '',
       createdAt: now,
       updatedAt: now
@@ -570,6 +600,7 @@ class CodexMainSessionService {
       chatId,
       chatType: String(payload.chatType || '').trim().toLowerCase(),
       threadId: '',
+      toolVersion: CODEX_SESSION_TOOL_VERSION,
       lastMessage: '',
       createdAt: now,
       updatedAt: now
@@ -756,6 +787,31 @@ class CodexMainSessionService {
       return
     }
 
+    if (
+      message.id != null
+      && message.method === 'item/tool/call'
+    ) {
+      const respond = (result) => {
+        try {
+          this.sendRaw({ id: message.id, result })
+        } catch (error) {
+          this.safeError('[Codex Main] 动态工具结果回传失败:', error.message)
+        }
+      }
+      Promise.resolve(
+        this.sessionOrchestrator.handleToolCall(message.params || {})
+      ).then(respond).catch((error) => {
+        respond({
+          success: false,
+          contentItems: [{
+            type: 'inputText',
+            text: error?.message || String(error)
+          }]
+        })
+      })
+      return
+    }
+
     if (message.id != null && message.method) {
       this.sendRaw({
         id: message.id,
@@ -807,6 +863,14 @@ class CodexMainSessionService {
       return
     }
     const threadId = String(params?.threadId || '').trim()
+    if (method === 'turn/started' && this.managedExternalTurns.has(threadId)) {
+      const managedTurn = this.managedExternalTurns.get(threadId)
+      managedTurn.turnId = String(params?.turn?.id || managedTurn.turnId || '').trim()
+    }
+    if (method === 'turn/completed' && this.managedExternalTurns.has(threadId)) {
+      this.managedExternalTurns.delete(threadId)
+      void this.sessionOrchestrator.checkNow()
+    }
     const activeTask = threadId
       ? this.activeTasksByThreadId.get(threadId)
       : (this.activeTasks.size === 1 ? this.activeTasks.values().next().value : null)
@@ -1168,7 +1232,31 @@ class CodexMainSessionService {
     const session = this.getSession(sessionId)
     if (!session) throw new Error('会话不存在或已失效')
     const cwd = resolveWorkingDirectory(this.config.workingDirectory)
-    const storedThreadId = String(session.threadId || '').trim()
+    let storedThreadId = String(session.threadId || '').trim()
+    if (
+      storedThreadId
+      && Number(session.toolVersion || 0) < CODEX_SESSION_TOOL_VERSION
+    ) {
+      this.safeLog(
+        `[Codex Main] 会话 ${session.id} 将迁移到支持跨会话工具的新线程`
+      )
+      try {
+        await this.request('thread/archive', {
+          threadId: storedThreadId
+        }, 60 * 1000)
+      } catch (error) {
+        this.safeError(
+          `[Codex Main] 归档旧会话 ${storedThreadId} 失败:`,
+          error.message
+        )
+      }
+      storedThreadId = ''
+      session.threadId = ''
+      session.toolVersion = CODEX_SESSION_TOOL_VERSION
+      this.loadedSessionIds.delete(session.id)
+      this.persistSessions()
+      this.broadcast('history-reset', { sessionId: session.id })
+    }
     if (storedThreadId) {
       try {
         const result = await this.request('thread/resume', {
@@ -1197,11 +1285,13 @@ class CodexMainSessionService {
       developerInstructions: MAIN_SESSION_INSTRUCTIONS,
       sandbox: this.config.sandboxMode,
       ephemeral: false,
-      threadSource: 'open_git_main_session'
+      threadSource: 'open_git_main_session',
+      dynamicTools: CODEX_SESSION_DYNAMIC_TOOLS
     })
     const threadId = String(result?.thread?.id || '').trim()
     if (!threadId) throw new Error('Codex app-server 未返回会话 ID')
     session.threadId = threadId
+    session.toolVersion = CODEX_SESSION_TOOL_VERSION
     this.loadedSessionIds.add(session.id)
     this.persistSessions()
     try {
@@ -1225,6 +1315,161 @@ class CodexMainSessionService {
     return extractThreadMessages(result?.thread)
   }
 
+  findSessionByThreadId(threadId = '') {
+    const normalizedThreadId = String(threadId || '').trim()
+    if (!normalizedThreadId) return null
+    return Array.from(this.sessions.values()).find((session) => (
+      String(session.threadId || '').trim() === normalizedThreadId
+    )) || null
+  }
+
+  async dispatchCodexThreadMessage({
+    thread,
+    message,
+    state = null
+  } = {}) {
+    const threadId = String(thread?.id || '').trim()
+    const text = String(message || '').trim()
+    if (!threadId || !text) throw new Error('目标会话或消息为空')
+
+    const ownedSession = this.findSessionByThreadId(threadId)
+    const ownedTask = this.activeTasksByThreadId.get(threadId)
+    if (ownedTask?.turnId) {
+      const response = await this.request('turn/steer', {
+        threadId,
+        expectedTurnId: ownedTask.turnId,
+        input: [{ type: 'text', text }]
+      })
+      return {
+        delivery: 'steered_active_turn',
+        turnId: String(response?.turnId || ownedTask.turnId).trim(),
+        startedAt: Date.now()
+      }
+    }
+
+    const managedTurn = this.managedExternalTurns.get(threadId)
+    if (managedTurn?.turnId) {
+      const response = await this.request('turn/steer', {
+        threadId,
+        expectedTurnId: managedTurn.turnId,
+        input: [{ type: 'text', text }]
+      })
+      return {
+        delivery: 'steered_managed_turn',
+        turnId: String(response?.turnId || managedTurn.turnId).trim(),
+        startedAt: Number(managedTurn.startedAt) || Date.now()
+      }
+    }
+
+    if (ownedSession) {
+      const jobPromise = this.enqueueInstruction({
+        text,
+        source: 'ui',
+        sessionId: ownedSession.id
+      })
+      jobPromise.catch((error) => {
+        this.safeError('[Codex Orchestrator] OpenGit 会话消息执行失败:', error.message)
+      })
+      return {
+        delivery: 'queued_opengit_session',
+        sessionId: ownedSession.id,
+        startedAt: Date.now()
+      }
+    }
+
+    if (state?.status === 'running') {
+      throw new Error('目标会话正由其他 Codex 进程执行，暂时不能直接追加')
+    }
+
+    const cwd = resolveWorkingDirectory(thread.cwd || this.config.workingDirectory)
+    const resumed = await this.request('thread/resume', {
+      threadId,
+      cwd,
+      approvalPolicy: this.config.approvalPolicy,
+      sandbox: this.config.sandboxMode
+    }, 60 * 1000)
+    const resolvedThreadId = String(
+      resumed?.thread?.id || threadId
+    ).trim()
+    const response = await this.request('turn/start', {
+      threadId: resolvedThreadId,
+      input: [{ type: 'text', text }],
+      cwd,
+      approvalPolicy: this.config.approvalPolicy,
+      sandboxPolicy: buildTurnSandboxPolicy(this.config, cwd),
+      ...(this.config.reasoningEffort
+        ? { effort: this.config.reasoningEffort }
+        : {})
+    })
+    const turnId = String(response?.turn?.id || '').trim()
+    const startedAt = Date.now()
+    this.managedExternalTurns.set(resolvedThreadId, {
+      threadId: resolvedThreadId,
+      turnId,
+      startedAt
+    })
+    return {
+      delivery: 'started_new_turn',
+      threadId: resolvedThreadId,
+      turnId,
+      startedAt
+    }
+  }
+
+  async readCodexThreadLastReply(threadId = '') {
+    const normalizedThreadId = String(threadId || '').trim()
+    if (!normalizedThreadId) return ''
+    const result = await this.request('thread/read', {
+      threadId: normalizedThreadId,
+      includeTurns: true
+    }, 60 * 1000)
+    const messages = extractThreadMessages(result?.thread)
+    return [...messages].reverse()
+      .find((message) => message.role === 'assistant')
+      ?.text || ''
+  }
+
+  async notifyCodexWatchCompletion(watch = {}, text = '') {
+    const normalizedText = String(text || '').trim() || '任务已结束。'
+    const sessionId = String(watch.sourceSessionId || '').trim()
+    if (sessionId && this.getSession(sessionId)) {
+      this.broadcast('message', {
+        sessionId,
+        message: {
+          id: `monitor:${watch.id}:${Date.now()}`,
+          role: 'assistant',
+          text: normalizedText,
+          status: 'completed',
+          source: 'codex',
+          createdAt: Date.now()
+        }
+      })
+      this.touchSession(sessionId, { lastMessage: normalizedText })
+    }
+
+    const connectionId = String(watch.connectionId || '').trim()
+    const chatId = String(watch.chatId || '').trim()
+    if (!connectionId || !chatId) {
+      return { messageId: '' }
+    }
+    const result = await this.feishuBridge?.sendText?.(
+      connectionId,
+      chatId,
+      normalizedText,
+      {
+        replyToMessageId: String(watch.originMessageId || '').trim()
+      }
+    )
+    if (!result) throw new Error('飞书连接当前不可用，监控通知将在连接恢复后重试')
+    return {
+      messageId: String(
+        result.messageId
+        || result.messageIds?.[0]
+        || ''
+      ).trim()
+    }
+  }
+
   enqueueInstruction({
     text,
     source = 'ui',
@@ -1239,8 +1484,17 @@ class CodexMainSessionService {
       throw new Error('请输入指令')
     }
     const normalizedSource = source === 'feishu' ? 'feishu' : 'ui'
+    const normalizedMetadata = metadata && typeof metadata === 'object'
+      ? { ...metadata }
+      : {}
+    if (normalizedSource === 'feishu') {
+      normalizedMetadata.monitorContext =
+        this.sessionOrchestrator?.resolveReplyContext(normalizedMetadata)
+        || normalizedMetadata.monitorContext
+        || null
+    }
     const session = normalizedSource === 'feishu'
-      ? this.getOrCreateFeishuSession(metadata)
+      ? this.getOrCreateFeishuSession(normalizedMetadata)
       : this.getSession(sessionId || this.activeSessionId)
     if (!session) throw new Error('会话不存在或已失效')
     if (
@@ -1272,7 +1526,7 @@ class CodexMainSessionService {
         sessionId: session.id,
         text: normalizedText,
         source: normalizedSource,
-        metadata,
+        metadata: normalizedMetadata,
         attachments: Array.isArray(attachments) ? attachments : [],
         attachmentWorkspace,
         onAgentMessage: typeof onAgentMessage === 'function'
@@ -1446,6 +1700,7 @@ class CodexMainSessionService {
   }
 
   async cleanup() {
+    this.sessionOrchestrator?.stop()
     await this.feishuBridge?.stop?.()
     await this.stopServer()
   }
@@ -1518,6 +1773,20 @@ function createFeishuBridgeManager({
     return start()
   }
 
+  const sendText = async (
+    connectionId,
+    chatId,
+    text,
+    options = {}
+  ) => {
+    const normalizedConnectionId = String(connectionId || '').trim()
+    const bridge = bridges.get(normalizedConnectionId)
+    if (!bridge?.sendText) {
+      throw new Error('指定的飞书连接当前不可用')
+    }
+    return bridge.sendText(chatId, text, options)
+  }
+
   const getStatus = () => {
     const connections = getConnections().map((connection) => {
       const bridgeStatus = bridges.get(connection.id)?.getStatus?.() || {}
@@ -1554,7 +1823,8 @@ function createFeishuBridgeManager({
     start,
     stop,
     restart,
-    getStatus
+    getStatus,
+    sendText
   }
 }
 
@@ -1705,6 +1975,7 @@ function registerCodexMainSessionHandlers({
           firstError ||= error
         }
       }
+      service.sessionOrchestrator?.start()
       if (firstError) throw firstError
     },
     cleanup: () => service.cleanup()

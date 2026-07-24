@@ -66,8 +66,8 @@ assert.equal(
     { allowedChatIds: [], allowedSenderIds: [] },
     'ou_opengit_bot'
   ),
-  false,
-  'group instructions must mention the bot'
+  true,
+  'group instructions should be accepted without an @ mention'
 )
 assert.equal(
   isFeishuInstructionAllowed(
@@ -164,8 +164,8 @@ assert.equal(
     allowedChatIds: [],
     allowedSenderIds: []
   }, 'ou_opengit_bot'),
-  false,
-  'a bare group attachment must not trigger the bot'
+  true,
+  'a group attachment should be accepted without an @ mention'
 )
 assert.deepEqual(
   parseFeishuMessageAttachments({
@@ -218,6 +218,7 @@ assert.ok(chunks.every((chunk) => chunk.length <= 220))
 assert.equal(chunks.join('').replace(/\s/g, ''), '第一段'.repeat(80))
 
 const sentMessages = []
+const sentReplies = []
 const sentAttachments = []
 const bridgeEvents = []
 let registeredHandlers = null
@@ -251,6 +252,17 @@ class FakeClient {
             }
             return { code: 0 }
           },
+          reply: async (payload) => {
+            const content = JSON.parse(payload.data.content)
+            sentReplies.push({
+              messageId: payload.path.message_id,
+              text: content.text
+            })
+            return {
+              code: 0,
+              data: { message_id: 'om_monitor_notification' }
+            }
+          },
           get: async (payload) => {
             assert.equal(payload.path.message_id, 'om_parent_file')
             return {
@@ -274,12 +286,12 @@ class FakeClient {
         messageResource: {
           get: async (payload) => {
             const key = payload.path.file_key
-            const body = key === 'img_v2_001'
+            const body = ['img_v2_001', 'img_group_1'].includes(key)
               ? Buffer.from('fake-image-content')
               : Buffer.from('parent file content')
             return {
               headers: {
-                'content-type': key === 'img_v2_001'
+                'content-type': ['img_v2_001', 'img_group_1'].includes(key)
                   ? 'image/png'
                   : 'text/plain'
               },
@@ -508,7 +520,7 @@ await registeredHandlers['im.message.receive_v1']({
     chat_id: 'oc_group',
     chat_type: 'group',
     message_type: 'image',
-    content: JSON.stringify({ image_key: 'img_should_ignore' })
+    content: JSON.stringify({ image_key: 'img_group_1' })
   }
 })
 await registeredHandlers['im.message.receive_v1']({
@@ -547,7 +559,7 @@ await registeredHandlers['im.message.receive_v1']({
 for (
   let index = 0;
   index < 50 && (
-    instructionCount < 3
+    instructionCount < 4
     || sentAttachments.length < 2
     || (lastAttachmentWorkspace && fs.existsSync(lastAttachmentWorkspace))
   );
@@ -557,8 +569,13 @@ for (
 }
 assert.equal(
   instructionCount,
-  3,
-  'private attachments and group replies to attachments should be processed'
+  4,
+  'plain group attachments, private attachments, and group replies should be processed'
+)
+assert.equal(
+  receivedInstructions.find((item) => item.messageId === 'om_group_bare_image')
+    ?.attachments?.[0]?.kind,
+  'image'
 )
 assert.equal(
   receivedInstructions.find((item) => item.messageId === 'om_group_reply')
@@ -580,6 +597,19 @@ assert.equal(
   false,
   'the per-task attachment workspace should be removed after replying'
 )
+assert.deepEqual(
+  await bridge.sendText('oc_group', '监控完成', {
+    replyToMessageId: 'om_monitor_request'
+  }),
+  {
+    messageId: 'om_monitor_notification',
+    messageIds: ['om_monitor_notification']
+  }
+)
+assert.deepEqual(sentReplies, [{
+  messageId: 'om_monitor_request',
+  text: '监控完成'
+}])
 await bridge.stop()
 
 console.log('codex feishu bridge assertions passed')

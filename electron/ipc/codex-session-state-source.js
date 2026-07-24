@@ -14,6 +14,8 @@ const SQLITE_TIMEOUT_MS = 1500
 const SQLITE_MAX_BUFFER = 2 * 1024 * 1024
 const ROLLOUT_TAIL_BYTES = 256 * 1024
 const CACHE_TTL_MS = 1200
+const DEFAULT_THREAD_LIMIT = 80
+const MAX_THREAD_LIMIT = 200
 
 function sqlQuote(value) {
   return `'${String(value || '').replace(/'/g, "''")}'`
@@ -41,6 +43,23 @@ function decodeHexUtf8(value) {
     return Buffer.from(hex, 'hex').toString('utf8')
   } catch {
     return ''
+  }
+}
+
+function parseThreadRow(line) {
+  const parts = String(line || '').split(SQLITE_SEPARATOR)
+  if (parts.length < 10) return null
+  return {
+    id: parts[0] || '',
+    cwd: parts[1] || '',
+    createdAt: parseMillis(parts[2]),
+    updatedAt: parseMillis(parts[3]),
+    rolloutPath: parts[4] || '',
+    title: decodeHexUtf8(parts[5]),
+    preview: decodeHexUtf8(parts[6]),
+    source: decodeHexUtf8(parts[7]),
+    threadSource: decodeHexUtf8(parts[8]),
+    name: decodeHexUtf8(parts[9])
   }
 }
 
@@ -241,16 +260,54 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
     attempt(0)
   })
 
-  const listActiveThreads = async (projectPaths = []) => {
-    const normalizedPaths = Array.from(new Set(projectPaths.filter(Boolean)))
-    if (!normalizedPaths.length) return []
-
+  const listThreads = async ({
+    projectPaths = [],
+    query = '',
+    limit = DEFAULT_THREAD_LIMIT,
+    includeSubagents = false
+  } = {}) => {
+    const normalizedPaths = Array.from(new Set(
+      projectPaths
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    ))
+    const normalizedQuery = String(query || '').trim()
+    const normalizedLimit = Math.min(
+      MAX_THREAD_LIMIT,
+      Math.max(1, Number(limit) || DEFAULT_THREAD_LIMIT)
+    )
+    const filters = ['archived = 0']
+    if (!includeSubagents) {
+      filters.push("source NOT LIKE '{\"subagent\"%'")
+    }
+    if (normalizedPaths.length > 0) {
+      filters.push(`cwd IN (${normalizedPaths.map(sqlQuote).join(', ')})`)
+    }
+    if (normalizedQuery) {
+      const searchValue = `%${normalizedQuery}%`
+      filters.push([
+        '(',
+        `COALESCE(name, '') LIKE ${sqlQuote(searchValue)}`,
+        `OR COALESCE(title, '') LIKE ${sqlQuote(searchValue)}`,
+        `OR COALESCE(preview, '') LIKE ${sqlQuote(searchValue)}`,
+        `OR COALESCE(first_user_message, '') LIKE ${sqlQuote(searchValue)}`,
+        `OR cwd LIKE ${sqlQuote(searchValue)}`,
+        `OR id LIKE ${sqlQuote(searchValue)}`,
+        ')'
+      ].join(' '))
+    }
     const sql = [
-      'SELECT id, cwd, created_at_ms, updated_at_ms, rollout_path',
+      [
+        'SELECT id, cwd, created_at_ms, updated_at_ms, rollout_path,',
+        "hex(COALESCE(NULLIF(name, ''), NULLIF(title, ''), NULLIF(preview, ''),",
+        "NULLIF(first_user_message, ''), id)),",
+        "hex(COALESCE(preview, '')), hex(COALESCE(source, '')),",
+        "hex(COALESCE(thread_source, '')), hex(COALESCE(name, ''))"
+      ].join(' '),
       'FROM threads',
-      'WHERE archived = 0',
-      `AND cwd IN (${normalizedPaths.map(sqlQuote).join(', ')})`,
-      'ORDER BY created_at_ms DESC, updated_at_ms DESC'
+      `WHERE ${filters.join(' AND ')}`,
+      'ORDER BY recency_at_ms DESC, updated_at_ms DESC, id DESC',
+      `LIMIT ${normalizedLimit}`
     ].join(' ')
 
     const stdout = await execSqlite(STATE_DB_PATH, sql)
@@ -259,17 +316,19 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
     const rows = []
     for (const line of stdout.split('\n')) {
       if (!line) continue
-      const parts = line.split(SQLITE_SEPARATOR)
-      if (parts.length < 5) continue
-      rows.push({
-        id: parts[0] || '',
-        cwd: parts[1] || '',
-        createdAt: parseMillis(parts[2]),
-        updatedAt: parseMillis(parts[3]),
-        rolloutPath: parts[4] || ''
-      })
+      const row = parseThreadRow(line)
+      if (row?.id) rows.push(row)
     }
     return rows
+  }
+
+  const listActiveThreads = async (projectPaths = []) => {
+    const normalizedPaths = Array.from(new Set(projectPaths.filter(Boolean)))
+    if (!normalizedPaths.length) return []
+    return listThreads({
+      projectPaths: normalizedPaths,
+      limit: MAX_THREAD_LIMIT
+    })
   }
 
   const getThread = async (threadId = '') => {
@@ -277,7 +336,13 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
     if (!normalizedThreadId) return null
 
     const sql = [
-      'SELECT id, cwd, created_at_ms, updated_at_ms, rollout_path',
+      [
+        'SELECT id, cwd, created_at_ms, updated_at_ms, rollout_path,',
+        "hex(COALESCE(NULLIF(name, ''), NULLIF(title, ''), NULLIF(preview, ''),",
+        "NULLIF(first_user_message, ''), id)),",
+        "hex(COALESCE(preview, '')), hex(COALESCE(source, '')),",
+        "hex(COALESCE(thread_source, '')), hex(COALESCE(name, ''))"
+      ].join(' '),
       'FROM threads',
       `WHERE id = ${sqlQuote(normalizedThreadId)}`,
       'LIMIT 1'
@@ -288,15 +353,8 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
 
     for (const line of stdout.split('\n')) {
       if (!line) continue
-      const parts = line.split(SQLITE_SEPARATOR)
-      if (parts.length < 5) continue
-      return {
-        id: parts[0] || '',
-        cwd: parts[1] || '',
-        createdAt: parseMillis(parts[2]),
-        updatedAt: parseMillis(parts[3]),
-        rolloutPath: parts[4] || ''
-      }
+      const row = parseThreadRow(line)
+      if (row?.id) return row
     }
 
     return null
@@ -382,6 +440,7 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
   return {
     stateDbPath: STATE_DB_PATH,
     logsDbPath: LOGS_DB_PATH,
+    listThreads,
     listActiveThreads,
     getThread,
     resolveThreadStatus
@@ -392,6 +451,7 @@ module.exports = {
   createCodexSessionStateSource,
   __testables: {
     parseMillis,
+    parseThreadRow,
     parseLogSignals,
     parseRolloutSignals,
     resolveThreadStatusSignals

@@ -311,6 +311,85 @@ assert.notEqual(
   'different Feishu configurations must receive different Codex threads'
 )
 
+const legacyToolStore = new MemoryStore({
+  'codex-main-sessions-v2': [{
+    id: 'main',
+    title: '主会话',
+    source: 'ui',
+    threadId: 'thread-without-tools'
+  }]
+})
+const legacyToolService = new CodexMainSessionService({
+  store: legacyToolStore,
+  getMainWindow: () => null
+})
+legacyToolService.startServer = async () => true
+const legacyToolRequests = []
+legacyToolService.request = async (method, params) => {
+  legacyToolRequests.push({ method, params })
+  if (method === 'thread/start') {
+    return { thread: { id: 'thread-with-tools' } }
+  }
+  return {}
+}
+assert.equal(
+  await legacyToolService.ensureThread('main'),
+  'thread-with-tools'
+)
+assert.equal(
+  legacyToolRequests.some(({ method }) => method === 'thread/resume'),
+  false,
+  'legacy OpenGit main threads should be replaced because dynamic tools can only be registered at thread/start'
+)
+assert.deepEqual(legacyToolRequests[0], {
+  method: 'thread/archive',
+  params: { threadId: 'thread-without-tools' }
+})
+assert.deepEqual(
+  legacyToolRequests.find(({ method }) => method === 'thread/start')
+    .params.dynamicTools.map((tool) => tool.name),
+  [
+    'list_codex_sessions',
+    'send_codex_session_message',
+    'monitor_codex_session',
+    'cancel_codex_session_monitor'
+  ]
+)
+
+const steerService = new CodexMainSessionService({
+  store: new MemoryStore(),
+  getMainWindow: () => null
+})
+steerService.startServer = async () => true
+const steerRequests = []
+steerService.request = async (method, params) => {
+  steerRequests.push({ method, params })
+  return method === 'turn/steer'
+    ? { turnId: 'turn-target' }
+    : {}
+}
+steerService.activeTasksByThreadId.set('thread-target', {
+  turnId: 'turn-target'
+})
+assert.equal(
+  (
+    await steerService.dispatchCodexThreadMessage({
+      thread: { id: 'thread-target', cwd: '/tmp/api-go' },
+      message: '继续检查',
+      state: { status: 'running' }
+    })
+  ).delivery,
+  'steered_active_turn'
+)
+assert.deepEqual(steerRequests[0], {
+  method: 'turn/steer',
+  params: {
+    threadId: 'thread-target',
+    expectedTurnId: 'turn-target',
+    input: [{ type: 'text', text: '继续检查' }]
+  }
+})
+
 const deletionStore = new MemoryStore()
 const deletionService = new CodexMainSessionService({
   store: deletionStore,
@@ -364,6 +443,9 @@ const bridgeManager = createFeishuBridgeManager({
       stop: async () => {
         bridgeStopCount += 1
       },
+      sendText: async (chatId, text, options) => ({
+        messageId: `${chatId}:${text}:${options.replyToMessageId}`
+      }),
       getStatus: () => ({
         running: true,
         status: 'connected',
@@ -398,6 +480,15 @@ assert.equal(routedInstruction.attachments[0].name, 'input.txt')
 assert.equal(
   routedInstruction.attachmentWorkspace.outboxDir,
   '/tmp/attachment-task/outbox'
+)
+assert.deepEqual(
+  await bridgeManager.sendText(
+    'personal',
+    'oc_personal',
+    '监控完成',
+    { replyToMessageId: 'om_request' }
+  ),
+  { messageId: 'oc_personal:监控完成:om_request' }
 )
 await bridgeManager.stop()
 assert.equal(bridgeStopCount, 2)
@@ -439,6 +530,13 @@ fs.writeFileSync(inputFilePath, 'notes')
 const taskInput = buildCodexTaskInput({
   source: 'feishu',
   text: '分析附件并返回报告',
+  metadata: {
+    monitorContext: {
+      threadId: 'thread-api',
+      title: '修复 api-go',
+      cwd: '/tmp/api-go'
+    }
+  },
   attachments: [
     {
       kind: 'image',
@@ -462,6 +560,8 @@ assert.equal(taskInput[1].type, 'localImage')
 assert.equal(taskInput[1].path, inputImagePath)
 assert.match(taskInput[0].text, /notes\.txt/)
 assert.match(taskInput[0].text, new RegExp(attachmentWorkspace.outboxDir))
+assert.match(taskInput[0].text, /threadId：thread-api/)
+assert.match(taskInput[0].text, /send_codex_session_message/)
 
 const reportPath = `${attachmentWorkspace.outboxDir}/report.pdf`
 const imagePath = `${attachmentWorkspace.outboxDir}/preview.png`
