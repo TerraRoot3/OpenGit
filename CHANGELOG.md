@@ -12,6 +12,20 @@ From this file onward:
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Refactored
+
+### Docs
+
+### Build
+
+## [1.5.2] - 2026-07-24
+
+### Added
+
 - 飞书收到允许执行的指令后，会在原消息上添加“敲键盘”表情作为链路与处理状态反馈，并在结果回传后自动撤回。
 
 ### Changed
