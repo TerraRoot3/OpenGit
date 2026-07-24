@@ -12,6 +12,20 @@ From this file onward:
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Refactored
+
+### Docs
+
+### Build
+
+## [1.5.3] - 2026-07-24
+
+### Added
+
 - Codex 飞书会话支持接收图片和文件消息；私聊附件可直接触发任务，群聊可通过回复附件并明确 `@` 当前机器人处理，图片会以 `localImage` 交给 Codex。
 - Codex 可通过每轮隔离的安全 `outbox` 向飞书回复图片和文件，输出路径会校验目录边界、符号链接、数量与大小。
 
