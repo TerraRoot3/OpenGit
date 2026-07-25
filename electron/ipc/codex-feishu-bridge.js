@@ -212,11 +212,18 @@ function isFeishuInstructionAllowed(payload = {}, config = {}, botOpenId = '') {
   ) return false
   if (payload.senderType && payload.senderType !== 'user') return false
   if (payload.chatType === 'group') {
+    const mentionedOpenIds = Array.isArray(payload.mentionedOpenIds)
+      ? payload.mentionedOpenIds
+      : []
+    const hasExplicitMention = payload.mentioned === true
+      || mentionedOpenIds.length > 0
     const normalizedBotOpenId = String(botOpenId || '').trim()
     if (
-      !normalizedBotOpenId
-      || !Array.isArray(payload.mentionedOpenIds)
-      || !payload.mentionedOpenIds.includes(normalizedBotOpenId)
+      hasExplicitMention
+      && (
+        !normalizedBotOpenId
+        || !mentionedOpenIds.includes(normalizedBotOpenId)
+      )
     ) return false
   }
 

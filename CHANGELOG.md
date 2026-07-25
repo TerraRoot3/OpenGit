@@ -14,6 +14,8 @@ From this file onward:
 
 ### Changed
 
+- 飞书群聊默认接收未 `@` 机器人的普通消息和附件，并继续按机器人配置与 `chat_id` 隔离 Codex 会话；消息存在明确提及时，仍只由被点名的机器人响应。
+
 ### Fixed
 
 ### Refactored
