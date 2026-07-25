@@ -218,6 +218,7 @@ assert.ok(chunks.every((chunk) => chunk.length <= 220))
 assert.equal(chunks.join('').replace(/\s/g, ''), '第一段'.repeat(80))
 
 const sentMessages = []
+const sentMessagePayloads = []
 const sentAttachments = []
 const bridgeEvents = []
 let registeredHandlers = null
@@ -239,9 +240,15 @@ class FakeClient {
         message: {
           create: async (payload) => {
             const content = JSON.parse(payload.data.content)
-            if (payload.data.msg_type === 'text') {
-              const text = content.text
+            if (payload.data.msg_type === 'post') {
+              const markdownNode = content?.zh_cn?.content?.[0]?.[0]
+              assert.equal(markdownNode?.tag, 'md')
+              const text = markdownNode.text
               sentMessages.push(text)
+              sentMessagePayloads.push({
+                msgType: payload.data.msg_type,
+                content
+              })
               bridgeEvents.push({ type: 'send', text })
             } else {
               sentAttachments.push({
@@ -390,15 +397,15 @@ const bridge = createCodexFeishuBridge({
     if (payload.messageId === 'om_bridge_bot') {
       await payload.onAgentMessage({
         id: 'agent-progress',
-        text: '第一条回复'
+        text: '**第一条回复**'
       })
       bridgeEvents.push({ type: 'instruction-complete' })
       return {
-        text: '第一条回复\n\n任务总结',
-        messages: ['第一条回复', '任务总结'],
+        text: '**第一条回复**\n\n## 任务总结\n\n- 已完成',
+        messages: ['**第一条回复**', '## 任务总结\n\n- 已完成'],
         messageItems: [
-          { id: 'agent-progress', text: '第一条回复' },
-          { id: 'agent-final', text: '任务总结' }
+          { id: 'agent-progress', text: '**第一条回复**' },
+          { id: 'agent-final', text: '## 任务总结\n\n- 已完成' }
         ]
       }
     }
@@ -466,8 +473,15 @@ assert.equal(
 )
 assert.deepEqual(
   sentMessages,
-  ['第一条回复', '任务总结'],
+  ['**第一条回复**', '## 任务总结\n\n- 已完成'],
   'every Codex response from the turn should be returned in order'
+)
+assert.ok(
+  sentMessagePayloads.every((item) => (
+    item.msgType === 'post'
+    && item.content?.zh_cn?.content?.[0]?.[0]?.tag === 'md'
+  )),
+  'Codex replies should use Feishu post markdown payloads'
 )
 assert.deepEqual(
   bridgeEvents,
@@ -479,14 +493,14 @@ assert.deepEqual(
     },
     {
       type: 'send',
-      text: '第一条回复'
+      text: '**第一条回复**'
     },
     {
       type: 'instruction-complete'
     },
     {
       type: 'send',
-      text: '任务总结'
+      text: '## 任务总结\n\n- 已完成'
     },
     {
       type: 'reaction-remove',

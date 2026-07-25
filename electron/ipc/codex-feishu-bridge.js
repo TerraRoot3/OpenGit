@@ -323,14 +323,21 @@ function createCodexFeishuBridge({
     return false
   }
 
-  const sendText = async (chatId, text, client = apiClient) => {
+  const sendMarkdown = async (chatId, markdown, client = apiClient) => {
     if (!client) throw new Error('飞书消息客户端未连接')
     const response = await client.im.v1.message.create({
       params: { receive_id_type: 'chat_id' },
       data: {
         receive_id: chatId,
-        msg_type: 'text',
-        content: JSON.stringify({ text: String(text || '') })
+        msg_type: 'post',
+        content: JSON.stringify({
+          zh_cn: {
+            content: [[{
+              tag: 'md',
+              text: String(markdown || '')
+            }]]
+          }
+        })
       }
     })
     if (response?.code && response.code !== 0) {
@@ -343,7 +350,7 @@ function createCodexFeishuBridge({
     const chunks = splitFeishuText(text)
     for (const [index, chunk] of chunks.entries()) {
       const prefix = chunks.length > 1 ? `[${index + 1}/${chunks.length}] ` : ''
-      await sendText(chatId, `${prefix}${chunk}`, client)
+      await sendMarkdown(chatId, `${prefix}${chunk}`, client)
     }
   }
 
