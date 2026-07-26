@@ -348,6 +348,7 @@ assert.deepEqual(deletionRequests[1], {
 const bridgeOptions = []
 let bridgeStartCount = 0
 let bridgeStopCount = 0
+const bridgeKeepAliveStates = []
 const bridgeService = {
   getConfig: () => updatedConfig,
   enqueueInstruction: (payload) => payload,
@@ -371,11 +372,15 @@ const bridgeManager = createFeishuBridgeManager({
       })
     }
   },
+  onKeepAliveChanged: (enabled) => {
+    bridgeKeepAliveStates.push(enabled)
+  },
   safeLog: () => {},
   safeError: () => {}
 })
 await bridgeManager.start()
 assert.equal(bridgeStartCount, 2)
+assert.deepEqual(bridgeKeepAliveStates, [true])
 assert.equal(bridgeManager.getStatus().connections.length, 2)
 assert.equal(bridgeManager.getStatus().status, 'connected')
 const routedInstruction = await bridgeOptions[1].onInstruction({
@@ -399,8 +404,27 @@ assert.equal(
   routedInstruction.attachmentWorkspace.outboxDir,
   '/tmp/attachment-task/outbox'
 )
+bridgeManager.scheduleRestart('resume', 0)
+bridgeManager.scheduleRestart('unlock-screen', 0)
+await new Promise((resolve) => setTimeout(resolve, 20))
+assert.equal(
+  bridgeStartCount,
+  4,
+  'resume and unlock events should coalesce into one restart for all connections'
+)
+assert.equal(
+  bridgeStopCount,
+  2,
+  'coalesced power recovery should stop each existing connection once'
+)
+assert.deepEqual(
+  bridgeKeepAliveStates,
+  [true, false, true],
+  'Feishu keep-alive should remain enabled after power recovery'
+)
 await bridgeManager.stop()
-assert.equal(bridgeStopCount, 2)
+assert.equal(bridgeStopCount, 4)
+assert.deepEqual(bridgeKeepAliveStates, [true, false, true, false])
 
 assert.deepEqual(
   buildTurnSandboxPolicy({ sandboxMode: 'read-only' }, '/tmp/demo'),

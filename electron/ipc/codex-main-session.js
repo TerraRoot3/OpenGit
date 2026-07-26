@@ -22,6 +22,7 @@ const SERVER_START_TIMEOUT_MS = 20 * 1000
 const SERVER_STOP_TIMEOUT_MS = 2 * 1000
 const MAX_STDERR_LENGTH = 6000
 const MAX_HISTORY_MESSAGES = 400
+const FEISHU_POWER_RECOVERY_DELAY_MS = 2500
 
 const MAIN_SESSION_INSTRUCTIONS = [
   '你是 OpenGit 内置的持久 Codex 会话。',
@@ -1454,17 +1455,41 @@ class CodexMainSessionService {
 function createFeishuBridgeManager({
   service,
   createFeishuBridge,
+  onKeepAliveChanged = () => {},
   safeLog,
   safeError
 }) {
   const bridges = new Map()
+  const pendingRecoveryReasons = new Set()
+  let recoveryTimer = null
 
   const getConnections = () => service.getConfig().feishu.connections || []
   const findConnection = (connectionId) => (
     getConnections().find((connection) => connection.id === connectionId) || null
   )
 
+  const updateKeepAlive = (enabled) => {
+    try {
+      onKeepAliveChanged(enabled === true)
+    } catch (error) {
+      safeError(
+        '[Codex Feishu] 更新锁屏保活状态失败:',
+        error?.message || String(error)
+      )
+    }
+  }
+
+  const cancelScheduledRestart = () => {
+    if (recoveryTimer) {
+      clearTimeout(recoveryTimer)
+      recoveryTimer = null
+    }
+    pendingRecoveryReasons.clear()
+  }
+
   const stop = async () => {
+    cancelScheduledRestart()
+    updateKeepAlive(false)
     const activeBridges = Array.from(bridges.values())
     bridges.clear()
     await Promise.allSettled(
@@ -1477,9 +1502,11 @@ function createFeishuBridgeManager({
     const enabledConnections = getConnections()
       .filter((connection) => connection.enabled)
     if (enabledConnections.length === 0) {
+      updateKeepAlive(false)
       service.broadcastState()
       return false
     }
+    updateKeepAlive(true)
 
     const results = await Promise.allSettled(
       enabledConnections.map(async (connection) => {
@@ -1518,6 +1545,35 @@ function createFeishuBridgeManager({
     return start()
   }
 
+  const scheduleRestart = (
+    reason = 'system-resume',
+    delayMs = FEISHU_POWER_RECOVERY_DELAY_MS
+  ) => {
+    const normalizedReason = String(reason || 'system-resume').trim()
+    if (normalizedReason) pendingRecoveryReasons.add(normalizedReason)
+    if (recoveryTimer) clearTimeout(recoveryTimer)
+    const requestedDelay = Number(delayMs)
+    const recoveryDelay = Number.isFinite(requestedDelay)
+      ? Math.max(0, requestedDelay)
+      : FEISHU_POWER_RECOVERY_DELAY_MS
+    recoveryTimer = setTimeout(async () => {
+      recoveryTimer = null
+      const reasons = Array.from(pendingRecoveryReasons)
+      pendingRecoveryReasons.clear()
+      safeLog('[Codex Feishu] 系统恢复，正在重建长连接:', reasons.join(', '))
+      try {
+        await restart()
+        safeLog('[Codex Feishu] 系统恢复后的长连接已重建')
+      } catch (error) {
+        safeError(
+          '[Codex Feishu] 系统恢复后的长连接重建失败:',
+          error?.message || String(error)
+        )
+      }
+    }, recoveryDelay)
+    recoveryTimer.unref?.()
+  }
+
   const getStatus = () => {
     const connections = getConnections().map((connection) => {
       const bridgeStatus = bridges.get(connection.id)?.getStatus?.() || {}
@@ -1554,6 +1610,7 @@ function createFeishuBridgeManager({
     start,
     stop,
     restart,
+    scheduleRestart,
     getStatus
   }
 }
@@ -1563,6 +1620,7 @@ function registerCodexMainSessionHandlers({
   store,
   getMainWindow,
   createFeishuBridge,
+  onFeishuKeepAliveChanged,
   safeLog,
   safeError
 }) {
@@ -1575,6 +1633,7 @@ function registerCodexMainSessionHandlers({
   const feishuBridge = createFeishuBridgeManager({
     service,
     createFeishuBridge,
+    onKeepAliveChanged: onFeishuKeepAliveChanged,
     safeLog,
     safeError
   })
@@ -1707,6 +1766,9 @@ function registerCodexMainSessionHandlers({
       }
       if (firstError) throw firstError
     },
+    scheduleFeishuRestart: (reason) => (
+      feishuBridge.scheduleRestart?.(reason)
+    ),
     cleanup: () => service.cleanup()
   }
 }

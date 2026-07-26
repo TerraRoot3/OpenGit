@@ -1,4 +1,17 @@
-const { app, BrowserWindow, Menu, Notification, shell, ipcMain, session, protocol, net, screen } = require('electron')
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  Notification,
+  shell,
+  ipcMain,
+  session,
+  protocol,
+  net,
+  screen,
+  powerMonitor,
+  powerSaveBlocker
+} = require('electron')
 const path = require('path')
 const { exec, spawn, execFileSync } = require('child_process')
 const { promisify, format } = require('util')
@@ -1456,11 +1469,31 @@ registerAiSessionHandlers({
   summaryCacheFilePath: path.join(app.getPath('userData'), 'cache', 'ai-session-summary-cache.json')
 })
 
+let feishuPowerSaveBlockerId = null
+const setFeishuKeepAlive = (enabled) => {
+  const blockerStarted = feishuPowerSaveBlockerId != null
+    && powerSaveBlocker.isStarted(feishuPowerSaveBlockerId)
+  if (enabled) {
+    if (blockerStarted) return
+    feishuPowerSaveBlockerId = powerSaveBlocker.start(
+      'prevent-app-suspension'
+    )
+    safeLog('[Codex Feishu] 已启用锁屏保活')
+    return
+  }
+  if (blockerStarted) {
+    powerSaveBlocker.stop(feishuPowerSaveBlockerId)
+    safeLog('[Codex Feishu] 已关闭锁屏保活')
+  }
+  feishuPowerSaveBlockerId = null
+}
+
 const codexMainSession = registerCodexMainSessionHandlers({
   ipcMain,
   store,
   getMainWindow: () => mainWindow,
   createFeishuBridge: createCodexFeishuBridge,
+  onFeishuKeepAliveChanged: setFeishuKeepAlive,
   safeLog,
   safeError
 })
@@ -1589,6 +1622,12 @@ app.whenReady().then(async () => {
   safeLog(`📁 User data path: ${userDataPath}`)
   
   createWindow()
+  powerMonitor.on('resume', () => {
+    codexMainSession.scheduleFeishuRestart('resume')
+  })
+  powerMonitor.on('unlock-screen', () => {
+    codexMainSession.scheduleFeishuRestart('unlock-screen')
+  })
   void codexMainSession.start().catch((error) => {
     safeError('[Codex Main] 后台服务启动失败:', error.message)
   })
