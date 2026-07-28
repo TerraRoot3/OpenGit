@@ -14,6 +14,10 @@ const {
   DEFAULT_STALL_MINUTES,
   createCodexProactiveNotificationMonitor
 } = require('./codex-proactive-notifications')
+const {
+  CodexProjectSessionRouter,
+  CODEX_PROJECT_DYNAMIC_TOOLS
+} = require('./codex-project-session-router')
 const { version: OPEN_GIT_VERSION = '0.0.0' } = require('../../package.json')
 
 const CONFIG_STORE_KEY = 'codex-main-session-config-v1'
@@ -27,11 +31,17 @@ const SERVER_STOP_TIMEOUT_MS = 2 * 1000
 const MAX_STDERR_LENGTH = 6000
 const MAX_HISTORY_MESSAGES = 400
 const FEISHU_POWER_RECOVERY_DELAY_MS = 2500
+const PROJECT_ROUTING_TOOL_VERSION = 1
 
 const MAIN_SESSION_INSTRUCTIONS = [
-  '你是 OpenGit 内置的持久 Codex 会话。',
-  '你会接收 OpenGit 页面或当前飞书会话转发的用户指令，并应在当前工作目录中主动完成任务。',
+  '你是 OpenGit 内置的持久 Codex 路由协调会话。',
+  '你会接收 OpenGit 页面或当前飞书会话转发的用户指令，并负责理解需求、路由任务和总结结果。',
   '任务执行期间可以使用 Codex 可用的工具；在真正缺少用户选择或外部权限时才说明阻塞。',
+  '当飞书用户要求查看、检查、修改、继续或执行某个项目的任务时，必须先调用 dispatch_codex_project_task；不得在当前 OpenGit 主会话中直接使用文件、终端或代码工具代替目标项目会话执行。',
+  'dispatch_codex_project_task 会优先恢复该项目最近的未归档、未删除旧会话。它返回 confirmation_required 时，只把 question 原样或等义转述给用户，不得排队、steer、直接执行，也不得自行调用 start_new_codex_project_task。',
+  '只有用户在同一个飞书会话中明确回复同意新开任务后，才使用上一次返回的 confirmationToken 调用 start_new_codex_project_task；普通的“继续”不等于同意新开。',
+  '用户只查询项目现有 Codex 会话时使用 find_codex_project_sessions。没有旧会话且缺少项目绝对路径时，先向用户询问路径。',
+  '目标项目任务完成后，把项目会话工具返回的真实 Codex 结果直接总结并回复；不要声称任务由当前主会话执行。',
   '飞书任务可能附带本地文件与本轮专属 outbox；需要回传附件时，只把最终交付文件写入指定 outbox，不要写入临时产物，也不要读取或发送 outbox 之外的本机文件。',
   '每轮最终回答必须是可直接转发给用户的简洁结果总结：先说结果，再列出关键变更、验证状态和仍需用户处理的事项。',
   '不要在最终回答中泄露 access token、refresh token、App Secret 或其他凭据。'
@@ -351,6 +361,7 @@ function createDefaultSession(threadId = '') {
     chatId: '',
     chatType: '',
     threadId: String(threadId || '').trim(),
+    toolVersion: PROJECT_ROUTING_TOOL_VERSION,
     lastMessage: '',
     createdAt: now,
     updatedAt: now
@@ -398,6 +409,7 @@ function normalizeStoredSessions(value) {
         ? String(item.chatType || '').trim().toLowerCase()
         : '',
       threadId: String(item.threadId || '').trim(),
+      toolVersion: Math.max(0, Number(item.toolVersion) || 0),
       lastMessage: compactSessionText(item.lastMessage),
       createdAt,
       updatedAt: Number(item.updatedAt) || createdAt
@@ -506,6 +518,7 @@ class CodexMainSessionService {
     this.processingSessionIds = new Set()
     this.activeTasks = new Map()
     this.activeTasksByThreadId = new Map()
+    this.managedProjectTurns = new Map()
     this.liveMessages = new Map()
     this.feishuBridge = null
     this.proactiveNotificationMonitor = null
@@ -525,6 +538,9 @@ class CodexMainSessionService {
     this.activeSessionId = this.sessions.has(storedActiveSessionId)
       ? storedActiveSessionId
       : MAIN_SESSION_ID
+    this.projectSessionRouter = new CodexProjectSessionRouter({
+      service: this
+    })
     this.persistSessions()
     this.store.delete(THREAD_STORE_KEY)
   }
@@ -862,6 +878,7 @@ class CodexMainSessionService {
       chatId: '',
       chatType: '',
       threadId: '',
+      toolVersion: PROJECT_ROUTING_TOOL_VERSION,
       lastMessage: '',
       createdAt: now,
       updatedAt: now
@@ -906,6 +923,7 @@ class CodexMainSessionService {
       chatId,
       chatType: String(payload.chatType || '').trim().toLowerCase(),
       threadId: '',
+      toolVersion: PROJECT_ROUTING_TOOL_VERSION,
       lastMessage: '',
       createdAt: now,
       updatedAt: now
@@ -1083,6 +1101,28 @@ class CodexMainSessionService {
       return
     }
 
+    if (message.id != null && message.method === 'item/tool/call') {
+      const respond = (result) => {
+        try {
+          this.sendRaw({ id: message.id, result })
+        } catch (error) {
+          this.safeError('[Codex Main] 项目路由工具结果回传失败:', error.message)
+        }
+      }
+      Promise.resolve(
+        this.projectSessionRouter.handleToolCall(message.params || {})
+      ).then(respond).catch((error) => {
+        respond({
+          success: false,
+          contentItems: [{
+            type: 'inputText',
+            text: error?.message || String(error)
+          }]
+        })
+      })
+      return
+    }
+
     if (message.id != null && this.pendingRequests.has(message.id)) {
       const pending = this.pendingRequests.get(message.id)
       this.pendingRequests.delete(message.id)
@@ -1146,6 +1186,70 @@ class CodexMainSessionService {
       return
     }
     const threadId = String(params?.threadId || '').trim()
+    const managedProjectTurn = threadId
+      ? this.managedProjectTurns.get(threadId)
+      : null
+    if (managedProjectTurn) {
+      if (method === 'turn/started') {
+        managedProjectTurn.turnId = String(
+          params?.turn?.id || managedProjectTurn.turnId || ''
+        ).trim()
+        return
+      }
+      if (method === 'item/completed') {
+        const item = params?.item
+        if (item?.type === 'agentMessage' && String(item.text || '').trim()) {
+          const itemId = String(
+            item.id || `agent:${managedProjectTurn.agentMessages.size}`
+          )
+          managedProjectTurn.agentMessages.set(
+            itemId,
+            String(item.text || '').trim()
+          )
+        }
+        return
+      }
+      if (method === 'turn/completed') {
+        const completedTurn = params?.turn || {}
+        for (const item of Array.isArray(completedTurn.items)
+          ? completedTurn.items
+          : []) {
+          if (item?.type !== 'agentMessage' || !String(item.text || '').trim()) {
+            continue
+          }
+          const itemId = String(
+            item.id || `agent:${managedProjectTurn.agentMessages.size}`
+          )
+          managedProjectTurn.agentMessages.set(
+            itemId,
+            String(item.text || '').trim()
+          )
+        }
+        this.managedProjectTurns.delete(threadId)
+        const status = String(completedTurn.status || 'completed')
+        const messages = Array.from(managedProjectTurn.agentMessages.values())
+        const fallbackText = status === 'interrupted'
+          ? '任务已中断。'
+          : '任务已完成。'
+        if (status === 'failed') {
+          const errorText = completedTurn?.error?.message
+            || completedTurn?.error
+            || 'Codex 项目任务执行失败'
+          managedProjectTurn.reject(new Error(String(errorText)))
+        } else {
+          managedProjectTurn.resolve({
+            threadId,
+            turnId: String(
+              completedTurn.id || managedProjectTurn.turnId || ''
+            ).trim(),
+            status,
+            text: messages.join('\n\n') || fallbackText,
+            messages: messages.length > 0 ? messages : [fallbackText]
+          })
+        }
+        return
+      }
+    }
     const activeTask = threadId
       ? this.activeTasksByThreadId.get(threadId)
       : (this.activeTasks.size === 1 ? this.activeTasks.values().next().value : null)
@@ -1280,6 +1384,10 @@ class CodexMainSessionService {
     for (const activeTask of Array.from(this.activeTasks.values())) {
       activeTask.reject(error)
     }
+    for (const managedTurn of this.managedProjectTurns.values()) {
+      managedTurn.reject(error)
+    }
+    this.managedProjectTurns.clear()
   }
 
   handleChildClose(code, signal) {
@@ -1391,6 +1499,10 @@ class CodexMainSessionService {
             name: 'open_git',
             title: 'OpenGit',
             version: OPEN_GIT_VERSION
+          },
+          capabilities: {
+            experimentalApi: true,
+            requestAttestation: false
           }
         }
       })
@@ -1507,7 +1619,31 @@ class CodexMainSessionService {
     const session = this.getSession(sessionId)
     if (!session) throw new Error('会话不存在或已失效')
     const cwd = resolveWorkingDirectory(this.config.workingDirectory)
-    const storedThreadId = String(session.threadId || '').trim()
+    let storedThreadId = String(session.threadId || '').trim()
+    if (
+      storedThreadId
+      && Number(session.toolVersion || 0) < PROJECT_ROUTING_TOOL_VERSION
+    ) {
+      this.safeLog(
+        `[Codex Main] 会话 ${session.id} 将迁移到支持项目会话路由的新线程`
+      )
+      try {
+        await this.request('thread/archive', {
+          threadId: storedThreadId
+        }, 60 * 1000)
+      } catch (error) {
+        this.safeError(
+          `[Codex Main] 归档旧会话 ${storedThreadId} 失败:`,
+          error.message
+        )
+      }
+      storedThreadId = ''
+      session.threadId = ''
+      session.toolVersion = PROJECT_ROUTING_TOOL_VERSION
+      this.loadedSessionIds.delete(session.id)
+      this.persistSessions()
+      this.broadcast('history-reset', { sessionId: session.id })
+    }
     if (storedThreadId) {
       try {
         const result = await this.request('thread/resume', {
@@ -1518,6 +1654,7 @@ class CodexMainSessionService {
           sandbox: this.config.sandboxMode
         })
         session.threadId = String(result?.thread?.id || storedThreadId).trim()
+        session.toolVersion = PROJECT_ROUTING_TOOL_VERSION
         this.loadedSessionIds.add(session.id)
         this.persistSessions()
         this.broadcastState()
@@ -1536,11 +1673,13 @@ class CodexMainSessionService {
       developerInstructions: MAIN_SESSION_INSTRUCTIONS,
       sandbox: this.config.sandboxMode,
       ephemeral: false,
-      threadSource: 'open_git_main_session'
+      threadSource: 'open_git_main_session',
+      dynamicTools: CODEX_PROJECT_DYNAMIC_TOOLS
     })
     const threadId = String(result?.thread?.id || '').trim()
     if (!threadId) throw new Error('Codex app-server 未返回会话 ID')
     session.threadId = threadId
+    session.toolVersion = PROJECT_ROUTING_TOOL_VERSION
     this.loadedSessionIds.add(session.id)
     this.persistSessions()
     try {
@@ -1562,6 +1701,134 @@ class CodexMainSessionService {
       includeTurns: true
     }, 60 * 1000)
     return extractThreadMessages(result?.thread)
+  }
+
+  async executeCodexProjectTask({
+    threadId = '',
+    cwd = '',
+    task = '',
+    createNew = false
+  } = {}) {
+    const normalizedTask = String(task || '').trim()
+    if (!normalizedTask) throw new Error('项目任务不能为空')
+    await this.startServer()
+
+    let resolvedThreadId = String(threadId || '').trim()
+    const requestedCwd = String(cwd || '').trim()
+    if (!requestedCwd || !path.isAbsolute(requestedCwd)) {
+      throw new Error('项目任务缺少有效的绝对工作目录')
+    }
+    let resolvedCwd = resolveWorkingDirectory(requestedCwd)
+    if (resolvedCwd !== path.resolve(requestedCwd)) {
+      throw new Error(`项目工作目录不存在：${requestedCwd}`)
+    }
+    if (createNew) {
+      const started = await this.request('thread/start', {
+        cwd: resolvedCwd,
+        approvalPolicy: this.config.approvalPolicy,
+        sandbox: this.config.sandboxMode,
+        ephemeral: false,
+        threadSource: 'open_git_project_task'
+      }, 60 * 1000)
+      resolvedThreadId = String(started?.thread?.id || '').trim()
+      resolvedCwd = resolveWorkingDirectory(
+        started?.thread?.cwd || resolvedCwd
+      )
+      if (!resolvedThreadId) {
+        throw new Error('Codex app-server 未返回新项目会话 ID')
+      }
+      try {
+        await this.request('thread/name/set', {
+          threadId: resolvedThreadId,
+          name: compactSessionText(
+            `OpenGit · ${path.basename(resolvedCwd)} · ${normalizedTask}`,
+            72
+          )
+        })
+      } catch {}
+    } else {
+      if (!resolvedThreadId) throw new Error('缺少要恢复的项目会话 ID')
+      if (this.managedProjectTurns.has(resolvedThreadId)) {
+        const error = new Error('目标项目会话正在执行')
+        error.code = 'CODEX_PROJECT_THREAD_ACTIVE'
+        throw error
+      }
+      const resumed = await this.request('thread/resume', {
+        threadId: resolvedThreadId,
+        cwd: resolvedCwd,
+        approvalPolicy: this.config.approvalPolicy,
+        sandbox: this.config.sandboxMode
+      }, 60 * 1000)
+      resolvedThreadId = String(
+        resumed?.thread?.id || resolvedThreadId
+      ).trim()
+      resolvedCwd = resolveWorkingDirectory(
+        resumed?.thread?.cwd || resolvedCwd
+      )
+      if (String(resumed?.thread?.status?.type || '') === 'active') {
+        const error = new Error('目标项目会话正在执行')
+        error.code = 'CODEX_PROJECT_THREAD_ACTIVE'
+        throw error
+      }
+    }
+
+    if (this.managedProjectTurns.has(resolvedThreadId)) {
+      const error = new Error('目标项目会话正在执行')
+      error.code = 'CODEX_PROJECT_THREAD_ACTIVE'
+      throw error
+    }
+
+    let resolveCompletion
+    let rejectCompletion
+    const completionPromise = new Promise((resolve, reject) => {
+      resolveCompletion = resolve
+      rejectCompletion = reject
+    })
+    const managedTurn = {
+      threadId: resolvedThreadId,
+      turnId: '',
+      cwd: resolvedCwd,
+      agentMessages: new Map(),
+      resolve: resolveCompletion,
+      reject: rejectCompletion
+    }
+    this.managedProjectTurns.set(resolvedThreadId, managedTurn)
+
+    try {
+      const response = await this.request('turn/start', {
+        threadId: resolvedThreadId,
+        input: [{ type: 'text', text: normalizedTask }],
+        cwd: resolvedCwd,
+        approvalPolicy: this.config.approvalPolicy,
+        sandboxPolicy: buildTurnSandboxPolicy(this.config, resolvedCwd),
+        ...(this.config.reasoningEffort
+          ? { effort: this.config.reasoningEffort }
+          : {})
+      }, 60 * 1000)
+      managedTurn.turnId = String(
+        response?.turn?.id || managedTurn.turnId || ''
+      ).trim()
+    } catch (error) {
+      if (this.managedProjectTurns.get(resolvedThreadId) === managedTurn) {
+        this.managedProjectTurns.delete(resolvedThreadId)
+      }
+      if (
+        !createNew
+        && /(?:active|running|in.?progress|正在执行)/i.test(
+          String(error?.message || '')
+        )
+      ) {
+        error.code = 'CODEX_PROJECT_THREAD_ACTIVE'
+      }
+      throw error
+    }
+
+    const result = await completionPromise
+    return {
+      ...result,
+      cwd: resolvedCwd,
+      createdNewSession: createNew === true
+    }
   }
 
   enqueueInstruction({
@@ -1803,6 +2070,7 @@ class CodexMainSessionService {
   }
 
   async cleanup() {
+    this.projectSessionRouter?.cleanup()
     this.proactiveNotificationMonitor?.stop?.()
     await this.feishuBridge?.stop?.()
     await this.stopServer()

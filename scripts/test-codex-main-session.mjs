@@ -663,6 +663,208 @@ assert.notEqual(
   'different Feishu configurations must receive different Codex threads'
 )
 
+const legacyToolStore = new MemoryStore({
+  'codex-main-sessions-v2': [{
+    id: 'main',
+    title: '主会话',
+    source: 'ui',
+    threadId: 'thread-without-project-router'
+  }]
+})
+const legacyToolService = new CodexMainSessionService({
+  store: legacyToolStore,
+  getMainWindow: () => null
+})
+legacyToolService.startServer = async () => true
+const legacyToolRequests = []
+legacyToolService.request = async (method, params) => {
+  legacyToolRequests.push({ method, params })
+  if (method === 'thread/start') {
+    return { thread: { id: 'thread-with-project-router' } }
+  }
+  return {}
+}
+assert.equal(
+  await legacyToolService.ensureThread('main'),
+  'thread-with-project-router'
+)
+assert.equal(
+  legacyToolRequests.some(({ method }) => method === 'thread/resume'),
+  false,
+  'legacy main threads must be replaced because dynamic tools are registered at thread/start'
+)
+assert.deepEqual(legacyToolRequests[0], {
+  method: 'thread/archive',
+  params: { threadId: 'thread-without-project-router' }
+})
+assert.deepEqual(
+  legacyToolRequests.find(({ method }) => method === 'thread/start')
+    .params.dynamicTools.map((tool) => tool.name),
+  [
+    'find_codex_project_sessions',
+    'dispatch_codex_project_task',
+    'start_new_codex_project_task'
+  ]
+)
+
+const projectExecutionService = new CodexMainSessionService({
+  store: new MemoryStore(),
+  getMainWindow: () => null
+})
+projectExecutionService.startServer = async () => true
+const projectExecutionRequests = []
+projectExecutionService.request = async (method, params) => {
+  projectExecutionRequests.push({ method, params })
+  if (method === 'thread/resume') {
+    return {
+      thread: {
+        id: params.threadId,
+        cwd: '/tmp',
+        status: { type: 'idle' }
+      }
+    }
+  }
+  if (method === 'turn/start') {
+    queueMicrotask(() => {
+      projectExecutionService.handleNotification('item/completed', {
+        threadId: params.threadId,
+        item: {
+          id: 'agent-project-result',
+          type: 'agentMessage',
+          text: '目标项目会话已经完成。'
+        }
+      })
+      projectExecutionService.handleNotification('turn/completed', {
+        threadId: params.threadId,
+        turn: {
+          id: 'turn-project',
+          status: 'completed',
+          items: []
+        }
+      })
+    })
+    return {
+      turn: {
+        id: 'turn-project',
+        status: 'inProgress'
+      }
+    }
+  }
+  return {}
+}
+const projectExecutionResult =
+  await projectExecutionService.executeCodexProjectTask({
+    threadId: 'thread-project-idle',
+    cwd: '/tmp',
+    task: '继续执行目标项目任务',
+    createNew: false
+  })
+assert.equal(projectExecutionResult.threadId, 'thread-project-idle')
+assert.equal(projectExecutionResult.text, '目标项目会话已经完成。')
+assert.equal(projectExecutionResult.createdNewSession, false)
+assert.deepEqual(
+  projectExecutionRequests.map(({ method }) => method),
+  ['thread/resume', 'turn/start']
+)
+assert.equal(
+  projectExecutionRequests.some(({ method }) => method === 'turn/steer'),
+  false,
+  'project routing must never steer a target thread'
+)
+
+const runningProjectService = new CodexMainSessionService({
+  store: new MemoryStore(),
+  getMainWindow: () => null
+})
+runningProjectService.startServer = async () => true
+const runningProjectRequests = []
+runningProjectService.request = async (method, params) => {
+  runningProjectRequests.push({ method, params })
+  if (method === 'thread/resume') {
+    return {
+      thread: {
+        id: params.threadId,
+        cwd: '/tmp',
+        status: {
+          type: 'active',
+          activeFlags: []
+        }
+      }
+    }
+  }
+  return {}
+}
+await assert.rejects(
+  runningProjectService.executeCodexProjectTask({
+    threadId: 'thread-project-running',
+    cwd: '/tmp',
+    task: '不能直接追加',
+    createNew: false
+  }),
+  (error) => error?.code === 'CODEX_PROJECT_THREAD_ACTIVE'
+)
+assert.deepEqual(
+  runningProjectRequests.map(({ method }) => method),
+  ['thread/resume'],
+  'a running target must not receive turn/start or turn/steer'
+)
+
+const toolRpcService = new CodexMainSessionService({
+  store: new MemoryStore(),
+  getMainWindow: () => null
+})
+const toolRpcResponses = []
+let collidedClientRequestResolved = false
+const collidedTimer = setTimeout(() => {}, 60 * 1000)
+toolRpcService.pendingRequests.set(7, {
+  resolve: () => {
+    collidedClientRequestResolved = true
+  },
+  reject: () => {},
+  timer: collidedTimer,
+  method: 'thread/list'
+})
+toolRpcService.sendRaw = (message) => {
+  toolRpcResponses.push(message)
+}
+toolRpcService.projectSessionRouter = {
+  handleToolCall: async () => ({
+    success: true,
+    contentItems: [{
+      type: 'inputText',
+      text: 'ok'
+    }]
+  })
+}
+toolRpcService.handleRpcMessage({
+  id: 7,
+  method: 'item/tool/call',
+  params: {
+    threadId: 'thread-main',
+    tool: 'find_codex_project_sessions',
+    arguments: { projectQuery: 'api-go' }
+  }
+})
+await Promise.resolve()
+assert.equal(collidedClientRequestResolved, false)
+assert.equal(
+  toolRpcService.pendingRequests.has(7),
+  true,
+  'server tool request ids must not collide with client request ids'
+)
+assert.deepEqual(toolRpcResponses, [{
+  id: 7,
+  result: {
+    success: true,
+    contentItems: [{
+      type: 'inputText',
+      text: 'ok'
+    }]
+  }
+}])
+clearTimeout(collidedTimer)
+toolRpcService.pendingRequests.delete(7)
+
 const deletionStore = new MemoryStore()
 const deletionService = new CodexMainSessionService({
   store: deletionStore,
