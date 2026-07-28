@@ -380,7 +380,7 @@
               <label class="connection-toggle">
                 <span>
                   <strong>自动监控</strong>
-                  <small>锁屏后自动开始，解锁或亮屏恢复后暂停</small>
+                  <small>锁屏开始、亮屏暂停；飞书会话可发送监控指令</small>
                 </span>
                 <input
                   v-model="form.feishu.autoMonitor.enabled"
@@ -391,14 +391,14 @@
 
               <template v-if="form.feishu.autoMonitor.enabled">
                 <label class="field-label">
-                  <span>通知单聊</span>
+                  <span>通知会话</span>
                   <select
                     v-model="form.feishu.autoMonitor.targetSessionId"
                     name="feishu-auto-monitor-target"
                   >
-                    <option value="">仅在唯一 P2P 单聊绑定时自动选择</option>
+                    <option value="">仅在唯一飞书会话时自动选择</option>
                     <option
-                      v-for="session in p2pMonitorSessions"
+                      v-for="session in monitorSessions"
                       :key="session.id"
                       :value="session.id"
                     >
@@ -544,7 +544,7 @@
             </article>
 
             <p class="settings-note">
-              自动监控默认关闭，只向明确绑定的飞书 P2P 单聊推送关键进展、完成、失败、停滞和待处理状态；不会向群聊发送，也不会猜测目标。群聊中的普通消息默认进入队列；明确 @ 机器人时，仅被点名的机器人响应。
+              自动监控默认关闭，只向明确绑定的一条飞书会话推送关键进展、完成、失败、停滞和待处理状态；单聊与群聊都支持，不会猜测目标。群聊中的普通消息默认进入队列；明确 @ 机器人时，仅被点名的机器人响应。
             </p>
           </section>
         </div>
@@ -689,10 +689,10 @@ const isBusy = computed(() => state.turnStatus === 'running')
 const isAnyBusy = computed(() => (
   state.activeTaskCount > 0 || state.totalQueueLength > 0
 ))
-const p2pMonitorSessions = computed(() => (
+const monitorSessions = computed(() => (
   state.sessions.filter((session) => (
     session.source === 'feishu'
-    && session.chatType === 'p2p'
+    && ['p2p', 'group'].includes(session.chatType)
     && session.chatId
     && form.feishu.connections.some((connection) => (
       connection.id === session.connectionId
@@ -709,8 +709,10 @@ const monitorSessionLabel = (session = {}) => {
     (item) => item.id === session.connectionId
   )
   const suffix = String(session.chatId || '').slice(-8)
+  const chatLabel = session.chatType === 'group' ? '群聊' : '单聊'
   return [
-    connection?.name || session.connectionName || '飞书单聊',
+    connection?.name || session.connectionName || '飞书会话',
+    chatLabel,
     suffix
   ].filter(Boolean).join(' · ')
 }

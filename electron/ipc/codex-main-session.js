@@ -435,6 +435,42 @@ function buildFeishuSessionTitle(chatType, chatId, connectionName = '') {
   ].filter(Boolean).join(' · ')
 }
 
+function normalizeFeishuMonitorControlText(value = '') {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/[，,、。.!！?？;；:：~～]/g, '')
+    .toLowerCase()
+}
+
+function parseFeishuMonitorControlIntent(value = '') {
+  const text = normalizeFeishuMonitorControlText(value)
+  if (!text || text.length > 40) return ''
+
+  const stopPatterns = [
+    /^(?:自动)?(?:监控|跟踪)?(?:先)?(?:停止|停掉|停下|关闭|取消)(?:自动)?(?:监控|跟踪|盯|盯着)?(?:任务)?(?:吧|了)?$/,
+    /^(?:不用|不要|别)(?:再)?(?:监控|跟踪|盯|盯着)(?:任务)?(?:了|吧)?$/
+  ]
+  if (stopPatterns.some((pattern) => pattern.test(text))) return 'stop'
+
+  const statusPatterns = [
+    /^(?:自动)?(?:监控|跟踪)(?:状态|情况)(?:怎么样|如何|呢)?$/,
+    /^(?:(?:你)?(?:现在)?(?:有|还)在|(?:你)?现在在|在)(?:自动)?(?:监控|跟踪|盯|盯着)(?:任务)?(?:吗|呢)?$/,
+    /^(?:自动)?(?:监控|跟踪|盯着)(?:任务)?(?:吗|呢)$/
+  ]
+  if (statusPatterns.some((pattern) => pattern.test(text))) return 'status'
+
+  const startPatterns = [
+    /^(?:也)?(?:帮我|请)?(?:开始|开启|继续)?(?:自动)?(?:监控|跟踪)(?:一下)?(?:这些|其他|其它|当前|所有)?(?:codex)?(?:任务)?(?:吧)?$/,
+    /^(?:也)?(?:帮我|请)?(?:开始|开启|继续)?(?:盯|盯着)(?:一下)?(?:这些|其他|其它|当前|所有)?(?:codex)?(?:任务)?(?:吧)?$/,
+    /^(?:帮我|请)?(?:监控|跟踪|盯)(?:一下)?(?:这些|其他|其它|当前|所有)?(?:codex)?(?:任务)?(?:并|和)(?:同步|通知)(?:进展)?(?:给我|我)?(?:吧)?$/,
+    /^(?:帮我|请)?(?:监控|跟踪|盯|盯着)(?:一下)?(?:这些|其他|其它|当前|所有)?(?:codex)?(?:任务)?(?:有|如果有)(?:新)?进展(?:就|要|你要)?(?:同步|通知|告诉)(?:到这里|到当前会话|到当前单聊|到当前群聊|给我|我)(?:吧)?$/,
+    /^(?:有|如果有)(?:新)?进展(?:就|要|你要)?(?:同步|通知|告诉)(?:给)?我(?:吧)?$/,
+    /^(?:同步|通知)(?:新)?进展(?:给)?我(?:吧)?$/
+  ]
+  return startPatterns.some((pattern) => pattern.test(text)) ? 'start' : ''
+}
+
 class CodexMainSessionService {
   constructor({
     store,
@@ -519,7 +555,7 @@ class CodexMainSessionService {
     const eligibleSessions = Array.from(this.sessions.values())
       .filter((session) => (
         session.source === 'feishu'
-        && session.chatType === 'p2p'
+        && ['p2p', 'group'].includes(session.chatType)
         && session.chatId
         && enabledConnections.has(session.connectionId)
       ))
@@ -537,14 +573,14 @@ class CodexMainSessionService {
         (session) => session.id === requestedSessionId
       ) || null
       if (!targetSession) {
-        reason = '已选择的飞书单聊已失效或对应机器人未启用，请重新选择。'
+        reason = '已选择的飞书会话已失效或对应机器人未启用，请重新选择。'
       }
     } else if (eligibleSessions.length === 1) {
       targetSession = eligibleSessions[0]
     } else if (eligibleSessions.length === 0) {
-      reason = '没有可用的飞书 P2P 单聊绑定；群聊不会用于自动监控通知。'
+      reason = '没有可用的飞书会话；请先在目标单聊或群聊中发送消息。'
     } else {
-      reason = '存在多个飞书 P2P 单聊绑定，请明确选择一个通知目标。'
+      reason = '存在多个可用的飞书会话，请明确选择一个通知目标。'
     }
 
     const connection = targetSession
@@ -649,6 +685,122 @@ class CodexMainSessionService {
     this.autoMonitorRunning = false
     this.broadcastState()
     return true
+  }
+
+  async handleFeishuMonitorControl(payload = {}) {
+    const intent = parseFeishuMonitorControlIntent(payload.text)
+    if (!intent) return null
+    if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
+      return null
+    }
+
+    const chatType = String(payload.chatType || '').trim().toLowerCase()
+    if (!['p2p', 'group'].includes(chatType)) {
+      return {
+        handled: true,
+        action: intent,
+        text: '当前飞书会话类型不支持自动监控控制。'
+      }
+    }
+
+    const connectionId = String(payload.connectionId || '').trim()
+    const chatId = String(payload.chatId || '').trim()
+    const connection = this.config.feishu.connections.find((item) => (
+      item.enabled
+      && item.id === connectionId
+    ))
+    if (!connection || !chatId) {
+      return {
+        handled: true,
+        action: intent,
+        text: '当前飞书会话没有可用的机器人连接，无法更新自动监控。'
+      }
+    }
+
+    const session = this.getOrCreateFeishuSession({
+      ...payload,
+      connectionId,
+      connectionName: payload.connectionName || connection.name,
+      chatId,
+      chatType
+    })
+
+    if (intent === 'status') {
+      const state = this.getAutoMonitorState()
+      const target = this.resolveAutoMonitorTarget().route
+      if (!state.enabled) {
+        return {
+          handled: true,
+          action: intent,
+          text: '自动监控已关闭。发送“开始监控”即可绑定当前会话并开启。'
+        }
+      }
+      if (target?.sessionId !== session.id) {
+        return {
+          handled: true,
+          action: intent,
+          text: '自动监控已开启，但通知目标不是当前会话。发送“开始监控”可切换到这里。'
+        }
+      }
+      return {
+        handled: true,
+        action: intent,
+        text: `自动监控已绑定当前会话。${state.reason}`
+      }
+    }
+
+    if (intent === 'stop') {
+      this.config = normalizeCodexMainConfig({
+        feishu: {
+          autoMonitor: {
+            enabled: false
+          }
+        }
+      }, this.config)
+      this.store.set(CONFIG_STORE_KEY, this.config)
+      this.proactiveNotificationMonitor?.stop?.({ disabled: true })
+      this.autoMonitorRunning = false
+      this.broadcastState()
+      return {
+        handled: true,
+        action: intent,
+        text: '已停止自动监控。后续锁屏不会启动，也不会再主动推送任务进展。'
+      }
+    }
+
+    this.config = normalizeCodexMainConfig({
+      feishu: {
+        autoMonitor: {
+          enabled: true,
+          targetSessionId: session.id
+        }
+      }
+    }, this.config)
+    this.store.set(CONFIG_STORE_KEY, this.config)
+    if (this.screenLocked) {
+      await this.handleScreenLock()
+    } else {
+      this.proactiveNotificationMonitor?.stop?.({ rebaseline: true })
+      this.autoMonitorRunning = false
+      this.broadcastState()
+    }
+    const state = this.getAutoMonitorState()
+    const lifecycleText = state.running
+      ? '当前处于锁屏状态，已经开始监控。'
+      : (
+          state.screenState === 'locked'
+            ? '当前处于锁屏状态，但监控尚未成功启动，请检查飞书连接状态。'
+            : '当前亮屏，监控暂时暂停；锁屏后会自动开始。'
+        )
+    return {
+      handled: true,
+      action: intent,
+      text: [
+        '已开启自动监控并绑定到当前会话。',
+        lifecycleText,
+        '其他 Codex 任务出现关键进展、完成、失败、停滞或待处理状态时，会主动同步到这里。'
+      ].join('\n')
+    }
   }
 
   persistSessions() {
@@ -1717,18 +1869,25 @@ function createFeishuBridgeManager({
       enabledConnections.map(async (connection) => {
         const bridge = createFeishuBridge?.({
           getConfig: () => findConnection(connection.id) || connection,
-          onInstruction: (payload) => service.enqueueInstruction({
-            text: payload.text,
-            source: 'feishu',
-            attachments: payload.attachments,
-            attachmentWorkspace: payload.attachmentWorkspace,
-            onAgentMessage: payload.onAgentMessage,
-            metadata: {
+          onInstruction: async (payload) => {
+            const metadata = {
               ...payload,
               connectionId: connection.id,
               connectionName: connection.name
             }
-          }),
+            const controlResult = await service.handleFeishuMonitorControl?.(
+              metadata
+            )
+            if (controlResult?.handled) return controlResult
+            return service.enqueueInstruction({
+              text: payload.text,
+              source: 'feishu',
+              attachments: payload.attachments,
+              attachmentWorkspace: payload.attachmentWorkspace,
+              onAgentMessage: payload.onAgentMessage,
+              metadata
+            })
+          },
           onStatusChanged: () => service.broadcastState(),
           safeLog,
           safeError
@@ -2074,6 +2233,7 @@ module.exports = {
   normalizeStoredSessions,
   createFeishuSessionId,
   buildFeishuSessionTitle,
+  parseFeishuMonitorControlIntent,
   CodexMainSessionService,
   createFeishuBridgeManager,
   registerCodexPowerMonitorHandlers,

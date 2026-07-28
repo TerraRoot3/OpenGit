@@ -13,6 +13,7 @@ const {
   normalizeStoredSessions,
   createFeishuSessionId,
   buildFeishuSessionTitle,
+  parseFeishuMonitorControlIntent,
   CodexMainSessionService,
   createFeishuBridgeManager,
   registerCodexPowerMonitorHandlers
@@ -173,6 +174,56 @@ assert.equal(
   buildFeishuSessionTitle('group', 'oc_1234567890', '工作飞书'),
   '飞书群聊 · 工作飞书 · 34567890'
 )
+for (const text of [
+  '帮我盯一下任务',
+  '继续盯吧',
+  '也跟踪一下',
+  '监控',
+  '帮我监控和同步',
+  '帮我监控其他 Codex 任务，有进展同步到这里',
+  '帮我监控其他任务，有进展同步到当前群聊',
+  '有进展你要通知我',
+  '有新进展同步我'
+]) {
+  assert.equal(
+    parseFeishuMonitorControlIntent(text),
+    'start',
+    `explicit start command should be recognized: ${text}`
+  )
+}
+for (const text of [
+  '监控先停掉吧',
+  '停止监控',
+  '不用再盯了'
+]) {
+  assert.equal(
+    parseFeishuMonitorControlIntent(text),
+    'stop',
+    `explicit stop command should be recognized: ${text}`
+  )
+}
+for (const text of [
+  '监控状态怎么样',
+  '还在监控吗',
+  '你有在监控吗'
+]) {
+  assert.equal(
+    parseFeishuMonitorControlIntent(text),
+    'status',
+    `explicit status command should be recognized: ${text}`
+  )
+}
+for (const text of [
+  '这个监控，比方说我让你在这个会话里监控和同步，现在支持吗',
+  '帮我优化监控功能',
+  '分析一下任务监控的实现'
+]) {
+  assert.equal(
+    parseFeishuMonitorControlIntent(text),
+    '',
+    `discussion should not mutate monitoring state: ${text}`
+  )
+}
 
 class MemoryStore {
   constructor(entries = {}) {
@@ -334,37 +385,37 @@ assert.deepEqual(
     sessionId: workP2p.id,
     stallMinutes: 15
   }],
-  'automatic monitoring should use only the explicitly selected P2P session'
+  'automatic monitoring should use only the explicitly selected Feishu session'
 )
 service.config = structuredClone(updatedConfig)
 service.config.feishu.autoMonitor.targetSessionId = ''
 assert.deepEqual(
   service.getProactiveNotificationRoutes(),
   [],
-  'multiple eligible P2P sessions must not be guessed'
+  'multiple eligible Feishu sessions must not be guessed'
 )
 assert.match(
   service.getAutoMonitorState().reason,
   /多个/,
-  'the renderer should explain why an explicit P2P target is required'
+  'the renderer should explain why an explicit Feishu target is required'
 )
 service.config.feishu.connections[1].enabled = false
+assert.deepEqual(
+  service.getProactiveNotificationRoutes(),
+  [],
+  'a group and P2P session on one connection still require an explicit target'
+)
+service.config.feishu.autoMonitor.targetSessionId = workChat.id
 assert.deepEqual(
   service.getProactiveNotificationRoutes(),
   [{
     connectionId: 'work',
     connectionName: '工作飞书',
-    chatId: 'oc_private_work',
-    sessionId: workP2p.id,
+    chatId: 'oc_same',
+    sessionId: workChat.id,
     stallMinutes: 15
   }],
-  'a single eligible P2P session may be selected automatically'
-)
-assert.equal(
-  service.getProactiveNotificationRoutes()
-    .some((route) => route.chatId === workChat.chatId),
-  false,
-  'group chats must never be used for automatic monitoring notifications'
+  'an explicitly selected group session should receive monitoring notifications'
 )
 
 service.config = structuredClone(updatedConfig)
@@ -407,7 +458,7 @@ assert.equal(await service.handleScreenLock(), false)
 assert.equal(
   monitorCalls.filter(([action]) => action === 'start').length,
   missingTargetStartCount,
-  'an invalid P2P target must safely suppress delivery'
+  'an invalid Feishu target must safely suppress delivery'
 )
 assert.equal(service.getAutoMonitorState().status, 'no-target')
 assert.match(service.getAutoMonitorState().reason, /重新选择/)
@@ -432,16 +483,127 @@ groupOnlyService.config = normalizeCodexMainConfig({
     }]
   }
 })
-groupOnlyService.getOrCreateFeishuSession({
+const groupOnlySession = groupOnlyService.getOrCreateFeishuSession({
   connectionId: 'work',
   connectionName: '工作飞书',
   chatId: 'oc_group_only',
   chatType: 'group'
 })
-assert.deepEqual(groupOnlyService.getProactiveNotificationRoutes(), [])
-assert.equal(groupOnlyService.getAutoMonitorState().status, 'no-target')
-assert.match(groupOnlyService.getAutoMonitorState().reason, /没有可用/)
-assert.match(groupOnlyService.getAutoMonitorState().reason, /群聊不会/)
+assert.deepEqual(groupOnlyService.getProactiveNotificationRoutes(), [{
+  connectionId: 'work',
+  connectionName: '工作飞书',
+  chatId: 'oc_group_only',
+  sessionId: groupOnlySession.id,
+  stallMinutes: 20
+}])
+assert.equal(groupOnlyService.getAutoMonitorState().status, 'paused')
+assert.match(groupOnlyService.getAutoMonitorState().reason, /亮屏/)
+
+const commandStore = new MemoryStore({
+  'codex-main-session-config-v1': normalizeCodexMainConfig({
+    feishu: {
+      connections: [{
+        id: 'work',
+        name: '工作飞书',
+        enabled: true,
+        appId: 'cli_monitor_control',
+        appSecret: 'monitor-control-secret'
+      }]
+    }
+  })
+})
+const commandService = new CodexMainSessionService({
+  store: commandStore,
+  getMainWindow: () => null
+})
+const commandMonitorCalls = []
+commandService.setProactiveNotificationMonitor({
+  start: async () => {
+    commandMonitorCalls.push(['start'])
+    return true
+  },
+  stop: (options) => {
+    commandMonitorCalls.push(['stop', options])
+  }
+})
+const commandPayload = {
+  connectionId: 'work',
+  connectionName: '工作飞书',
+  chatId: 'oc_monitor_group',
+  chatType: 'group'
+}
+const commandStartResult = await commandService.handleFeishuMonitorControl({
+  ...commandPayload,
+  text: '帮我盯一下任务'
+})
+const commandSessionId = createFeishuSessionId(
+  commandPayload.chatId,
+  commandPayload.connectionId
+)
+assert.equal(commandStartResult.handled, true)
+assert.equal(commandStartResult.action, 'start')
+assert.match(commandStartResult.text, /绑定到当前会话/)
+assert.match(commandStartResult.text, /当前亮屏/)
+assert.equal(commandService.getConfig().feishu.autoMonitor.enabled, true)
+assert.equal(
+  commandService.getConfig().feishu.autoMonitor.targetSessionId,
+  commandSessionId
+)
+assert.deepEqual(commandMonitorCalls, [
+  ['stop', { rebaseline: true }]
+])
+assert.equal(commandService.getAutoMonitorState().status, 'paused')
+
+const commandStatusResult = await commandService.handleFeishuMonitorControl({
+  ...commandPayload,
+  text: '监控状态'
+})
+assert.equal(commandStatusResult.action, 'status')
+assert.match(commandStatusResult.text, /已绑定当前会话/)
+assert.match(commandStatusResult.text, /亮屏状态下已暂停/)
+
+commandService.screenLocked = true
+const commandLockedStartResult = await commandService.handleFeishuMonitorControl({
+  ...commandPayload,
+  text: '继续盯吧'
+})
+assert.match(commandLockedStartResult.text, /已经开始监控/)
+assert.equal(commandService.getAutoMonitorState().status, 'monitoring')
+assert.deepEqual(commandMonitorCalls.at(-1), ['start'])
+
+const commandStopResult = await commandService.handleFeishuMonitorControl({
+  ...commandPayload,
+  text: '监控先停掉吧'
+})
+assert.equal(commandStopResult.action, 'stop')
+assert.match(commandStopResult.text, /已停止自动监控/)
+assert.equal(commandService.getConfig().feishu.autoMonitor.enabled, false)
+assert.deepEqual(commandMonitorCalls.at(-1), ['stop', { disabled: true }])
+assert.equal(
+  commandService.getConfig().feishu.connections[0].appSecret,
+  'monitor-control-secret',
+  'chat commands must preserve the stored Feishu App Secret'
+)
+
+const commandStoppedStatusResult = await commandService.handleFeishuMonitorControl({
+  ...commandPayload,
+  text: '还在监控吗'
+})
+assert.match(commandStoppedStatusResult.text, /已关闭/)
+const discussionResult = await commandService.handleFeishuMonitorControl({
+  ...commandPayload,
+  text: '这个监控现在支持在会话里控制吗'
+})
+assert.equal(discussionResult, null)
+const unsupportedChatCommandResult = await commandService.handleFeishuMonitorControl({
+  ...commandPayload,
+  chatId: 'oc_monitor_unknown',
+  chatType: 'topic',
+  text: '开始监控'
+})
+assert.equal(unsupportedChatCommandResult.handled, true)
+assert.match(unsupportedChatCommandResult.text, /会话类型不支持/)
+assert.equal(commandService.getConfig().feishu.autoMonitor.enabled, false)
 
 const fakePowerMonitor = new EventEmitter()
 const controllerCalls = []
@@ -540,9 +702,23 @@ let bridgeStartCount = 0
 let bridgeStopCount = 0
 const bridgeKeepAliveStates = []
 const proactiveBridgeMessages = []
+const enqueuedBridgeInstructions = []
+const monitorControlPayloads = []
 const bridgeService = {
   getConfig: () => updatedConfig,
-  enqueueInstruction: (payload) => payload,
+  handleFeishuMonitorControl: async (payload) => {
+    monitorControlPayloads.push(payload)
+    if (payload.text !== '继续监控吧') return null
+    return {
+      handled: true,
+      action: 'start',
+      text: '已绑定当前会话。'
+    }
+  },
+  enqueueInstruction: (payload) => {
+    enqueuedBridgeInstructions.push(payload)
+    return payload
+  },
   broadcastState: () => {}
 }
 const bridgeManager = createFeishuBridgeManager({
@@ -601,6 +777,23 @@ assert.equal(routedInstruction.attachments[0].name, 'input.txt')
 assert.equal(
   routedInstruction.attachmentWorkspace.outboxDir,
   '/tmp/attachment-task/outbox'
+)
+const routedControlInstruction = await bridgeOptions[0].onInstruction({
+  text: '继续监控吧',
+  chatId: 'oc_work',
+  chatType: 'group'
+})
+assert.deepEqual(routedControlInstruction, {
+  handled: true,
+  action: 'start',
+  text: '已绑定当前会话。'
+})
+assert.equal(monitorControlPayloads.at(-1).connectionId, 'work')
+assert.equal(monitorControlPayloads.at(-1).connectionName, '工作飞书')
+assert.equal(
+  enqueuedBridgeInstructions.length,
+  1,
+  'handled monitor commands must not create a Codex turn'
 )
 await bridgeManager.sendProactiveNotification(
   { connectionId: 'work', chatId: 'oc_notify' },
