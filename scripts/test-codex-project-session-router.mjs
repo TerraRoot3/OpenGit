@@ -15,6 +15,9 @@ assert.deepEqual(
   CODEX_PROJECT_DYNAMIC_TOOLS.map((tool) => tool.name),
   [
     'find_codex_project_sessions',
+    'bind_codex_project',
+    'get_codex_project_binding',
+    'unbind_codex_project',
     'dispatch_codex_project_task',
     'start_new_codex_project_task'
   ]

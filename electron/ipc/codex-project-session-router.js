@@ -21,11 +21,10 @@ const CODEX_PROJECT_DYNAMIC_TOOLS = Object.freeze([
     description: [
       '查询某个项目尚未归档、尚未删除的 Codex 会话。',
       '用户只想查看项目会话，或执行任务前需要确认候选会话时调用。',
-      'projectQuery 应只填写项目名或绝对路径，不要填写完整任务描述。'
+      'projectQuery 应只填写项目名或绝对路径，不要填写完整任务描述；省略时查询当前会话绑定的默认项目。'
     ].join(''),
     inputSchema: {
       type: 'object',
-      required: ['projectQuery'],
       properties: {
         projectQuery: {
           type: 'string',
@@ -42,15 +41,60 @@ const CODEX_PROJECT_DYNAMIC_TOOLS = Object.freeze([
   },
   {
     type: 'function',
+    name: 'bind_codex_project',
+    description: [
+      '把项目绑定为当前 OpenGit 或飞书会话的默认项目。',
+      '后续用户未明确点名项目的项目任务会默认路由到该项目。',
+      '优先按 projectQuery 查找已有 Codex 项目会话；没有旧会话时必须提供存在的项目绝对路径。'
+    ].join(''),
+    inputSchema: {
+      type: 'object',
+      required: ['projectQuery'],
+      properties: {
+        projectQuery: {
+          type: 'string',
+          description: '要绑定的项目名、目录名或绝对路径，例如 content_studio。'
+        },
+        cwd: {
+          type: 'string',
+          description: '可选；未找到旧会话时用于绑定的项目绝对路径。'
+        }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
+    name: 'get_codex_project_binding',
+    description: '查询当前 OpenGit 或飞书会话绑定的默认项目。',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
+    name: 'unbind_codex_project',
+    description: '解除当前 OpenGit 或飞书会话的默认项目绑定。',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
     name: 'dispatch_codex_project_task',
     description: [
       '把项目任务路由到该项目最近的未归档 Codex 会话；这是飞书项目执行请求的必经入口。',
       '最近会话空闲时会恢复它并开始新一轮；最近会话正在执行时只返回确认问题，绝不排队、steer 或在 OpenGit 主会话里代执行。',
+      'projectQuery 省略时使用当前会话绑定的默认项目；用户明确点名其他项目时传入该项目，不会改变原绑定。',
       '如果项目没有旧会话，只有提供可用的绝对 cwd 后才会新建独立项目会话。'
     ].join(''),
     inputSchema: {
       type: 'object',
-      required: ['projectQuery', 'task'],
+      required: ['task'],
       properties: {
         projectQuery: {
           type: 'string',
@@ -284,6 +328,61 @@ class CodexProjectSessionRouter {
     }
   }
 
+  getOriginSession(activeTask = {}) {
+    return this.service?.getSession?.(
+      String(activeTask.sessionId || '').trim()
+    ) || null
+  }
+
+  getProjectBinding(activeTask = {}) {
+    const session = this.getOriginSession(activeTask)
+    const binding = session?.projectBinding
+    if (!binding || typeof binding !== 'object') return null
+    const projectQuery = String(binding.projectQuery || '').trim()
+    const cwd = String(binding.cwd || '').trim()
+    if (!projectQuery && !cwd) return null
+    return {
+      projectQuery: projectQuery || path.basename(cwd),
+      cwd,
+      title: String(
+        binding.title || (cwd ? path.basename(cwd) : projectQuery)
+      ).trim(),
+      boundAt: Number(binding.boundAt) || 0
+    }
+  }
+
+  resolveProjectTarget({
+    projectQuery,
+    cwd,
+    activeTask
+  } = {}) {
+    const explicitProjectQuery = String(projectQuery || '').trim()
+    const explicitCwd = String(cwd || '').trim()
+    if (explicitProjectQuery) {
+      return {
+        projectQuery: explicitProjectQuery,
+        cwd: explicitCwd,
+        usedProjectBinding: false,
+        projectBinding: this.getProjectBinding(activeTask)
+      }
+    }
+    const projectBinding = this.getProjectBinding(activeTask)
+    if (!projectBinding) {
+      return {
+        projectQuery: '',
+        cwd: explicitCwd,
+        usedProjectBinding: false,
+        projectBinding: null
+      }
+    }
+    return {
+      projectQuery: projectBinding.cwd || projectBinding.projectQuery,
+      cwd: explicitCwd || projectBinding.cwd,
+      usedProjectBinding: true,
+      projectBinding
+    }
+  }
+
   pruneConfirmations() {
     const timestamp = this.now()
     for (const [token, confirmation] of this.confirmations.entries()) {
@@ -344,6 +443,81 @@ class CodexProjectSessionRouter {
       .slice(0, normalizeLimit(limit))
   }
 
+  async bindProject({
+    projectQuery,
+    cwd = '',
+    activeTask
+  } = {}) {
+    const session = this.getOriginSession(activeTask)
+    if (!session) throw new Error('找不到要绑定项目的 OpenGit 会话')
+    const normalizedQuery = String(projectQuery || '').trim()
+    if (!normalizedQuery) throw new Error('请提供要绑定的项目名或绝对路径')
+
+    const explicitCwd = resolveExistingDirectory(cwd)
+      || resolveExistingDirectory(normalizedQuery)
+    const searchQuery = explicitCwd || normalizedQuery
+    const candidates = await this.findProjectSessions({
+      projectQuery: searchQuery,
+      limit: MAX_RESULT_LIMIT
+    })
+    const selectedSession = candidates[0] || null
+    const projectCwd = explicitCwd
+      || resolveExistingDirectory(selectedSession?.cwd)
+    if (!projectCwd) {
+      return {
+        status: 'project_path_required',
+        projectQuery: normalizedQuery,
+        message: '没有找到该项目的未归档旧会话；请提供项目绝对路径后再绑定。'
+      }
+    }
+
+    const projectBinding = this.service.setProjectBinding(session.id, {
+      projectQuery: path.basename(projectCwd) || normalizedQuery,
+      cwd: projectCwd,
+      title: selectedSession?.title || path.basename(projectCwd),
+      boundAt: this.now()
+    })
+    return {
+      status: 'bound',
+      projectBinding,
+      selectedSession,
+      matchedSessionCount: candidates.length,
+      message: `已将当前会话绑定到项目 ${projectBinding.projectQuery}。`
+    }
+  }
+
+  getBindingStatus(activeTask = {}) {
+    const projectBinding = this.getProjectBinding(activeTask)
+    return projectBinding
+      ? {
+          status: 'bound',
+          projectBinding,
+          message: `当前会话已绑定项目 ${projectBinding.projectQuery}。`
+        }
+      : {
+          status: 'unbound',
+          projectBinding: null,
+          message: '当前会话尚未绑定默认项目。'
+        }
+  }
+
+  unbindProject(activeTask = {}) {
+    const session = this.getOriginSession(activeTask)
+    if (!session) throw new Error('找不到要解除项目绑定的 OpenGit 会话')
+    const previousBinding = this.service.clearProjectBinding(session.id)
+    return previousBinding
+      ? {
+          status: 'unbound',
+          previousBinding,
+          message: `已解除项目 ${previousBinding.projectQuery} 的会话绑定。`
+        }
+      : {
+          status: 'unbound',
+          previousBinding: null,
+          message: '当前会话原本就没有绑定默认项目。'
+        }
+  }
+
   createRunningConfirmation({
     candidate,
     projectQuery,
@@ -391,8 +565,19 @@ class CodexProjectSessionRouter {
   } = {}) {
     const normalizedTask = String(task || '').trim()
     if (!normalizedTask) throw new Error('项目任务不能为空')
-    const candidates = await this.findProjectSessions({
+    const target = this.resolveProjectTarget({
       projectQuery,
+      cwd,
+      activeTask
+    })
+    if (!target.projectQuery) {
+      return {
+        status: 'project_required',
+        message: '当前会话尚未绑定默认项目，请先指定项目或绑定一个项目。'
+      }
+    }
+    const candidates = await this.findProjectSessions({
+      projectQuery: target.projectQuery,
       limit: MAX_RESULT_LIMIT
     })
     const requestedThreadId = String(threadId || '').trim()
@@ -402,7 +587,7 @@ class CodexProjectSessionRouter {
     if (requestedThreadId && !candidate) {
       return {
         status: 'session_not_found',
-        projectQuery: String(projectQuery || '').trim(),
+        projectQuery: target.projectQuery,
         message: '指定会话不属于该项目、已归档或已删除，请重新查询。'
       }
     }
@@ -410,7 +595,7 @@ class CodexProjectSessionRouter {
     if (candidate?.status === 'running') {
       return this.createRunningConfirmation({
         candidate,
-        projectQuery,
+        projectQuery: target.projectQuery,
         task: normalizedTask,
         origin: this.getOrigin(activeTask)
       })
@@ -426,6 +611,8 @@ class CodexProjectSessionRouter {
         })
         return {
           status: 'completed',
+          usedProjectBinding: target.usedProjectBinding,
+          projectBinding: target.projectBinding,
           reusedExistingSession: true,
           selectedSession: candidate,
           result
@@ -437,19 +624,19 @@ class CodexProjectSessionRouter {
             ...candidate,
             status: 'running'
           },
-          projectQuery,
+          projectQuery: target.projectQuery,
           task: normalizedTask,
           origin: this.getOrigin(activeTask)
         })
       }
     }
 
-    const projectCwd = resolveExistingDirectory(cwd)
-      || resolveExistingDirectory(projectQuery)
+    const projectCwd = resolveExistingDirectory(target.cwd)
+      || resolveExistingDirectory(target.projectQuery)
     if (!projectCwd) {
       return {
         status: 'project_path_required',
-        projectQuery: String(projectQuery || '').trim(),
+        projectQuery: target.projectQuery,
         message: '没有找到该项目的未归档旧会话；请提供项目绝对路径后再新建独立任务。'
       }
     }
@@ -460,6 +647,8 @@ class CodexProjectSessionRouter {
     })
     return {
       status: 'completed',
+      usedProjectBinding: target.usedProjectBinding,
+      projectBinding: target.projectBinding,
       reusedExistingSession: false,
       createdNewSession: true,
       projectCwd,
@@ -533,15 +722,40 @@ class CodexProjectSessionRouter {
 
     try {
       if (tool === 'find_codex_project_sessions') {
-        const sessions = await this.findProjectSessions({
+        const target = this.resolveProjectTarget({
           projectQuery: args.projectQuery,
+          activeTask
+        })
+        if (!target.projectQuery) {
+          return toolResponse({
+            status: 'project_required',
+            message: '当前会话尚未绑定默认项目，请提供要查询的项目名。'
+          })
+        }
+        const sessions = await this.findProjectSessions({
+          projectQuery: target.projectQuery,
           limit: args.limit
         })
         return toolResponse({
-          projectQuery: String(args.projectQuery || '').trim(),
+          projectQuery: target.projectQuery,
+          usedProjectBinding: target.usedProjectBinding,
+          projectBinding: target.projectBinding,
           count: sessions.length,
           sessions
         })
+      }
+      if (tool === 'bind_codex_project') {
+        return toolResponse(await this.bindProject({
+          projectQuery: args.projectQuery,
+          cwd: args.cwd,
+          activeTask
+        }))
+      }
+      if (tool === 'get_codex_project_binding') {
+        return toolResponse(this.getBindingStatus(activeTask))
+      }
+      if (tool === 'unbind_codex_project') {
+        return toolResponse(this.unbindProject(activeTask))
       }
       if (tool === 'dispatch_codex_project_task') {
         return toolResponse(await this.dispatchProjectTask({

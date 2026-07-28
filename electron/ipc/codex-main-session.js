@@ -31,13 +31,15 @@ const SERVER_STOP_TIMEOUT_MS = 2 * 1000
 const MAX_STDERR_LENGTH = 6000
 const MAX_HISTORY_MESSAGES = 400
 const FEISHU_POWER_RECOVERY_DELAY_MS = 2500
-const PROJECT_ROUTING_TOOL_VERSION = 1
+const PROJECT_ROUTING_TOOL_VERSION = 2
 
 const MAIN_SESSION_INSTRUCTIONS = [
   '你是 OpenGit 内置的持久 Codex 路由协调会话。',
   '你会接收 OpenGit 页面或当前飞书会话转发的用户指令，并负责理解需求、路由任务和总结结果。',
   '任务执行期间可以使用 Codex 可用的工具；在真正缺少用户选择或外部权限时才说明阻塞。',
   '当飞书用户要求查看、检查、修改、继续或执行某个项目的任务时，必须先调用 dispatch_codex_project_task；不得在当前 OpenGit 主会话中直接使用文件、终端或代码工具代替目标项目会话执行。',
+  '每个 OpenGit 会话都可以绑定一个默认项目。用户要求把某个项目绑定到当前会话时调用 bind_codex_project；查询当前绑定时调用 get_codex_project_binding；解除绑定时调用 unbind_codex_project。',
+  '当前会话绑定项目后，用户没有明确点名其他项目的项目任务也必须调用 dispatch_codex_project_task，并省略 projectQuery 以使用绑定项目。用户明确点名其他项目时，以本次点名为准，但不要自动改变原绑定。',
   'dispatch_codex_project_task 会优先恢复该项目最近的未归档、未删除旧会话。它返回 confirmation_required 时，只把 question 原样或等义转述给用户，不得排队、steer、直接执行，也不得自行调用 start_new_codex_project_task。',
   '只有用户在同一个飞书会话中明确回复同意新开任务后，才使用上一次返回的 confirmationToken 调用 start_new_codex_project_task；普通的“继续”不等于同意新开。',
   '用户只查询项目现有 Codex 会话时使用 find_codex_project_sessions。没有旧会话且缺少项目绝对路径时，先向用户询问路径。',
@@ -350,6 +352,22 @@ function compactSessionText(value, maxLength = 72) {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text
 }
 
+function normalizeProjectBinding(value) {
+  if (!value || typeof value !== 'object') return null
+  const projectQuery = compactSessionText(value.projectQuery, 120)
+  const cwd = String(value.cwd || '').trim()
+  if (!projectQuery && !cwd) return null
+  return {
+    projectQuery: projectQuery || path.basename(cwd),
+    cwd,
+    title: compactSessionText(
+      value.title || (cwd ? path.basename(cwd) : projectQuery),
+      100
+    ),
+    boundAt: Number(value.boundAt) || Date.now()
+  }
+}
+
 function createDefaultSession(threadId = '') {
   const now = Date.now()
   return {
@@ -362,6 +380,7 @@ function createDefaultSession(threadId = '') {
     chatType: '',
     threadId: String(threadId || '').trim(),
     toolVersion: PROJECT_ROUTING_TOOL_VERSION,
+    projectBinding: null,
     lastMessage: '',
     createdAt: now,
     updatedAt: now
@@ -410,6 +429,7 @@ function normalizeStoredSessions(value) {
         : '',
       threadId: String(item.threadId || '').trim(),
       toolVersion: Math.max(0, Number(item.toolVersion) || 0),
+      projectBinding: normalizeProjectBinding(item.projectBinding),
       lastMessage: compactSessionText(item.lastMessage),
       createdAt,
       updatedAt: Number(item.updatedAt) || createdAt
@@ -867,6 +887,25 @@ class CodexMainSessionService {
     return session
   }
 
+  setProjectBinding(sessionId, binding) {
+    const session = this.getSession(sessionId)
+    if (!session) throw new Error('会话不存在或已失效')
+    const projectBinding = normalizeProjectBinding(binding)
+    if (!projectBinding) throw new Error('项目绑定信息无效')
+    this.touchSession(session.id, { projectBinding })
+    this.broadcastState()
+    return { ...projectBinding }
+  }
+
+  clearProjectBinding(sessionId) {
+    const session = this.getSession(sessionId)
+    if (!session) throw new Error('会话不存在或已失效')
+    const previousBinding = normalizeProjectBinding(session.projectBinding)
+    this.touchSession(session.id, { projectBinding: null })
+    this.broadcastState()
+    return previousBinding
+  }
+
   createUiSession() {
     const now = Date.now()
     const session = {
@@ -879,6 +918,7 @@ class CodexMainSessionService {
       chatType: '',
       threadId: '',
       toolVersion: PROJECT_ROUTING_TOOL_VERSION,
+      projectBinding: null,
       lastMessage: '',
       createdAt: now,
       updatedAt: now
@@ -924,6 +964,7 @@ class CodexMainSessionService {
       chatType: String(payload.chatType || '').trim().toLowerCase(),
       threadId: '',
       toolVersion: PROJECT_ROUTING_TOOL_VERSION,
+      projectBinding: null,
       lastMessage: '',
       createdAt: now,
       updatedAt: now
@@ -2499,6 +2540,7 @@ module.exports = {
   buildCodexTaskInput,
   extractThreadMessages,
   normalizeStoredSessions,
+  normalizeProjectBinding,
   createFeishuSessionId,
   buildFeishuSessionTitle,
   parseFeishuMonitorControlIntent,

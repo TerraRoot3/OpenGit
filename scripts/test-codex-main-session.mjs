@@ -11,6 +11,7 @@ const {
   buildCodexTaskInput,
   extractThreadMessages,
   normalizeStoredSessions,
+  normalizeProjectBinding,
   createFeishuSessionId,
   buildFeishuSessionTitle,
   parseFeishuMonitorControlIntent,
@@ -173,6 +174,20 @@ assert.equal(createFeishuSessionId('oc_same', 'work'), 'feishu:work:oc_same')
 assert.equal(
   buildFeishuSessionTitle('group', 'oc_1234567890', '工作飞书'),
   '飞书群聊 · 工作飞书 · 34567890'
+)
+assert.deepEqual(
+  normalizeProjectBinding({
+    projectQuery: 'content_studio',
+    cwd: '/tmp',
+    title: 'Content Studio',
+    boundAt: 123
+  }),
+  {
+    projectQuery: 'content_studio',
+    cwd: '/tmp',
+    title: 'Content Studio',
+    boundAt: 123
+  }
 )
 for (const text of [
   '帮我盯一下任务',
@@ -702,10 +717,185 @@ assert.deepEqual(
     .params.dynamicTools.map((tool) => tool.name),
   [
     'find_codex_project_sessions',
+    'bind_codex_project',
+    'get_codex_project_binding',
+    'unbind_codex_project',
     'dispatch_codex_project_task',
     'start_new_codex_project_task'
   ]
 )
+
+const bindingStore = new MemoryStore()
+const bindingService = new CodexMainSessionService({
+  store: bindingStore,
+  getMainWindow: () => null
+})
+const boundChat = bindingService.getOrCreateFeishuSession({
+  connectionId: 'work',
+  connectionName: '工作飞书',
+  chatId: 'oc_bound_project',
+  chatType: 'group'
+})
+const unboundChat = bindingService.getOrCreateFeishuSession({
+  connectionId: 'work',
+  connectionName: '工作飞书',
+  chatId: 'oc_unbound_project',
+  chatType: 'group'
+})
+bindingService.getSession(boundChat.id).threadId = 'thread-main-bound'
+bindingService.getSession(unboundChat.id).threadId = 'thread-main-unbound'
+const bindingTask = {
+  sessionId: boundChat.id,
+  threadId: 'thread-main-bound',
+  text: '把 tmp 项目绑定到当前群',
+  source: 'feishu',
+  metadata: {
+    connectionId: 'work',
+    chatId: 'oc_bound_project'
+  }
+}
+bindingService.activeTasksByThreadId.set('thread-main-bound', bindingTask)
+bindingService.activeTasksByThreadId.set('thread-main-unbound', {
+  ...bindingTask,
+  sessionId: unboundChat.id,
+  threadId: 'thread-main-unbound',
+  metadata: {
+    connectionId: 'work',
+    chatId: 'oc_unbound_project'
+  }
+})
+bindingService.request = async (method) => {
+  if (method === 'thread/list') {
+    return {
+      data: [
+        {
+          id: 'thread-project-tmp',
+          cwd: '/tmp',
+          name: 'tmp project',
+          preview: '处理 tmp 项目',
+          status: { type: 'notLoaded' },
+          updatedAt: Date.now()
+        },
+        {
+          id: 'thread-project-var',
+          cwd: '/var',
+          name: 'var project',
+          preview: '处理 var 项目',
+          status: { type: 'notLoaded' },
+          updatedAt: Date.now() - 1
+        }
+      ],
+      nextCursor: null
+    }
+  }
+  return {}
+}
+const bindingToolResult =
+  await bindingService.projectSessionRouter.handleToolCall({
+    threadId: 'thread-main-bound',
+    tool: 'bind_codex_project',
+    arguments: {
+      projectQuery: 'tmp'
+    }
+  })
+const bindingPayload = JSON.parse(bindingToolResult.contentItems[0].text)
+assert.equal(bindingPayload.status, 'bound')
+assert.equal(bindingPayload.projectBinding.cwd, '/tmp')
+assert.equal(
+  bindingService.getSession(boundChat.id).projectBinding.projectQuery,
+  'tmp'
+)
+assert.equal(
+  bindingService.getSession(unboundChat.id).projectBinding,
+  null,
+  'project bindings must stay isolated by Feishu conversation'
+)
+const reloadedBindingService = new CodexMainSessionService({
+  store: bindingStore,
+  getMainWindow: () => null
+})
+assert.equal(
+  reloadedBindingService.getSession(boundChat.id).projectBinding.cwd,
+  '/tmp',
+  'project bindings must survive service restarts'
+)
+
+const boundProjectExecutions = []
+bindingService.executeCodexProjectTask = async (payload) => {
+  boundProjectExecutions.push(payload)
+  return {
+    threadId: payload.threadId,
+    cwd: payload.cwd,
+    text: '绑定项目任务已完成。'
+  }
+}
+const dispatchBoundResult =
+  await bindingService.projectSessionRouter.handleToolCall({
+    threadId: 'thread-main-bound',
+    tool: 'dispatch_codex_project_task',
+    arguments: {
+      task: '检查当前项目'
+    }
+  })
+const dispatchBoundPayload = JSON.parse(
+  dispatchBoundResult.contentItems[0].text
+)
+assert.equal(dispatchBoundPayload.status, 'completed')
+assert.equal(dispatchBoundPayload.usedProjectBinding, true)
+assert.equal(boundProjectExecutions[0].threadId, 'thread-project-tmp')
+
+const dispatchExplicitResult =
+  await bindingService.projectSessionRouter.handleToolCall({
+    threadId: 'thread-main-bound',
+    tool: 'dispatch_codex_project_task',
+    arguments: {
+      projectQuery: 'var',
+      task: '临时检查另一个项目'
+    }
+  })
+const dispatchExplicitPayload = JSON.parse(
+  dispatchExplicitResult.contentItems[0].text
+)
+assert.equal(dispatchExplicitPayload.status, 'completed')
+assert.equal(dispatchExplicitPayload.usedProjectBinding, false)
+assert.equal(boundProjectExecutions[1].threadId, 'thread-project-var')
+assert.equal(
+  bindingService.getSession(boundChat.id).projectBinding.cwd,
+  '/tmp',
+  'an explicit one-off project must not replace the conversation binding'
+)
+
+const unboundStatusResult =
+  await bindingService.projectSessionRouter.handleToolCall({
+    threadId: 'thread-main-unbound',
+    tool: 'get_codex_project_binding',
+    arguments: {}
+  })
+assert.equal(
+  JSON.parse(unboundStatusResult.contentItems[0].text).status,
+  'unbound'
+)
+const dispatchUnboundResult =
+  await bindingService.projectSessionRouter.handleToolCall({
+    threadId: 'thread-main-unbound',
+    tool: 'dispatch_codex_project_task',
+    arguments: {
+      task: '检查当前项目'
+    }
+  })
+assert.equal(
+  JSON.parse(dispatchUnboundResult.contentItems[0].text).status,
+  'project_required'
+)
+
+const unbindResult =
+  await bindingService.projectSessionRouter.handleToolCall({
+    threadId: 'thread-main-bound',
+    tool: 'unbind_codex_project',
+    arguments: {}
+  })
+assert.equal(JSON.parse(unbindResult.contentItems[0].text).status, 'unbound')
+assert.equal(bindingService.getSession(boundChat.id).projectBinding, null)
 
 const projectExecutionService = new CodexMainSessionService({
   store: new MemoryStore(),
