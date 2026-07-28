@@ -343,6 +343,9 @@
               v-if="currentView === 'pipeline' && showGitFeatureUi"
               :project-path="path"
               :is-active="isActive && currentView === 'pipeline'"
+              :monitoring-enabled="pipelineMonitoringEnabled"
+              @update:monitoring-enabled="handlePipelineMonitoringChange"
+              @summary-updated="handlePipelineSummaryUpdated"
             />
 
             <!-- 提交历史 -->
@@ -611,6 +614,11 @@ import {
   deriveProjectGitMonitorRefreshRequest,
   shouldRunProjectGitMonitor
 } from './projectDetailGitMonitor.mjs'
+import {
+  getPipelineMonitoringConfigKey,
+  normalizePipelineMonitoringEnabled,
+  shouldPollPipeline
+} from './projectPipelineMonitoringState.mjs'
 import { resolveTagsViewState } from './projectDetailTagsState.mjs'
 import {
   useProjectStore,
@@ -763,6 +771,7 @@ const isGitRepository = ref(null)
 const projectGitMonitorSnapshot = ref(null)
 const isDocumentVisible = ref(typeof document === 'undefined' ? true : document.visibilityState === 'visible')
 const activePipelineSummary = ref(null)
+const pipelineMonitoringEnabled = ref(false)
 
 const PROJECT_GIT_MONITOR_INTERVAL_MS = 2000
 const PIPELINE_TRIGGER_DELAY_MS = 2000
@@ -802,6 +811,13 @@ async function getConfigString (key) {
 async function setConfigString (key, str) {
   if (!projectUiConfigViaElectron()) return
   await window.electronAPI.setConfig(key, String(str)).catch(() => {})
+}
+
+const getSavedPipelineMonitoringEnabled = async (projectPath) => {
+  const storedValue = await getConfigString(
+    getPipelineMonitoringConfigKey(projectPath)
+  )
+  return normalizePipelineMonitoringEnabled(storedValue)
 }
 
 async function getConfigObject (key) {
@@ -1490,7 +1506,12 @@ const scheduleTriggeredPipelineRefresh = ({
   delay = PIPELINE_TRIGGER_DELAY_MS,
   trackingWindowMs = PIPELINE_SUMMARY_TRACKING_WINDOW_MS
 } = {}) => {
-  if (!props.path || isGitRepository.value === false || typeof window === 'undefined') return
+  if (
+    !pipelineMonitoringEnabled.value
+    || !props.path
+    || isGitRepository.value === false
+    || typeof window === 'undefined'
+  ) return
   armPipelineSummaryTracking(trackingWindowMs)
   clearPipelineTriggerRefreshTimer()
   pipelineTriggerRefreshTimer = window.setTimeout(() => {
@@ -1501,9 +1522,15 @@ const scheduleTriggeredPipelineRefresh = ({
 
 const schedulePipelineSummaryRefresh = () => {
   clearPipelineSummaryTimer()
-  if (!props.path || isGitRepository.value === false || typeof window === 'undefined') {
+  if (
+    !pipelineMonitoringEnabled.value
+    || !props.path
+    || isGitRepository.value === false
+    || typeof window === 'undefined'
+  ) {
     return
   }
+  if (props.isActive && currentView.value === 'pipeline') return
 
   const shouldPollFromContext = props.isActive && isDocumentVisible.value
   const shouldPollFromTracking = shouldTrackPipelineSummary()
@@ -1526,8 +1553,18 @@ const schedulePipelineSummaryRefresh = () => {
 }
 
 const refreshPipelineSummary = async ({ silent = false } = {}) => {
-  if (!props.path || isGitRepository.value === false || !window.electronAPI?.projectPipelines) {
+  if (
+    !pipelineMonitoringEnabled.value
+    || !props.path
+    || isGitRepository.value === false
+    || !window.electronAPI?.projectPipelines
+  ) {
     activePipelineSummary.value = null
+    clearPipelineSummaryTimer()
+    return
+  }
+  if (props.isActive && currentView.value === 'pipeline') {
+    clearPipelineSummaryTimer()
     return
   }
 
@@ -1585,6 +1622,45 @@ const refreshPipelineSummary = async ({ silent = false } = {}) => {
   } finally {
     pipelineSummaryInFlight = false
     schedulePipelineSummaryRefresh()
+  }
+}
+
+const handlePipelineMonitoringChange = async (enabled) => {
+  const nextEnabled = normalizePipelineMonitoringEnabled(enabled)
+  pipelineMonitoringEnabled.value = nextEnabled
+  if (props.path) {
+    await setConfigString(
+      getPipelineMonitoringConfigKey(props.path),
+      nextEnabled ? 'true' : 'false'
+    )
+  }
+  if (!nextEnabled) {
+    activePipelineSummary.value = null
+    clearPipelineRefreshState()
+    return
+  }
+  if (
+    currentView.value !== 'pipeline'
+    && shouldPollPipeline({
+      monitoringEnabled: nextEnabled,
+      hasProject: Boolean(props.path),
+      isActive: props.isActive,
+      isDocumentVisible: isDocumentVisible.value,
+      isGitRepository: isGitRepository.value !== false
+    })
+  ) {
+    await refreshPipelineSummary()
+  }
+}
+
+const handlePipelineSummaryUpdated = ({
+  currentRunning = null
+} = {}) => {
+  if (!pipelineMonitoringEnabled.value) return
+  activePipelineSummary.value = currentRunning
+  pipelineSummaryHoldUntil = 0
+  if (currentRunning) {
+    armPipelineSummaryTracking()
   }
 }
 
@@ -3157,6 +3233,7 @@ watch(() => props.path, async (newPath, oldPath) => {
   clearAiSessionsPreload()
   clearWorkspacePreload()
   clearPipelineRefreshState()
+  pipelineMonitoringEnabled.value = false
   stopProjectGitMonitor()
   resetProjectGitMonitorState()
   if (newPath) {
@@ -3173,14 +3250,16 @@ watch(() => props.path, async (newPath, oldPath) => {
       nextTerminalScrollback,
       nextCurrentView,
       nextExpandState,
-      nextBranchesPanelWidthState
+      nextBranchesPanelWidthState,
+      nextPipelineMonitoringEnabled
     ] = await Promise.all([
       getSavedTerminalModeScope(),
       getSavedTerminalMode(newPath),
       getSavedTerminalScrollback(),
       getSavedCurrentView(newPath),
       getSavedExpandState(newPath),
-      getSavedBranchesPanelWidthState(newPath)
+      getSavedBranchesPanelWidthState(newPath),
+      getSavedPipelineMonitoringEnabled(newPath)
     ])
 
     if (props.path !== newPath) return
@@ -3193,6 +3272,7 @@ watch(() => props.path, async (newPath, oldPath) => {
     showTags.value = nextExpandState.tags
     branchesPanelWidthPx.value = nextBranchesPanelWidthState.width
     branchesPanelLastExpandedWidth.value = nextBranchesPanelWidthState.lastExpandedWidth
+    pipelineMonitoringEnabled.value = nextPipelineMonitoringEnabled
     // 恢复该项目保存的视图状态和展开状态（electron-store）
     currentView.value = nextCurrentView
     if (props.isActive && currentView.value === 'terminal') {
@@ -3249,7 +3329,9 @@ watch(() => props.path, async (newPath, oldPath) => {
     if (!props.allowDirectoryMode) {
       isGitRepository.value = true
       loadProjectInfo({ refreshBranchStatus: false })
-      refreshPipelineSummary({ silent: true })
+      if (pipelineMonitoringEnabled.value) {
+        refreshPipelineSummary({ silent: true })
+      }
       clearProjectBranchStatusCache(newPath).finally(() => {
         if (props.path === newPath && isGitRepository.value !== false) {
           loadBranchStatus()
@@ -3272,7 +3354,9 @@ watch(() => props.path, async (newPath, oldPath) => {
         }
 
         loadProjectInfo({ refreshBranchStatus: false })
-        refreshPipelineSummary({ silent: true })
+        if (pipelineMonitoringEnabled.value) {
+          refreshPipelineSummary({ silent: true })
+        }
 
         clearProjectBranchStatusCache(newPath).finally(() => {
           if (props.path === newPath && isGitRepository.value !== false) {
@@ -3295,6 +3379,7 @@ watch(() => props.path, async (newPath, oldPath) => {
     projectInfo.value = null
     isGitRepository.value = false
     activePipelineSummary.value = null
+    pipelineMonitoringEnabled.value = false
     clearPipelineRefreshState()
     // 切换项目时重置状态
     branchStatus.value = null
@@ -3332,6 +3417,16 @@ watch(currentView, (view) => {
     workspaceMounted.value = true
   } else if (isDirectoryMode.value) {
     workspaceMounted.value = false
+  }
+  if (view === 'pipeline') {
+    clearPipelineSummaryTimer()
+  } else if (
+    pipelineMonitoringEnabled.value
+    && props.isActive
+    && isDocumentVisible.value
+    && isGitRepository.value === true
+  ) {
+    refreshPipelineSummary({ silent: true })
   }
 }, { immediate: true })
 
