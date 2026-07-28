@@ -376,6 +376,59 @@
               </button>
             </div>
 
+            <div class="auto-monitor-card">
+              <label class="connection-toggle">
+                <span>
+                  <strong>自动监控</strong>
+                  <small>锁屏后自动开始，解锁或亮屏恢复后暂停</small>
+                </span>
+                <input
+                  v-model="form.feishu.autoMonitor.enabled"
+                  name="feishu-auto-monitor-enabled"
+                  type="checkbox"
+                />
+              </label>
+
+              <template v-if="form.feishu.autoMonitor.enabled">
+                <label class="field-label">
+                  <span>通知单聊</span>
+                  <select
+                    v-model="form.feishu.autoMonitor.targetSessionId"
+                    name="feishu-auto-monitor-target"
+                  >
+                    <option value="">仅在唯一 P2P 单聊绑定时自动选择</option>
+                    <option
+                      v-for="session in p2pMonitorSessions"
+                      :key="session.id"
+                      :value="session.id"
+                    >
+                      {{ monitorSessionLabel(session) }}
+                    </option>
+                  </select>
+                </label>
+
+                <label class="field-label">
+                  <span>停滞提醒（分钟）</span>
+                  <input
+                    v-model.number="form.feishu.autoMonitor.stallMinutes"
+                    name="feishu-auto-monitor-stall"
+                    type="number"
+                    min="5"
+                    max="1440"
+                    step="5"
+                  />
+                </label>
+              </template>
+
+              <p
+                class="auto-monitor-status"
+                :class="state.feishu.autoMonitor?.status || 'disabled'"
+                aria-live="polite"
+              >
+                {{ autoMonitorStatusReason }}
+              </p>
+            </div>
+
             <p v-if="form.feishu.connections.length === 0" class="connection-empty">
               还没有飞书配置。添加后，每个机器人会保持自己的长连接。
             </p>
@@ -491,7 +544,7 @@
             </article>
 
             <p class="settings-note">
-              群聊中的普通消息默认进入队列；明确 @ 机器人时，仅被点名的机器人响应。不同飞书配置和 chat_id 都使用独立 Codex 会话。
+              自动监控默认关闭，只向明确绑定的飞书 P2P 单聊推送关键进展、完成、失败、停滞和待处理状态；不会向群聊发送，也不会猜测目标。群聊中的普通消息默认进入队列；明确 @ 机器人时，仅被点名的机器人响应。
             </p>
           </section>
         </div>
@@ -601,7 +654,16 @@ const state = reactive({
     running: false,
     status: 'disabled',
     error: '',
-    connections: []
+    connections: [],
+    autoMonitor: {
+      enabled: false,
+      running: false,
+      screenState: 'unlocked',
+      status: 'disabled',
+      reason: '自动监控已关闭。',
+      targetSessionId: '',
+      eligibleSessionIds: []
+    }
   }
 })
 
@@ -611,6 +673,11 @@ const form = reactive({
   approvalPolicy: 'never',
   reasoningEffort: '',
   feishu: {
+    autoMonitor: {
+      enabled: false,
+      targetSessionId: '',
+      stallMinutes: 20
+    },
     connections: []
   }
 })
@@ -622,6 +689,31 @@ const isBusy = computed(() => state.turnStatus === 'running')
 const isAnyBusy = computed(() => (
   state.activeTaskCount > 0 || state.totalQueueLength > 0
 ))
+const p2pMonitorSessions = computed(() => (
+  state.sessions.filter((session) => (
+    session.source === 'feishu'
+    && session.chatType === 'p2p'
+    && session.chatId
+    && form.feishu.connections.some((connection) => (
+      connection.id === session.connectionId
+      && connection.enabled
+    ))
+  ))
+))
+const autoMonitorStatusReason = computed(() => (
+  state.feishu.autoMonitor?.reason
+  || '保存设置后会显示自动监控状态。'
+))
+const monitorSessionLabel = (session = {}) => {
+  const connection = form.feishu.connections.find(
+    (item) => item.id === session.connectionId
+  )
+  const suffix = String(session.chatId || '').slice(-8)
+  return [
+    connection?.name || session.connectionName || '飞书单聊',
+    suffix
+  ].filter(Boolean).join(' · ')
+}
 const activeSessionSubtitle = computed(() => {
   const session = activeSession.value
   if (!session) return '持久 Codex 会话'
@@ -688,6 +780,15 @@ const applyState = (nextState = {}) => {
     status: 'disabled',
     error: '',
     connections: [],
+    autoMonitor: {
+      enabled: false,
+      running: false,
+      screenState: 'unlocked',
+      status: 'disabled',
+      reason: '自动监控已关闭。',
+      targetSessionId: '',
+      eligibleSessionIds: []
+    },
     ...(nextState.feishu || state.feishu || {})
   }
   if (state.serverError) pageError.value = state.serverError
@@ -698,6 +799,13 @@ const applyConfig = (config = {}) => {
   form.sandboxMode = config.sandboxMode || 'danger-full-access'
   form.approvalPolicy = config.approvalPolicy || 'never'
   form.reasoningEffort = String(config.reasoningEffort || '')
+  form.feishu.autoMonitor.enabled = config.feishu?.autoMonitor?.enabled === true
+  form.feishu.autoMonitor.targetSessionId = String(
+    config.feishu?.autoMonitor?.targetSessionId || ''
+  )
+  form.feishu.autoMonitor.stallMinutes = Number(
+    config.feishu?.autoMonitor?.stallMinutes
+  ) || 20
   form.feishu.connections = (config.feishu?.connections || []).map((connection) => ({
     id: String(connection.id || ''),
     name: String(connection.name || ''),
@@ -1082,6 +1190,11 @@ const saveSettings = async () => {
       approvalPolicy: form.approvalPolicy,
       reasoningEffort: form.reasoningEffort,
       feishu: {
+        autoMonitor: {
+          enabled: form.feishu.autoMonitor.enabled,
+          targetSessionId: form.feishu.autoMonitor.targetSessionId,
+          stallMinutes: Number(form.feishu.autoMonitor.stallMinutes) || 20
+        },
         connections: form.feishu.connections.map((connection) => ({
           id: connection.id,
           name: connection.name,
@@ -2841,6 +2954,34 @@ button:disabled {
   gap: 11px;
   padding: 4px 12px 13px;
   border-top: 1px solid var(--theme-sem-border-default);
+}
+
+.auto-monitor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 11px;
+  border: 1px solid var(--theme-sem-border-default);
+  border-radius: 10px;
+  background: var(--theme-sem-bg-workspace);
+}
+
+.auto-monitor-status {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--theme-sem-surface-2);
+  color: var(--theme-sem-text-muted);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.auto-monitor-status.monitoring {
+  color: var(--theme-sem-accent-success);
+}
+
+.auto-monitor-status.no-target {
+  color: var(--theme-sem-accent-warning);
 }
 
 .connection-toggle {

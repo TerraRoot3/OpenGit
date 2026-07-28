@@ -696,11 +696,24 @@ function createCodexFeishuBridge({
     }
   }
 
+  const sendProactiveNotification = async (chatId, message) => {
+    const normalizedChatId = String(chatId || '').trim()
+    const normalizedMessage = String(message || '').trim()
+    if (!normalizedChatId || !normalizedMessage) {
+      throw new Error('主动通知缺少 chat_id 或消息内容')
+    }
+    if (!apiClient || !wsClient) {
+      throw new Error('飞书长连接尚未就绪')
+    }
+    return sendChunks(normalizedChatId, normalizedMessage, apiClient)
+  }
+
   return {
     start,
     stop,
     restart,
-    getStatus
+    getStatus,
+    sendProactiveNotification
   }
 }
 

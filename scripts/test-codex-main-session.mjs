@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -13,7 +14,8 @@ const {
   createFeishuSessionId,
   buildFeishuSessionTitle,
   CodexMainSessionService,
-  createFeishuBridgeManager
+  createFeishuBridgeManager,
+  registerCodexPowerMonitorHandlers
 } = require('../electron/ipc/codex-main-session.js')
 const {
   createAttachmentWorkspace,
@@ -27,6 +29,11 @@ const previousConfig = normalizeCodexMainConfig({
   approvalPolicy: 'on-request',
   reasoningEffort: 'medium',
   feishu: {
+    autoMonitor: {
+      enabled: true,
+      targetSessionId: 'feishu:work:oc_private_work',
+      stallMinutes: 15
+    },
     connections: [
       {
         id: 'work',
@@ -107,6 +114,16 @@ assert.equal(
   'personal-secret',
   'each Feishu connection must preserve its own redacted App Secret'
 )
+assert.deepEqual(
+  updatedConfig.feishu.autoMonitor,
+  {
+    enabled: true,
+    targetSessionId: 'feishu:work:oc_private_work',
+    stallMinutes: 15
+  },
+  'saving unrelated settings must preserve the off-screen monitor config'
+)
+assert.equal(migratedLegacyConfig.feishu.autoMonitor.enabled, false)
 
 const publicConfig = publicCodexMainConfig(updatedConfig)
 assert.equal(publicConfig.feishu.connections[0].appSecret, '')
@@ -118,6 +135,10 @@ assert.equal(
     || JSON.stringify(publicConfig).includes('personal-secret'),
   false,
   'the renderer-facing config must never include any App Secret'
+)
+assert.equal(
+  publicConfig.feishu.autoMonitor.enabled,
+  true
 )
 
 const sessions = normalizeStoredSessions([
@@ -287,10 +308,179 @@ const personalChat = service.getOrCreateFeishuSession({
   chatId: 'oc_same',
   chatType: 'group'
 })
+const workP2p = service.getOrCreateFeishuSession({
+  connectionId: 'work',
+  connectionName: '工作飞书',
+  chatId: 'oc_private_work',
+  chatType: 'p2p'
+})
+const personalP2p = service.getOrCreateFeishuSession({
+  connectionId: 'personal',
+  connectionName: '个人飞书',
+  chatId: 'oc_private_personal',
+  chatType: 'p2p'
+})
 assert.notEqual(workChat.id, personalChat.id)
 assert.equal(workChat.connectionId, 'work')
 assert.equal(personalChat.connectionId, 'personal')
-assert.equal(service.getState().sessions.length, 3)
+assert.equal(service.getState().sessions.length, 5)
+service.config = updatedConfig
+assert.deepEqual(
+  service.getProactiveNotificationRoutes(),
+  [{
+    connectionId: 'work',
+    connectionName: '工作飞书',
+    chatId: 'oc_private_work',
+    sessionId: workP2p.id,
+    stallMinutes: 15
+  }],
+  'automatic monitoring should use only the explicitly selected P2P session'
+)
+service.config = structuredClone(updatedConfig)
+service.config.feishu.autoMonitor.targetSessionId = ''
+assert.deepEqual(
+  service.getProactiveNotificationRoutes(),
+  [],
+  'multiple eligible P2P sessions must not be guessed'
+)
+assert.match(
+  service.getAutoMonitorState().reason,
+  /多个/,
+  'the renderer should explain why an explicit P2P target is required'
+)
+service.config.feishu.connections[1].enabled = false
+assert.deepEqual(
+  service.getProactiveNotificationRoutes(),
+  [{
+    connectionId: 'work',
+    connectionName: '工作飞书',
+    chatId: 'oc_private_work',
+    sessionId: workP2p.id,
+    stallMinutes: 15
+  }],
+  'a single eligible P2P session may be selected automatically'
+)
+assert.equal(
+  service.getProactiveNotificationRoutes()
+    .some((route) => route.chatId === workChat.chatId),
+  false,
+  'group chats must never be used for automatic monitoring notifications'
+)
+
+service.config = structuredClone(updatedConfig)
+const monitorCalls = []
+service.setProactiveNotificationMonitor({
+  start: async () => {
+    monitorCalls.push(['start'])
+    return true
+  },
+  stop: (options) => {
+    monitorCalls.push(['stop', options])
+  }
+})
+assert.equal(await service.handleScreenLock(), true)
+assert.equal(service.getAutoMonitorState().status, 'monitoring')
+assert.match(service.getAutoMonitorState().reason, /正在监控/)
+assert.equal(service.handleScreenUnlock(), true)
+assert.deepEqual(monitorCalls, [
+  ['start'],
+  ['stop', { rebaseline: true }]
+])
+assert.equal(service.getAutoMonitorState().status, 'paused')
+assert.match(service.getAutoMonitorState().reason, /锁屏后/)
+
+service.config.feishu.autoMonitor.enabled = false
+const disabledMonitorCallCount = monitorCalls.length
+assert.equal(await service.handleScreenLock(), false)
+assert.equal(service.handleScreenUnlock(), false)
+assert.equal(
+  monitorCalls.length,
+  disabledMonitorCallCount,
+  'lock and unlock events must not control monitoring while the switch is disabled'
+)
+
+service.config = structuredClone(updatedConfig)
+service.config.feishu.autoMonitor.targetSessionId = 'feishu:missing:session'
+const missingTargetStartCount = monitorCalls
+  .filter(([action]) => action === 'start').length
+assert.equal(await service.handleScreenLock(), false)
+assert.equal(
+  monitorCalls.filter(([action]) => action === 'start').length,
+  missingTargetStartCount,
+  'an invalid P2P target must safely suppress delivery'
+)
+assert.equal(service.getAutoMonitorState().status, 'no-target')
+assert.match(service.getAutoMonitorState().reason, /重新选择/)
+
+const groupOnlyService = new CodexMainSessionService({
+  store: new MemoryStore(),
+  getMainWindow: () => null
+})
+groupOnlyService.config = normalizeCodexMainConfig({
+  feishu: {
+    autoMonitor: {
+      enabled: true,
+      targetSessionId: '',
+      stallMinutes: 20
+    },
+    connections: [{
+      id: 'work',
+      name: '工作飞书',
+      enabled: true,
+      appId: 'cli_group_only',
+      appSecret: 'group-only-secret'
+    }]
+  }
+})
+groupOnlyService.getOrCreateFeishuSession({
+  connectionId: 'work',
+  connectionName: '工作飞书',
+  chatId: 'oc_group_only',
+  chatType: 'group'
+})
+assert.deepEqual(groupOnlyService.getProactiveNotificationRoutes(), [])
+assert.equal(groupOnlyService.getAutoMonitorState().status, 'no-target')
+assert.match(groupOnlyService.getAutoMonitorState().reason, /没有可用/)
+assert.match(groupOnlyService.getAutoMonitorState().reason, /群聊不会/)
+
+const fakePowerMonitor = new EventEmitter()
+const controllerCalls = []
+const unregisterPowerMonitor = registerCodexPowerMonitorHandlers({
+  powerMonitor: fakePowerMonitor,
+  sessionController: {
+    handleScreenLock: async () => {
+      controllerCalls.push('lock')
+    },
+    handleScreenUnlock: (reason) => {
+      controllerCalls.push(`unlock:${reason}`)
+    },
+    scheduleFeishuRestart: (reason) => {
+      controllerCalls.push(`restart:${reason}`)
+    }
+  },
+  safeError: () => {}
+})
+fakePowerMonitor.emit('lock-screen')
+await Promise.resolve()
+fakePowerMonitor.emit('unlock-screen')
+fakePowerMonitor.emit('resume')
+assert.deepEqual(controllerCalls, [
+  'lock',
+  'restart:unlock-screen',
+  'unlock:unlock-screen',
+  'restart:resume',
+  'unlock:resume'
+])
+unregisterPowerMonitor()
+fakePowerMonitor.emit('lock-screen')
+fakePowerMonitor.emit('unlock-screen')
+fakePowerMonitor.emit('resume')
+await Promise.resolve()
+assert.equal(
+  controllerCalls.length,
+  5,
+  'unregistering power handlers should stop future lifecycle callbacks'
+)
 
 let startedThreadCount = 0
 service.startServer = async () => true
@@ -349,6 +539,7 @@ const bridgeOptions = []
 let bridgeStartCount = 0
 let bridgeStopCount = 0
 const bridgeKeepAliveStates = []
+const proactiveBridgeMessages = []
 const bridgeService = {
   getConfig: () => updatedConfig,
   enqueueInstruction: (payload) => payload,
@@ -369,7 +560,14 @@ const bridgeManager = createFeishuBridgeManager({
         running: true,
         status: 'connected',
         error: ''
-      })
+      }),
+      sendProactiveNotification: async (chatId, message) => {
+        proactiveBridgeMessages.push({
+          connectionId: options.getConfig().id,
+          chatId,
+          message
+        })
+      }
     }
   },
   onKeepAliveChanged: (enabled) => {
@@ -404,6 +602,15 @@ assert.equal(
   routedInstruction.attachmentWorkspace.outboxDir,
   '/tmp/attachment-task/outbox'
 )
+await bridgeManager.sendProactiveNotification(
+  { connectionId: 'work', chatId: 'oc_notify' },
+  '**Codex 任务完成**'
+)
+assert.deepEqual(proactiveBridgeMessages, [{
+  connectionId: 'work',
+  chatId: 'oc_notify',
+  message: '**Codex 任务完成**'
+}])
 bridgeManager.scheduleRestart('resume', 0)
 bridgeManager.scheduleRestart('unlock-screen', 0)
 await new Promise((resolve) => setTimeout(resolve, 20))

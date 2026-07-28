@@ -10,6 +10,10 @@ const {
 const {
   collectOutboxAttachments
 } = require('./codex-feishu-attachments')
+const {
+  DEFAULT_STALL_MINUTES,
+  createCodexProactiveNotificationMonitor
+} = require('./codex-proactive-notifications')
 const { version: OPEN_GIT_VERSION = '0.0.0' } = require('../../package.json')
 
 const CONFIG_STORE_KEY = 'codex-main-session-config-v1'
@@ -39,9 +43,34 @@ const DEFAULT_CONFIG = Object.freeze({
   approvalPolicy: 'never',
   reasoningEffort: '',
   feishu: {
+    autoMonitor: {
+      enabled: false,
+      targetSessionId: '',
+      stallMinutes: DEFAULT_STALL_MINUTES
+    },
     connections: []
   }
 })
+
+function normalizeAutoMonitorConfig(source = {}, previous = {}) {
+  const sourceObject = source && typeof source === 'object' ? source : {}
+  const previousObject = previous && typeof previous === 'object' ? previous : {}
+  const requestedEnabled = sourceObject.enabled
+  const requestedStallMinutes = Number(
+    sourceObject.stallMinutes ?? previousObject.stallMinutes
+  )
+  return {
+    enabled: typeof requestedEnabled === 'boolean'
+      ? requestedEnabled
+      : previousObject.enabled === true,
+    targetSessionId: String(
+      sourceObject.targetSessionId ?? previousObject.targetSessionId ?? ''
+    ).trim(),
+    stallMinutes: Number.isFinite(requestedStallMinutes)
+      ? Math.min(24 * 60, Math.max(5, Math.round(requestedStallMinutes)))
+      : DEFAULT_STALL_MINUTES
+  }
+}
 
 function normalizeStringList(value) {
   const items = Array.isArray(value)
@@ -142,6 +171,10 @@ function normalizeCodexMainConfig(value = {}, previous = DEFAULT_CONFIG) {
       source.reasoningEffort ?? previous?.reasoningEffort ?? ''
     ).trim(),
     feishu: {
+      autoMonitor: normalizeAutoMonitorConfig(
+        sourceFeishu.autoMonitor,
+        previousFeishu.autoMonitor
+      ),
       connections: normalizeFeishuConnections(sourceFeishu, previousFeishu)
     }
   }
@@ -152,6 +185,7 @@ function publicCodexMainConfig(config = DEFAULT_CONFIG) {
   return {
     ...normalized,
     feishu: {
+      autoMonitor: normalized.feishu.autoMonitor,
       connections: normalized.feishu.connections.map((connection) => ({
         ...connection,
         appSecret: '',
@@ -438,6 +472,9 @@ class CodexMainSessionService {
     this.activeTasksByThreadId = new Map()
     this.liveMessages = new Map()
     this.feishuBridge = null
+    this.proactiveNotificationMonitor = null
+    this.screenLocked = false
+    this.autoMonitorRunning = false
     this.config = normalizeCodexMainConfig(
       this.store.get(CONFIG_STORE_KEY, DEFAULT_CONFIG),
       DEFAULT_CONFIG
@@ -460,12 +497,158 @@ class CodexMainSessionService {
     this.feishuBridge = bridge || null
   }
 
+  setProactiveNotificationMonitor(monitor) {
+    this.proactiveNotificationMonitor = monitor || null
+  }
+
   getConfig() {
     return this.config
   }
 
   getPublicConfig() {
     return publicCodexMainConfig(this.config)
+  }
+
+  resolveAutoMonitorTarget() {
+    const autoMonitor = this.config.feishu.autoMonitor || {}
+    const enabledConnections = new Map(
+      this.config.feishu.connections
+        .filter((connection) => connection.enabled)
+        .map((connection) => [connection.id, connection])
+    )
+    const eligibleSessions = Array.from(this.sessions.values())
+      .filter((session) => (
+        session.source === 'feishu'
+        && session.chatType === 'p2p'
+        && session.chatId
+        && enabledConnections.has(session.connectionId)
+      ))
+      .sort((left, right) => (
+        Number(right.updatedAt || 0) - Number(left.updatedAt || 0)
+      ))
+    const requestedSessionId = String(
+      autoMonitor.targetSessionId || ''
+    ).trim()
+    let targetSession = null
+    let reason = ''
+
+    if (requestedSessionId) {
+      targetSession = eligibleSessions.find(
+        (session) => session.id === requestedSessionId
+      ) || null
+      if (!targetSession) {
+        reason = '已选择的飞书单聊已失效或对应机器人未启用，请重新选择。'
+      }
+    } else if (eligibleSessions.length === 1) {
+      targetSession = eligibleSessions[0]
+    } else if (eligibleSessions.length === 0) {
+      reason = '没有可用的飞书 P2P 单聊绑定；群聊不会用于自动监控通知。'
+    } else {
+      reason = '存在多个飞书 P2P 单聊绑定，请明确选择一个通知目标。'
+    }
+
+    const connection = targetSession
+      ? enabledConnections.get(targetSession.connectionId)
+      : null
+    return {
+      route: targetSession && connection
+        ? {
+            connectionId: connection.id,
+            connectionName: connection.name,
+            chatId: targetSession.chatId,
+            sessionId: targetSession.id,
+            stallMinutes: autoMonitor.stallMinutes
+          }
+        : null,
+      reason,
+      eligibleSessions
+    }
+  }
+
+  getProactiveNotificationRoutes() {
+    if (this.config.feishu.autoMonitor?.enabled !== true) return []
+    const target = this.resolveAutoMonitorTarget()
+    return target.route ? [target.route] : []
+  }
+
+  getAutoMonitorState() {
+    const config = this.config.feishu.autoMonitor || {}
+    const target = this.resolveAutoMonitorTarget()
+    if (config.enabled !== true) {
+      return {
+        enabled: false,
+        running: false,
+        screenState: this.screenLocked ? 'locked' : 'unlocked',
+        status: 'disabled',
+        reason: '自动监控已关闭。',
+        targetSessionId: String(config.targetSessionId || ''),
+        eligibleSessionIds: target.eligibleSessions.map((session) => session.id)
+      }
+    }
+    if (!target.route) {
+      return {
+        enabled: true,
+        running: false,
+        screenState: this.screenLocked ? 'locked' : 'unlocked',
+        status: 'no-target',
+        reason: target.reason,
+        targetSessionId: String(config.targetSessionId || ''),
+        eligibleSessionIds: target.eligibleSessions.map((session) => session.id)
+      }
+    }
+    if (!this.screenLocked) {
+      return {
+        enabled: true,
+        running: false,
+        screenState: 'unlocked',
+        status: 'paused',
+        reason: '亮屏状态下已暂停；锁屏后会自动开始监控。',
+        targetSessionId: target.route.sessionId,
+        eligibleSessionIds: target.eligibleSessions.map((session) => session.id)
+      }
+    }
+    return {
+      enabled: true,
+      running: this.autoMonitorRunning,
+      screenState: 'locked',
+      status: this.autoMonitorRunning ? 'monitoring' : 'starting',
+      reason: this.autoMonitorRunning
+        ? '锁屏期间正在监控 Codex 任务。'
+        : '锁屏事件已触发，正在建立监控基线。',
+      targetSessionId: target.route.sessionId,
+      eligibleSessionIds: target.eligibleSessions.map((session) => session.id)
+    }
+  }
+
+  async handleScreenLock() {
+    this.screenLocked = true
+    if (this.config.feishu.autoMonitor?.enabled !== true) {
+      this.broadcastState()
+      return false
+    }
+    if (!this.resolveAutoMonitorTarget().route) {
+      this.autoMonitorRunning = false
+      this.proactiveNotificationMonitor?.stop?.({ rebaseline: true })
+      this.broadcastState()
+      return false
+    }
+    this.broadcastState()
+    this.autoMonitorRunning = await this.proactiveNotificationMonitor?.start?.()
+      === true
+    this.broadcastState()
+    return this.autoMonitorRunning
+  }
+
+  handleScreenUnlock() {
+    this.screenLocked = false
+    if (this.config.feishu.autoMonitor?.enabled !== true) {
+      this.broadcastState()
+      return false
+    }
+    this.proactiveNotificationMonitor?.stop?.({ rebaseline: true })
+    this.autoMonitorRunning = false
+    this.broadcastState()
+    return true
   }
 
   persistSessions() {
@@ -668,19 +851,22 @@ class CodexMainSessionService {
         .reduce((total, queue) => total + queue.length, 0),
       workingDirectory: resolveWorkingDirectory(this.config.workingDirectory),
       sandboxMode: this.config.sandboxMode,
-      feishu: this.feishuBridge?.getStatus?.() || {
-        enabled: this.config.feishu.connections.some((connection) => connection.enabled),
-        running: false,
-        status: 'disabled',
-        error: '',
-        connections: this.config.feishu.connections.map((connection) => ({
-          id: connection.id,
-          name: connection.name,
-          enabled: connection.enabled,
+      feishu: {
+        ...(this.feishuBridge?.getStatus?.() || {
+          enabled: this.config.feishu.connections.some((connection) => connection.enabled),
           running: false,
           status: 'disabled',
-          error: ''
-        }))
+          error: '',
+          connections: this.config.feishu.connections.map((connection) => ({
+            id: connection.id,
+            name: connection.name,
+            enabled: connection.enabled,
+            running: false,
+            status: 'disabled',
+            error: ''
+          }))
+        }),
+        autoMonitor: this.getAutoMonitorState()
       }
     }
   }
@@ -1443,10 +1629,29 @@ class CodexMainSessionService {
         this.safeError('[Codex Feishu] 配置已保存，但长连接启动失败:', error.message)
       }
     }
+    if (nextConfig.feishu.autoMonitor?.enabled !== true) {
+      this.proactiveNotificationMonitor?.stop?.({ disabled: true })
+      this.autoMonitorRunning = false
+    } else if (this.screenLocked) {
+      try {
+        await this.handleScreenLock()
+      } catch (error) {
+        this.autoMonitorRunning = false
+        this.safeError(
+          '[Codex Proactive] 配置已保存，但自动监控启动失败:',
+          error?.message || String(error)
+        )
+      }
+    } else {
+      this.proactiveNotificationMonitor?.stop?.({ rebaseline: true })
+      this.autoMonitorRunning = false
+    }
+    this.broadcastState()
     return this.getPublicConfig()
   }
 
   async cleanup() {
+    this.proactiveNotificationMonitor?.stop?.()
     await this.feishuBridge?.stop?.()
     await this.stopServer()
   }
@@ -1606,12 +1811,76 @@ function createFeishuBridgeManager({
     }
   }
 
+  const sendProactiveNotification = async (route = {}, message = '') => {
+    const connectionId = String(route.connectionId || '').trim()
+    const chatId = String(route.chatId || '').trim()
+    if (!connectionId || !chatId) {
+      throw new Error('主动通知缺少飞书连接或 chat_id')
+    }
+    const bridge = bridges.get(connectionId)
+    if (!bridge) {
+      throw new Error('飞书连接尚未建立')
+    }
+    if (typeof bridge.sendProactiveNotification !== 'function') {
+      throw new Error('当前飞书连接不支持主动通知')
+    }
+    return bridge.sendProactiveNotification(chatId, message)
+  }
+
   return {
     start,
     stop,
     restart,
     scheduleRestart,
-    getStatus
+    getStatus,
+    sendProactiveNotification
+  }
+}
+
+function registerCodexPowerMonitorHandlers({
+  powerMonitor,
+  sessionController,
+  safeError = () => {}
+} = {}) {
+  if (!powerMonitor?.on || !sessionController) {
+    return () => {}
+  }
+
+  const reportFailure = (action, error) => {
+    safeError(
+      `[Codex Proactive] ${action}失败:`,
+      error?.message || String(error)
+    )
+  }
+  const handleLock = () => {
+    Promise.resolve(sessionController.handleScreenLock?.())
+      .catch((error) => reportFailure('锁屏启动自动监控', error))
+  }
+  const handleUnlock = () => {
+    try {
+      sessionController.scheduleFeishuRestart?.('unlock-screen')
+      sessionController.handleScreenUnlock?.('unlock-screen')
+    } catch (error) {
+      reportFailure('解锁暂停自动监控', error)
+    }
+  }
+  const handleResume = () => {
+    try {
+      sessionController.scheduleFeishuRestart?.('resume')
+      sessionController.handleScreenUnlock?.('resume')
+    } catch (error) {
+      reportFailure('亮屏恢复暂停自动监控', error)
+    }
+  }
+
+  powerMonitor.on('lock-screen', handleLock)
+  powerMonitor.on('unlock-screen', handleUnlock)
+  powerMonitor.on('resume', handleResume)
+
+  return () => {
+    powerMonitor.off?.('lock-screen', handleLock)
+    powerMonitor.off?.('unlock-screen', handleUnlock)
+    powerMonitor.off?.('resume', handleResume)
   }
 }
 
@@ -1638,6 +1907,25 @@ function registerCodexMainSessionHandlers({
     safeError
   })
   service.setFeishuBridge(feishuBridge)
+  const proactiveNotificationMonitor = createCodexProactiveNotificationMonitor({
+    store,
+    request: (method, params, timeoutMs) => (
+      service.request(method, params, timeoutMs)
+    ),
+    getRoutes: () => service.getProactiveNotificationRoutes(),
+    getOwnedThreadIds: () => (
+      service.listSessions()
+        .map((session) => session.threadId)
+        .filter(Boolean)
+    ),
+    sendNotification: (route, message) => (
+      feishuBridge.sendProactiveNotification(route, message)
+    ),
+    safeLog,
+    safeError
+  })
+  service.setProactiveNotificationMonitor(proactiveNotificationMonitor)
+  proactiveNotificationMonitor.stop({ rebaseline: true })
 
   ipcMain.handle('codex-main-get-state', async () => {
     try {
@@ -1766,6 +2054,8 @@ function registerCodexMainSessionHandlers({
       }
       if (firstError) throw firstError
     },
+    handleScreenLock: () => service.handleScreenLock(),
+    handleScreenUnlock: () => service.handleScreenUnlock(),
     scheduleFeishuRestart: (reason) => (
       feishuBridge.scheduleRestart?.(reason)
     ),
@@ -1786,6 +2076,7 @@ module.exports = {
   buildFeishuSessionTitle,
   CodexMainSessionService,
   createFeishuBridgeManager,
+  registerCodexPowerMonitorHandlers,
   MAIN_SESSION_INSTRUCTIONS,
   DEFAULT_CONFIG
 }

@@ -247,7 +247,8 @@ class FakeClient {
               sentMessages.push(text)
               sentMessagePayloads.push({
                 msgType: payload.data.msg_type,
-                content
+                content,
+                receiveId: payload.data.receive_id
               })
               bridgeEvents.push({ type: 'send', text })
             } else {
@@ -599,6 +600,12 @@ assert.equal(
   false,
   'the per-task attachment workspace should be removed after replying'
 )
+await bridge.sendProactiveNotification(
+  'oc_proactive_bound',
+  '**Codex 任务完成**\n\n构建通过。'
+)
+assert.equal(sentMessagePayloads.at(-1).receiveId, 'oc_proactive_bound')
+assert.match(sentMessages.at(-1), /Codex 任务完成/)
 await bridge.stop()
 
 console.log('codex feishu bridge assertions passed')

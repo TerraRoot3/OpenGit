@@ -27,7 +27,10 @@ const { registerTerminalHandlers } = require('./ipc/terminal')
 const { registerConfigHandlers } = require('./ipc/config')
 const { registerFilesystemHandlers } = require('./ipc/filesystem')
 const { registerAiSessionHandlers } = require('./ipc/ai-sessions')
-const { registerCodexMainSessionHandlers } = require('./ipc/codex-main-session')
+const {
+  registerCodexMainSessionHandlers,
+  registerCodexPowerMonitorHandlers
+} = require('./ipc/codex-main-session')
 const { createCodexFeishuBridge } = require('./ipc/codex-feishu-bridge')
 const { registerCommandHandlers } = require('./ipc/command')
 const { registerNavigationHandlers } = require('./ipc/navigation')
@@ -1622,11 +1625,10 @@ app.whenReady().then(async () => {
   safeLog(`📁 User data path: ${userDataPath}`)
   
   createWindow()
-  powerMonitor.on('resume', () => {
-    codexMainSession.scheduleFeishuRestart('resume')
-  })
-  powerMonitor.on('unlock-screen', () => {
-    codexMainSession.scheduleFeishuRestart('unlock-screen')
+  registerCodexPowerMonitorHandlers({
+    powerMonitor,
+    sessionController: codexMainSession,
+    safeError
   })
   void codexMainSession.start().catch((error) => {
     safeError('[Codex Main] 后台服务启动失败:', error.message)
