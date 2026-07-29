@@ -24,14 +24,18 @@ const CONFIG_STORE_KEY = 'codex-main-session-config-v1'
 const THREAD_STORE_KEY = 'codex-main-session-thread-id-v1'
 const SESSIONS_STORE_KEY = 'codex-main-sessions-v2'
 const ACTIVE_SESSION_STORE_KEY = 'codex-main-active-session-id-v2'
+const WORKER_HISTORY_STORE_KEY = 'codex-main-session-worker-history-v1'
 const MAIN_SESSION_ID = 'main'
 const REQUEST_TIMEOUT_MS = 20 * 1000
 const SERVER_START_TIMEOUT_MS = 20 * 1000
 const SERVER_STOP_TIMEOUT_MS = 2 * 1000
 const MAX_STDERR_LENGTH = 6000
 const MAX_HISTORY_MESSAGES = 400
+const MAX_WORKER_CONTEXT_MESSAGES = 24
+const MAX_WORKER_CONTEXT_CHARS = 16000
+const PROJECT_THREAD_POLL_INTERVAL_MS = 5000
 const FEISHU_POWER_RECOVERY_DELAY_MS = 2500
-const PROJECT_ROUTING_TOOL_VERSION = 2
+const PROJECT_ROUTING_TOOL_VERSION = 4
 
 const MAIN_SESSION_INSTRUCTIONS = [
   '你是 OpenGit 内置的持久 Codex 路由协调会话。',
@@ -39,9 +43,9 @@ const MAIN_SESSION_INSTRUCTIONS = [
   '任务执行期间可以使用 Codex 可用的工具；在真正缺少用户选择或外部权限时才说明阻塞。',
   '当飞书用户要求查看、检查、修改、继续或执行某个项目的任务时，必须先调用 dispatch_codex_project_task；不得在当前 OpenGit 主会话中直接使用文件、终端或代码工具代替目标项目会话执行。',
   '每个 OpenGit 会话都可以绑定一个默认项目。用户要求把某个项目绑定到当前会话时调用 bind_codex_project；查询当前绑定时调用 get_codex_project_binding；解除绑定时调用 unbind_codex_project。',
+  '只有用户明确要求重启整个 OpenGit 桌面应用时才调用 restart_open_git。不要把重启 Codex server、飞书连接、终端或项目任务误解为重启 OpenGit；调用前应说明其他正在运行的 OpenGit 任务会被中断。',
   '当前会话绑定项目后，用户没有明确点名其他项目的项目任务也必须调用 dispatch_codex_project_task，并省略 projectQuery 以使用绑定项目。用户明确点名其他项目时，以本次点名为准，但不要自动改变原绑定。',
-  'dispatch_codex_project_task 会优先恢复该项目最近的未归档、未删除旧会话。它返回 confirmation_required 时，只把 question 原样或等义转述给用户，不得排队、steer、直接执行，也不得自行调用 start_new_codex_project_task。',
-  '只有用户在同一个飞书会话中明确回复同意新开任务后，才使用上一次返回的 confirmationToken 调用 start_new_codex_project_task；普通的“继续”不等于同意新开。',
+  'dispatch_codex_project_task 会优先选择该项目正在执行的未归档、未删除会话并自动排队，在其空闲后继续使用同一个会话；没有执行中会话时才恢复最近的旧会话。只要项目存在旧会话，就不得新开项目会话、steer 或在当前路由会话中代执行。',
   '用户只查询项目现有 Codex 会话时使用 find_codex_project_sessions。没有旧会话且缺少项目绝对路径时，先向用户询问路径。',
   '目标项目任务完成后，把项目会话工具返回的真实 Codex 结果直接总结并回复；不要声称任务由当前主会话执行。',
   '飞书任务可能附带本地文件与本轮专属 outbox；需要回传附件时，只把最终交付文件写入指定 outbox，不要写入临时产物，也不要读取或发送 outbox 之外的本机文件。',
@@ -252,10 +256,25 @@ function buildCodexTaskInput(task = {}) {
 
   const attachments = Array.isArray(task.attachments) ? task.attachments : []
   const workspace = task.attachmentWorkspace || {}
-  const sections = [
-    '[来自飞书的指令]',
-    String(task.text || '').trim()
-  ]
+  const sections = ['[来自飞书的指令]']
+  const contextMessages = Array.isArray(task.contextMessages)
+    ? task.contextMessages
+    : []
+  if (contextMessages.length > 0) {
+    sections.push('', '[当前飞书会话近期上下文]')
+    for (const message of contextMessages) {
+      const role = message?.role === 'assistant'
+        ? 'Codex'
+        : (
+            message?.status === 'running'
+              ? '用户（该指令仍在另一个子会话执行，尚无结果）'
+              : '用户'
+          )
+      const text = String(message?.text || '').trim()
+      if (text) sections.push(`${role}：${text}`)
+    }
+  }
+  sections.push('', '[本轮指令]', String(task.text || '').trim())
   if (attachments.length > 0) {
     sections.push('', '[本轮飞书附件]')
     for (const [index, attachment] of attachments.entries()) {
@@ -343,6 +362,47 @@ function extractThreadMessages(thread = {}) {
     }
   }
   return messages.slice(-MAX_HISTORY_MESSAGES)
+}
+
+function normalizeWorkerHistoryMessage(item = {}, index = 0) {
+  if (!item || typeof item !== 'object') return null
+  const text = String(item.text || '').trim()
+  if (!text) return null
+  const role = item.role === 'assistant' ? 'assistant' : 'user'
+  return {
+    id: String(item.id || `worker-history:${index}`).trim()
+      || `worker-history:${index}`,
+    role,
+    text,
+    status: item.status === 'error' ? 'error' : 'completed',
+    source: role === 'user' ? 'feishu' : 'codex',
+    createdAt: Number(item.createdAt) || Date.now() + index
+  }
+}
+
+function normalizeWorkerHistories(value = {}) {
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? value
+    : {}
+  const normalized = {}
+  for (const [sessionId, items] of Object.entries(source)) {
+    const id = String(sessionId || '').trim()
+    if (!id || !Array.isArray(items)) continue
+    const messages = items
+      .map((item, index) => normalizeWorkerHistoryMessage(item, index))
+      .filter(Boolean)
+      .slice(-MAX_HISTORY_MESSAGES)
+    if (messages.length > 0) normalized[id] = messages
+  }
+  return normalized
+}
+
+function shouldFallbackFromThreadFork(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return Number(error?.rpcCode) === -32601
+    || /(?:unknown|unsupported|not found|not implemented).{0,40}thread\/fork/.test(message)
+    || /thread\/fork.{0,40}(?:unknown|unsupported|not found|not implemented)/.test(message)
+    || /paginated.{0,40}(?:thread|history)|(?:thread|history).{0,40}paginated/.test(message)
 }
 
 function compactSessionText(value, maxLength = 72) {
@@ -508,12 +568,17 @@ class CodexMainSessionService {
     store,
     getMainWindow,
     safeLog = () => {},
-    safeError = () => {}
+    safeError = () => {},
+    projectThreadPollIntervalMs = PROJECT_THREAD_POLL_INTERVAL_MS,
+    scheduleApplicationRestart = null
   }) {
     this.store = store
     this.getMainWindow = getMainWindow
     this.safeLog = safeLog
     this.safeError = safeError
+    this.scheduleApplicationRestart = typeof scheduleApplicationRestart === 'function'
+      ? scheduleApplicationRestart
+      : null
     this.child = null
     this.stdoutRemainder = ''
     this.stderrText = ''
@@ -539,6 +604,13 @@ class CodexMainSessionService {
     this.activeTasks = new Map()
     this.activeTasksByThreadId = new Map()
     this.managedProjectTurns = new Map()
+    this.projectTaskQueues = new Map()
+    this.processingProjectThreadIds = new Set()
+    this.projectThreadWaiters = new Map()
+    this.projectThreadPollIntervalMs = Math.max(
+      25,
+      Number(projectThreadPollIntervalMs) || PROJECT_THREAD_POLL_INTERVAL_MS
+    )
     this.liveMessages = new Map()
     this.feishuBridge = null
     this.proactiveNotificationMonitor = null
@@ -552,6 +624,12 @@ class CodexMainSessionService {
       this.store.get(SESSIONS_STORE_KEY, [])
     )
     this.sessions = new Map(storedSessions.map((session) => [session.id, session]))
+    const storedWorkerHistories = normalizeWorkerHistories(
+      this.store.get(WORKER_HISTORY_STORE_KEY, {})
+    )
+    this.workerHistories = new Map(
+      Object.entries(storedWorkerHistories)
+    )
     const storedActiveSessionId = String(
       this.store.get(ACTIVE_SESSION_STORE_KEY, MAIN_SESSION_ID) || ''
     ).trim()
@@ -857,13 +935,179 @@ class CodexMainSessionService {
     return this.sessionQueues.get(normalizedId)
   }
 
+  getActiveTasksForSession(sessionId) {
+    const normalizedId = String(sessionId || '').trim()
+    return Array.from(this.activeTasks.values())
+      .filter((task) => task.sessionId === normalizedId)
+      .sort((left, right) => (
+        Number(left.createdAt || 0) - Number(right.createdAt || 0)
+      ))
+  }
+
+  getLatestActiveTask(sessionId) {
+    return this.getActiveTasksForSession(sessionId).at(-1) || null
+  }
+
+  requestApplicationRestart(activeTask = null) {
+    if (!activeTask || typeof activeTask !== 'object') {
+      throw new Error('找不到发起 OpenGit 重启的会话任务')
+    }
+    if (!this.scheduleApplicationRestart) {
+      throw new Error('当前 OpenGit 运行环境不支持应用内重启')
+    }
+    const alreadyRequested = activeTask.restartApplicationRequested === true
+    activeTask.restartApplicationRequested = true
+    return {
+      status: 'restart_pending',
+      alreadyRequested,
+      message: 'OpenGit 将在本条回复完成后自动重启；其他正在运行的 OpenGit 任务会被中断。'
+    }
+  }
+
+  triggerRequestedApplicationRestart(activeTask) {
+    if (
+      activeTask?.restartApplicationRequested !== true
+      || activeTask?.applicationRestartScheduled === true
+      || !this.scheduleApplicationRestart
+    ) return
+    activeTask.applicationRestartScheduled = true
+    queueMicrotask(() => {
+      try {
+        Promise.resolve(this.scheduleApplicationRestart({
+          reason: 'codex-session',
+          sessionId: activeTask.sessionId,
+          threadId: activeTask.threadId
+        })).catch((error) => {
+          this.safeError('[Codex Main] 安排 OpenGit 重启失败:', error.message)
+        })
+      } catch (error) {
+        this.safeError('[Codex Main] 安排 OpenGit 重启失败:', error.message)
+      }
+    })
+  }
+
+  getWorkerHistory(sessionId) {
+    const normalizedId = String(sessionId || '').trim()
+    return this.workerHistories.get(normalizedId) || []
+  }
+
+  persistWorkerHistories() {
+    this.store.set(
+      WORKER_HISTORY_STORE_KEY,
+      Object.fromEntries(this.workerHistories.entries())
+    )
+  }
+
+  appendWorkerHistory(sessionId, items = []) {
+    const normalizedId = String(sessionId || '').trim()
+    if (!normalizedId || !Array.isArray(items) || items.length === 0) return []
+    const messages = [...this.getWorkerHistory(normalizedId)]
+    const seenIds = new Set(messages.map((message) => message.id))
+    for (const item of items) {
+      const message = normalizeWorkerHistoryMessage(item, messages.length)
+      if (!message || seenIds.has(message.id)) continue
+      seenIds.add(message.id)
+      messages.push(message)
+    }
+    messages.sort((left, right) => (
+      Number(left.createdAt || 0) - Number(right.createdAt || 0)
+    ))
+    const limited = messages.slice(-MAX_HISTORY_MESSAGES)
+    this.workerHistories.set(normalizedId, limited)
+    this.persistWorkerHistories()
+    return limited
+  }
+
+  getWorkerContext(sessionId) {
+    const selected = []
+    let totalChars = 0
+    const contextCandidates = [
+      ...this.getWorkerHistory(sessionId),
+      ...this.getActiveTasksForSession(sessionId).map((task) => ({
+        id: `active-user:${task.jobId}`,
+        role: 'user',
+        text: task.text,
+        status: 'running',
+        source: 'feishu',
+        createdAt: task.createdAt
+      }))
+    ].sort((left, right) => (
+      Number(left.createdAt || 0) - Number(right.createdAt || 0)
+    ))
+    for (let index = contextCandidates.length - 1; index >= 0; index -= 1) {
+      const message = contextCandidates[index]
+      const text = String(message?.text || '').trim()
+      if (!text) continue
+      const nextChars = text.length + 16
+      if (
+        selected.length >= MAX_WORKER_CONTEXT_MESSAGES
+        || (selected.length > 0 && totalChars + nextChars > MAX_WORKER_CONTEXT_CHARS)
+      ) break
+      selected.unshift({ ...message })
+      totalChars += nextChars
+    }
+    return selected
+  }
+
+  recordWorkerTaskHistory(task, result = null, error = null) {
+    if (task?.useWorkerThread !== true || task.historyRecorded === true) return
+    task.historyRecorded = true
+    const createdAt = Number(task.createdAt) || Date.now()
+    const historyItems = [{
+      id: `user:${task.jobId}`,
+      role: 'user',
+      text: task.text,
+      status: 'completed',
+      source: 'feishu',
+      createdAt
+    }]
+    if (error) {
+      historyItems.push({
+        id: `agent-error:${task.jobId}`,
+        role: 'assistant',
+        text: `执行失败：${error?.message || String(error)}`,
+        status: 'error',
+        source: 'codex',
+        createdAt: Date.now()
+      })
+    } else {
+      const messageItems = Array.isArray(result?.messageItems)
+        ? result.messageItems
+        : []
+      if (messageItems.length > 0) {
+        messageItems.forEach((item, index) => {
+          historyItems.push({
+            id: String(item?.id || `agent:${task.jobId}:${index}`),
+            role: 'assistant',
+            text: item?.text,
+            status: 'completed',
+            source: 'codex',
+            createdAt: Date.now() + index
+          })
+        })
+      } else if (String(result?.text || '').trim()) {
+        historyItems.push({
+          id: `agent:${task.jobId}`,
+          role: 'assistant',
+          text: result.text,
+          status: 'completed',
+          source: 'codex',
+          createdAt: Date.now()
+        })
+      }
+    }
+    this.appendWorkerHistory(task.sessionId, historyItems)
+  }
+
   getPublicSession(session) {
     if (!session) return null
-    const activeTask = this.activeTasks.get(session.id)
+    const activeTasks = this.getActiveTasksForSession(session.id)
+    const activeTask = activeTasks.at(-1) || null
     return {
       ...session,
       turnStatus: activeTask ? 'running' : 'idle',
       activeTurnId: activeTask?.turnId || '',
+      activeTaskCount: activeTasks.length,
       queueLength: this.getSessionQueue(session.id).length
     }
   }
@@ -989,7 +1233,7 @@ class CodexMainSessionService {
     if (!session) throw new Error('会话不存在或已失效')
     const queue = this.getSessionQueue(session.id)
     if (
-      this.activeTasks.has(session.id)
+      this.getActiveTasksForSession(session.id).length > 0
       || this.processingSessionIds.has(session.id)
       || queue.length > 0
     ) {
@@ -1013,6 +1257,8 @@ class CodexMainSessionService {
     this.loadedSessionIds.delete(session.id)
     this.ensureThreadPromises.delete(session.id)
     this.sessionQueues.delete(session.id)
+    this.workerHistories.delete(session.id)
+    this.persistWorkerHistories()
     for (const messageKey of Array.from(this.liveMessages.keys())) {
       if (messageKey.startsWith(`${session.id}:`)) {
         this.liveMessages.delete(messageKey)
@@ -1035,7 +1281,7 @@ class CodexMainSessionService {
   getState() {
     const activeSession = this.getSession() || this.getSession(MAIN_SESSION_ID)
     const activeTask = activeSession
-      ? this.activeTasks.get(activeSession.id)
+      ? this.getLatestActiveTask(activeSession.id)
       : null
     const activeQueue = activeSession
       ? this.getSessionQueue(activeSession.id)
@@ -1227,6 +1473,16 @@ class CodexMainSessionService {
       return
     }
     const threadId = String(params?.threadId || '').trim()
+    if (
+      threadId
+      && (
+        method === 'turn/completed'
+        || method === 'thread/status/changed'
+        || method === 'thread/closed'
+      )
+    ) {
+      this.wakeProjectThreadWaiters(threadId)
+    }
     const managedProjectTurn = threadId
       ? this.managedProjectTurns.get(threadId)
       : null
@@ -1429,6 +1685,15 @@ class CodexMainSessionService {
       managedTurn.reject(error)
     }
     this.managedProjectTurns.clear()
+    for (const queue of this.projectTaskQueues.values()) {
+      for (const queuedTask of queue.splice(0)) {
+        queuedTask.cancelled = true
+        queuedTask.reject(error)
+      }
+    }
+    for (const threadId of this.projectThreadWaiters.keys()) {
+      this.wakeProjectThreadWaiters(threadId)
+    }
   }
 
   handleChildClose(code, signal) {
@@ -1741,7 +2006,183 @@ class CodexMainSessionService {
       threadId,
       includeTurns: true
     }, 60 * 1000)
-    return extractThreadMessages(result?.thread)
+    return [
+      ...extractThreadMessages(result?.thread),
+      ...this.getWorkerHistory(session.id)
+    ].slice(-MAX_HISTORY_MESSAGES)
+  }
+
+  async createWorkerThread(task, cwd) {
+    const parentThreadId = await this.ensureThread(task.sessionId)
+    const commonParams = {
+      cwd,
+      approvalPolicy: this.config.approvalPolicy,
+      developerInstructions: MAIN_SESSION_INSTRUCTIONS,
+      sandbox: this.config.sandboxMode,
+      ephemeral: true,
+      threadSource: 'open_git_feishu_worker'
+    }
+    try {
+      const forked = await this.request('thread/fork', {
+        threadId: parentThreadId,
+        ...commonParams
+      }, 60 * 1000)
+      const threadId = String(forked?.thread?.id || '').trim()
+      if (!threadId) throw new Error('Codex app-server 未返回子会话 ID')
+      return { threadId, parentThreadId, forked: true }
+    } catch (error) {
+      if (!shouldFallbackFromThreadFork(error)) throw error
+      this.safeError(
+        '[Codex Main] 当前父会话无法 fork，改用独立临时 worker:',
+        error.message
+      )
+      const started = await this.request('thread/start', {
+        ...commonParams,
+        dynamicTools: CODEX_PROJECT_DYNAMIC_TOOLS
+      }, 60 * 1000)
+      const threadId = String(started?.thread?.id || '').trim()
+      if (!threadId) throw new Error('Codex app-server 未返回 worker 会话 ID')
+      return { threadId, parentThreadId, forked: false }
+    }
+  }
+
+  getProjectTaskQueue(threadId) {
+    const normalizedThreadId = String(threadId || '').trim()
+    if (!this.projectTaskQueues.has(normalizedThreadId)) {
+      this.projectTaskQueues.set(normalizedThreadId, [])
+    }
+    return this.projectTaskQueues.get(normalizedThreadId)
+  }
+
+  wakeProjectThreadWaiters(threadId) {
+    const normalizedThreadId = String(threadId || '').trim()
+    const waiters = this.projectThreadWaiters.get(normalizedThreadId)
+    if (!waiters) return
+    this.projectThreadWaiters.delete(normalizedThreadId)
+    for (const wake of waiters) wake()
+  }
+
+  waitForProjectThreadSignal(threadId) {
+    const normalizedThreadId = String(threadId || '').trim()
+    return new Promise((resolve) => {
+      let settled = false
+      let timer = null
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        const waiters = this.projectThreadWaiters.get(normalizedThreadId)
+        waiters?.delete(finish)
+        if (waiters?.size === 0) {
+          this.projectThreadWaiters.delete(normalizedThreadId)
+        }
+        resolve()
+      }
+      if (!this.projectThreadWaiters.has(normalizedThreadId)) {
+        this.projectThreadWaiters.set(normalizedThreadId, new Set())
+      }
+      this.projectThreadWaiters.get(normalizedThreadId).add(finish)
+      timer = setTimeout(finish, this.projectThreadPollIntervalMs)
+    })
+  }
+
+  async waitForProjectThreadIdle(threadId, queuedTask = null) {
+    const normalizedThreadId = String(threadId || '').trim()
+    let waited = false
+    while (true) {
+      if (queuedTask?.cancelled === true) return waited
+      const result = await this.request('thread/read', {
+        threadId: normalizedThreadId,
+        includeTurns: false
+      }, 60 * 1000)
+      if (queuedTask?.cancelled === true) return waited
+      const status = String(result?.thread?.status?.type || '').trim()
+      if (status !== 'active') return waited
+      waited = true
+      await this.waitForProjectThreadSignal(normalizedThreadId)
+    }
+  }
+
+  enqueueCodexProjectTask({
+    threadId = '',
+    cwd = '',
+    task = ''
+  } = {}) {
+    const normalizedThreadId = String(threadId || '').trim()
+    const normalizedTask = String(task || '').trim()
+    if (!normalizedThreadId) throw new Error('缺少要排队的项目会话 ID')
+    if (!normalizedTask) throw new Error('项目任务不能为空')
+    const queue = this.getProjectTaskQueue(normalizedThreadId)
+    const queuedAtEnqueue = (
+      this.processingProjectThreadIds.has(normalizedThreadId)
+      || queue.length > 0
+    )
+    return new Promise((resolve, reject) => {
+      queue.push({
+        threadId: normalizedThreadId,
+        cwd: String(cwd || '').trim(),
+        task: normalizedTask,
+        queuedAtEnqueue,
+        cancelled: false,
+        resolve,
+        reject
+      })
+      void this.drainProjectTaskQueue(normalizedThreadId)
+    })
+  }
+
+  async drainProjectTaskQueue(threadId) {
+    const normalizedThreadId = String(threadId || '').trim()
+    const queue = this.getProjectTaskQueue(normalizedThreadId)
+    if (
+      this.processingProjectThreadIds.has(normalizedThreadId)
+      || queue.length === 0
+    ) return
+    this.processingProjectThreadIds.add(normalizedThreadId)
+    try {
+      while (queue.length > 0) {
+        const queuedTask = queue[0]
+        try {
+          const waitedForActiveThread = await this.waitForProjectThreadIdle(
+            normalizedThreadId,
+            queuedTask
+          )
+          if (queuedTask.cancelled) continue
+          let result
+          try {
+            result = await this.executeCodexProjectTask({
+              threadId: normalizedThreadId,
+              cwd: queuedTask.cwd,
+              task: queuedTask.task,
+              createNew: false
+            })
+          } catch (error) {
+            if (error?.code !== 'CODEX_PROJECT_THREAD_ACTIVE') throw error
+              queuedTask.queuedAtEnqueue = true
+              await this.waitForProjectThreadSignal(normalizedThreadId)
+              continue
+            }
+          if (queue[0] === queuedTask) queue.shift()
+          queuedTask.resolve({
+            ...result,
+            queuedForActiveThread: (
+              queuedTask.queuedAtEnqueue || waitedForActiveThread
+            )
+          })
+        } catch (error) {
+          if (queue[0] === queuedTask) queue.shift()
+          queuedTask.reject(error)
+        }
+      }
+    } finally {
+      this.processingProjectThreadIds.delete(normalizedThreadId)
+      if (
+        queue.length === 0
+        && this.projectTaskQueues.get(normalizedThreadId) === queue
+      ) {
+        this.projectTaskQueues.delete(normalizedThreadId)
+      }
+    }
   }
 
   async executeCodexProjectTask({
@@ -1900,13 +2341,14 @@ class CodexMainSessionService {
     this.touchSession(session.id, { lastMessage: normalizedText })
 
     const jobId = randomUUID()
+    const createdAt = Date.now()
     const userMessage = {
       id: `user:${jobId}`,
       role: 'user',
       text: normalizedText,
       status: 'completed',
       source: normalizedSource,
-      createdAt: Date.now()
+      createdAt
     }
     this.broadcast('message', {
       sessionId: session.id,
@@ -1914,23 +2356,61 @@ class CodexMainSessionService {
     })
 
     return new Promise((resolve, reject) => {
-      this.getSessionQueue(session.id).push({
+      const task = {
         jobId,
         sessionId: session.id,
         text: normalizedText,
         source: normalizedSource,
         metadata,
+        createdAt,
         attachments: Array.isArray(attachments) ? attachments : [],
         attachmentWorkspace,
+        useWorkerThread: normalizedSource === 'feishu',
+        contextMessages: normalizedSource === 'feishu'
+          ? this.getWorkerContext(session.id)
+          : [],
         onAgentMessage: typeof onAgentMessage === 'function'
           ? onAgentMessage
           : null,
         resolve,
         reject
-      })
+      }
+      if (task.useWorkerThread) {
+        this.broadcastState()
+        void this.executeTask(task)
+        return
+      }
+      this.getSessionQueue(session.id).push(task)
       this.broadcastState()
       void this.drainSessionQueue(session.id)
     })
+  }
+
+  async executeTask(task) {
+    try {
+      const result = await this.runTask(task)
+      this.recordWorkerTaskHistory(task, result)
+      task.resolve(result)
+      return result
+    } catch (error) {
+      this.recordWorkerTaskHistory(task, null, error)
+      const errorMessage = {
+        id: `agent-error:${task.jobId}`,
+        role: 'assistant',
+        text: `执行失败：${error?.message || String(error)}`,
+        status: 'error',
+        source: 'codex',
+        createdAt: Date.now()
+      }
+      this.broadcast('message', {
+        sessionId: task.sessionId,
+        message: errorMessage
+      })
+      task.reject(error)
+      return null
+    } finally {
+      this.broadcastState()
+    }
   }
 
   async drainQueues() {
@@ -1948,24 +2428,7 @@ class CodexMainSessionService {
       while (queue.length > 0) {
         const task = queue.shift()
         this.broadcastState()
-        try {
-          const result = await this.runTask(task)
-          task.resolve(result)
-        } catch (error) {
-          const errorMessage = {
-            id: `agent-error:${task.jobId}`,
-            role: 'assistant',
-            text: `执行失败：${error?.message || String(error)}`,
-            status: 'error',
-            source: 'codex',
-            createdAt: Date.now()
-          }
-          this.broadcast('message', {
-            sessionId,
-            message: errorMessage
-          })
-          task.reject(error)
-        }
+        await this.executeTask(task)
       }
     } finally {
       this.processingSessionIds.delete(sessionId)
@@ -1974,7 +2437,6 @@ class CodexMainSessionService {
   }
 
   async runTask(task) {
-    const threadId = await this.ensureThread(task.sessionId)
     const cwd = resolveWorkingDirectory(this.config.workingDirectory)
     const turnInput = buildCodexTaskInput(task)
 
@@ -1984,16 +2446,21 @@ class CodexMainSessionService {
     })
     const activeTask = {
       ...task,
-      threadId,
+      threadId: '',
+      parentThreadId: '',
+      forked: false,
       turnId: '',
       finalText: '',
       agentMessageIds: new Set(),
       forwardedAgentMessageIds: new Set(),
       resolve: (result) => {
-        if (this.activeTasks.get(task.sessionId) !== activeTask) return
-        this.activeTasks.delete(task.sessionId)
-        if (this.activeTasksByThreadId.get(threadId) === activeTask) {
-          this.activeTasksByThreadId.delete(threadId)
+        if (this.activeTasks.get(task.jobId) !== activeTask) return
+        this.activeTasks.delete(task.jobId)
+        if (
+          activeTask.threadId
+          && this.activeTasksByThreadId.get(activeTask.threadId) === activeTask
+        ) {
+          this.activeTasksByThreadId.delete(activeTask.threadId)
         }
         this.touchSession(task.sessionId)
         this.broadcastState()
@@ -2018,25 +2485,39 @@ class CodexMainSessionService {
         } else {
           completeTask.resolve(result)
         }
+        this.triggerRequestedApplicationRestart(activeTask)
       },
       reject: (error) => {
-        if (this.activeTasks.get(task.sessionId) !== activeTask) return
-        this.activeTasks.delete(task.sessionId)
-        if (this.activeTasksByThreadId.get(threadId) === activeTask) {
-          this.activeTasksByThreadId.delete(threadId)
+        if (this.activeTasks.get(task.jobId) !== activeTask) return
+        this.activeTasks.delete(task.jobId)
+        if (
+          activeTask.threadId
+          && this.activeTasksByThreadId.get(activeTask.threadId) === activeTask
+        ) {
+          this.activeTasksByThreadId.delete(activeTask.threadId)
         }
         this.touchSession(task.sessionId)
         this.broadcastState()
         completeTask.reject(error)
       }
     }
-    this.activeTasks.set(task.sessionId, activeTask)
-    this.activeTasksByThreadId.set(threadId, activeTask)
+    this.activeTasks.set(task.jobId, activeTask)
     this.broadcastState()
 
     try {
+      const worker = task.useWorkerThread
+        ? await this.createWorkerThread(task, cwd)
+        : {
+            threadId: await this.ensureThread(task.sessionId),
+            parentThreadId: '',
+            forked: false
+          }
+      activeTask.threadId = worker.threadId
+      activeTask.parentThreadId = worker.parentThreadId
+      activeTask.forked = worker.forked
+      this.activeTasksByThreadId.set(activeTask.threadId, activeTask)
       const response = await this.request('turn/start', {
-        threadId,
+        threadId: activeTask.threadId,
         input: turnInput,
         cwd,
         approvalPolicy: this.config.approvalPolicy,
@@ -2060,15 +2541,28 @@ class CodexMainSessionService {
   }
 
   async interruptActiveTurn(sessionId = this.activeSessionId) {
-    const task = this.activeTasks.get(String(sessionId || '').trim())
-    if (!task?.threadId || !task?.turnId) {
+    const tasks = this.getActiveTasksForSession(sessionId)
+      .filter((task) => task.threadId && task.turnId)
+    if (tasks.length === 0) {
       return { interrupted: false }
     }
-    await this.request('turn/interrupt', {
-      threadId: task.threadId,
-      turnId: task.turnId
-    })
-    return { interrupted: true }
+    const results = await Promise.allSettled(
+      tasks.map((task) => this.request('turn/interrupt', {
+        threadId: task.threadId,
+        turnId: task.turnId
+      }))
+    )
+    const interruptedCount = results.filter(
+      (result) => result.status === 'fulfilled'
+    ).length
+    if (interruptedCount === 0) {
+      throw results.find((result) => result.status === 'rejected')?.reason
+        || new Error('中断失败')
+    }
+    return {
+      interrupted: true,
+      interruptedCount
+    }
   }
 
   createNewSession() {
@@ -2358,6 +2852,7 @@ function registerCodexMainSessionHandlers({
   getMainWindow,
   createFeishuBridge,
   onFeishuKeepAliveChanged,
+  scheduleApplicationRestart,
   safeLog,
   safeError
 }) {
@@ -2365,7 +2860,8 @@ function registerCodexMainSessionHandlers({
     store,
     getMainWindow,
     safeLog,
-    safeError
+    safeError,
+    scheduleApplicationRestart
   })
   const feishuBridge = createFeishuBridgeManager({
     service,

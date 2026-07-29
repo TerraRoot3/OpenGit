@@ -47,6 +47,13 @@
                     class="spinning"
                     aria-hidden="true"
                   />
+                  <span
+                    v-if="session.activeTaskCount > 1"
+                    class="session-queue-badge"
+                    :title="`并行执行 ${session.activeTaskCount} 个任务`"
+                  >
+                    {{ session.activeTaskCount }}
+                  </span>
                   <span v-else-if="session.queueLength > 0" class="session-queue-badge">
                     {{ session.queueLength }}
                   </span>
@@ -213,7 +220,11 @@
         <footer class="composer-wrap">
           <div v-if="isBusy || state.queueLength > 0" class="queue-status">
             <Loader2 v-if="isBusy" :size="14" class="spinning" aria-hidden="true" />
-            <span v-if="isBusy">Codex 正在执行</span>
+            <span v-if="isBusy">
+              {{ activeSessionTaskCount > 1
+                ? `Codex 正在并行执行 ${activeSessionTaskCount} 个任务`
+                : 'Codex 正在执行' }}
+            </span>
             <span v-if="state.queueLength > 0">队列中 {{ state.queueLength }} 个任务</span>
             <button
               v-if="isBusy"
@@ -221,7 +232,7 @@
               @click="interruptTurn"
             >
               <Square :size="11" fill="currentColor" aria-hidden="true" />
-              中断
+              {{ activeSessionTaskCount > 1 ? '全部中断' : '中断' }}
             </button>
           </div>
 
@@ -684,6 +695,9 @@ const form = reactive({
 
 const activeSession = computed(() => (
   state.sessions.find((session) => session.id === state.activeSessionId) || null
+))
+const activeSessionTaskCount = computed(() => (
+  Number(activeSession.value?.activeTaskCount) || (state.turnStatus === 'running' ? 1 : 0)
 ))
 const isBusy = computed(() => state.turnStatus === 'running')
 const isAnyBusy = computed(() => (

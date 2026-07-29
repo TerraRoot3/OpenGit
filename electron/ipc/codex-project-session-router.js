@@ -1,12 +1,10 @@
 const fs = require('fs')
 const path = require('path')
-const { randomUUID } = require('crypto')
 
 const THREAD_PAGE_LIMIT = 100
 const MAX_THREAD_PAGES = 20
 const DEFAULT_RESULT_LIMIT = 8
 const MAX_RESULT_LIMIT = 20
-const CONFIRMATION_TTL_MS = 10 * 60 * 1000
 const SOURCE_KINDS = Object.freeze([
   'cli',
   'vscode',
@@ -85,10 +83,25 @@ const CODEX_PROJECT_DYNAMIC_TOOLS = Object.freeze([
   },
   {
     type: 'function',
+    name: 'restart_open_git',
+    description: [
+      '仅当用户明确要求重启整个 OpenGit 桌面应用时调用。',
+      '不要把重启 Codex server、飞书连接、终端或项目任务理解为重启 OpenGit。',
+      '调用后会等待当前回复完成，再停止 OpenGit 内的后台服务并重新启动应用；其他正在运行的 OpenGit 任务会被中断。'
+    ].join(''),
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
     name: 'dispatch_codex_project_task',
     description: [
-      '把项目任务路由到该项目最近的未归档 Codex 会话；这是飞书项目执行请求的必经入口。',
-      '最近会话空闲时会恢复它并开始新一轮；最近会话正在执行时只返回确认问题，绝不排队、steer 或在 OpenGit 主会话里代执行。',
+      '把项目任务路由到该项目未归档的 Codex 会话；这是飞书项目执行请求的必经入口。',
+      '同等项目匹配度下优先选择正在执行的会话并自动排队，空闲后继续使用同一个会话；没有执行中会话时才使用最近的旧会话。',
+      '只要项目存在旧会话，就绝不新开项目会话、steer 或在 OpenGit 路由会话里代执行。',
       'projectQuery 省略时使用当前会话绑定的默认项目；用户明确点名其他项目时传入该项目，不会改变原绑定。',
       '如果项目没有旧会话，只有提供可用的绝对 cwd 后才会新建独立项目会话。'
     ].join(''),
@@ -111,26 +124,6 @@ const CODEX_PROJECT_DYNAMIC_TOOLS = Object.freeze([
         threadId: {
           type: 'string',
           description: '可选；用户明确选择候选会话后指定其 threadId。'
-        }
-      },
-      additionalProperties: false
-    }
-  },
-  {
-    type: 'function',
-    name: 'start_new_codex_project_task',
-    description: [
-      '仅在 dispatch_codex_project_task 因目标会话正在执行而要求确认后调用。',
-      '只有同一个飞书会话中的用户明确同意新开任务，且确认未过期时才会创建独立项目会话。',
-      '不要把普通的“继续”当成新开任务授权。'
-    ].join(''),
-    inputSchema: {
-      type: 'object',
-      required: ['confirmationToken'],
-      properties: {
-        confirmationToken: {
-          type: 'string',
-          description: 'dispatch_codex_project_task 返回的确认令牌。'
         }
       },
       additionalProperties: false
@@ -225,6 +218,19 @@ function normalizeCandidate(thread = {}, score = 0) {
   }
 }
 
+function selectProjectCandidate(candidates = [], requestedThreadId = '') {
+  const requestedId = String(requestedThreadId || '').trim()
+  if (requestedId) {
+    return candidates.find((item) => item.threadId === requestedId) || null
+  }
+  const firstCandidate = candidates[0] || null
+  if (!firstCandidate) return null
+  return candidates.find((item) => (
+    item.score === firstCandidate.score
+    && item.status === 'running'
+  )) || firstCandidate
+}
+
 function toolResponse(value, success = true) {
   return {
     success,
@@ -235,48 +241,6 @@ function toolResponse(value, success = true) {
         : JSON.stringify(value, null, 2)
     }]
   }
-}
-
-function normalizeConfirmationText(value = '') {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/[，,、。.!！?？;；:：~～]/g, '')
-}
-
-function isExplicitNewTaskConfirmation(value = '') {
-  const text = normalizeConfirmationText(value)
-  if (!text || text.length > 24) return false
-  if (/(?:不|不要|不用|别)(?:再)?(?:新开|新建|创建|开启|开)/.test(text)) {
-    return false
-  }
-  if ([
-    '是',
-    '是的',
-    '要',
-    '需要',
-    '可以',
-    '好',
-    '好的',
-    '确认',
-    '同意',
-    '确认新开',
-    '同意新开',
-    '新开',
-    '新开吧',
-    '开新的',
-    '开一个新的',
-    '新开任务',
-    '新开一个任务',
-    '创建新任务',
-    '开启新任务'
-  ].includes(text)) return true
-  return (
-    /^(?:那就|就|请|帮我|嗯|好)?(?:新开|开|创建|开启)(?:一个)?(?:新的?)?(?:任务|会话)?(?:吧)?$/.test(text)
-    || /(?:新开|新建)(?:一个|个)?(?:新的?)?(?:任务|会话)?/.test(text)
-    || /(?:创建|开启|开)(?:一个|个)?(?:新的?|新)(?:任务|会话)/.test(text)
-  )
 }
 
 function resolveExistingDirectory(value = '') {
@@ -294,16 +258,10 @@ function resolveExistingDirectory(value = '') {
 class CodexProjectSessionRouter {
   constructor({
     service,
-    now = () => Date.now(),
-    confirmationTtlMs = CONFIRMATION_TTL_MS
+    now = () => Date.now()
   } = {}) {
     this.service = service
     this.now = now
-    this.confirmationTtlMs = Math.max(
-      60 * 1000,
-      Number(confirmationTtlMs) || CONFIRMATION_TTL_MS
-    )
-    this.confirmations = new Map()
   }
 
   getManagedMainThreadIds() {
@@ -312,20 +270,6 @@ class CodexProjectSessionRouter {
         .map((session) => String(session?.threadId || '').trim())
         .filter(Boolean)
     )
-  }
-
-  getOrigin(activeTask = {}) {
-    const sessionId = String(activeTask.sessionId || '').trim()
-    const connectionId = String(activeTask?.metadata?.connectionId || '').trim()
-    const chatId = String(activeTask?.metadata?.chatId || '').trim()
-    return {
-      sessionId,
-      connectionId,
-      chatId,
-      key: connectionId && chatId
-        ? `feishu:${connectionId}:${chatId}`
-        : `session:${sessionId}`
-    }
   }
 
   getOriginSession(activeTask = {}) {
@@ -380,15 +324,6 @@ class CodexProjectSessionRouter {
       cwd: explicitCwd || projectBinding.cwd,
       usedProjectBinding: true,
       projectBinding
-    }
-  }
-
-  pruneConfirmations() {
-    const timestamp = this.now()
-    for (const [token, confirmation] of this.confirmations.entries()) {
-      if (Number(confirmation.expiresAt || 0) <= timestamp) {
-        this.confirmations.delete(token)
-      }
     }
   }
 
@@ -518,44 +453,6 @@ class CodexProjectSessionRouter {
         }
   }
 
-  createRunningConfirmation({
-    candidate,
-    projectQuery,
-    task,
-    origin
-  }) {
-    this.pruneConfirmations()
-    for (const [token, confirmation] of this.confirmations.entries()) {
-      if (confirmation.originKey === origin.key) {
-        this.confirmations.delete(token)
-      }
-    }
-    const token = randomUUID()
-    const createdAt = this.now()
-    const confirmation = {
-      token,
-      originKey: origin.key,
-      sessionId: origin.sessionId,
-      connectionId: origin.connectionId,
-      chatId: origin.chatId,
-      projectQuery: String(projectQuery || '').trim(),
-      task: String(task || '').trim(),
-      cwd: candidate.cwd,
-      runningThreadId: candidate.threadId,
-      runningTitle: candidate.title,
-      createdAt,
-      expiresAt: createdAt + this.confirmationTtlMs
-    }
-    this.confirmations.set(token, confirmation)
-    return {
-      status: 'confirmation_required',
-      confirmationToken: token,
-      expiresAt: confirmation.expiresAt,
-      selectedSession: candidate,
-      question: `项目 ${path.basename(candidate.cwd) || projectQuery} 最近的 Codex 会话“${candidate.title}”正在执行。是否新开一个独立的 Codex 任务？`
-    }
-  }
-
   async dispatchProjectTask({
     projectQuery,
     task,
@@ -581,9 +478,7 @@ class CodexProjectSessionRouter {
       limit: MAX_RESULT_LIMIT
     })
     const requestedThreadId = String(threadId || '').trim()
-    const candidate = requestedThreadId
-      ? candidates.find((item) => item.threadId === requestedThreadId)
-      : candidates[0]
+    const candidate = selectProjectCandidate(candidates, requestedThreadId)
     if (requestedThreadId && !candidate) {
       return {
         status: 'session_not_found',
@@ -592,42 +487,20 @@ class CodexProjectSessionRouter {
       }
     }
 
-    if (candidate?.status === 'running') {
-      return this.createRunningConfirmation({
-        candidate,
-        projectQuery: target.projectQuery,
-        task: normalizedTask,
-        origin: this.getOrigin(activeTask)
-      })
-    }
-
     if (candidate) {
-      try {
-        const result = await this.service.executeCodexProjectTask({
-          threadId: candidate.threadId,
-          cwd: candidate.cwd,
-          task: normalizedTask,
-          createNew: false
-        })
-        return {
-          status: 'completed',
-          usedProjectBinding: target.usedProjectBinding,
-          projectBinding: target.projectBinding,
-          reusedExistingSession: true,
-          selectedSession: candidate,
-          result
-        }
-      } catch (error) {
-        if (error?.code !== 'CODEX_PROJECT_THREAD_ACTIVE') throw error
-        return this.createRunningConfirmation({
-          candidate: {
-            ...candidate,
-            status: 'running'
-          },
-          projectQuery: target.projectQuery,
-          task: normalizedTask,
-          origin: this.getOrigin(activeTask)
-        })
+      const result = await this.service.enqueueCodexProjectTask({
+        threadId: candidate.threadId,
+        cwd: candidate.cwd,
+        task: normalizedTask
+      })
+      return {
+        status: 'completed',
+        usedProjectBinding: target.usedProjectBinding,
+        projectBinding: target.projectBinding,
+        reusedExistingSession: true,
+        queuedForActiveThread: result.queuedForActiveThread === true,
+        selectedSession: candidate,
+        result
       }
     }
 
@@ -652,50 +525,6 @@ class CodexProjectSessionRouter {
       reusedExistingSession: false,
       createdNewSession: true,
       projectCwd,
-      result
-    }
-  }
-
-  async startConfirmedNewTask({
-    confirmationToken,
-    activeTask
-  } = {}) {
-    this.pruneConfirmations()
-    const token = String(confirmationToken || '').trim()
-    const confirmation = this.confirmations.get(token)
-    if (!confirmation) {
-      return {
-        status: 'confirmation_expired',
-        message: '新开任务确认已失效，请重新发起项目任务。'
-      }
-    }
-    const origin = this.getOrigin(activeTask)
-    if (origin.key !== confirmation.originKey) {
-      return {
-        status: 'confirmation_origin_mismatch',
-        message: '该确认不属于当前飞书会话，不能使用。'
-      }
-    }
-    if (!isExplicitNewTaskConfirmation(activeTask?.text)) {
-      return {
-        status: 'explicit_confirmation_required',
-        message: '用户尚未明确同意“新开任务”；请继续询问，不要创建会话。'
-      }
-    }
-    this.confirmations.delete(token)
-    const result = await this.service.executeCodexProjectTask({
-      cwd: confirmation.cwd,
-      task: confirmation.task,
-      createNew: true
-    })
-    return {
-      status: 'completed',
-      createdNewSession: true,
-      projectCwd: confirmation.cwd,
-      replacedRunningSession: {
-        threadId: confirmation.runningThreadId,
-        title: confirmation.runningTitle
-      },
       result
     }
   }
@@ -757,6 +586,11 @@ class CodexProjectSessionRouter {
       if (tool === 'unbind_codex_project') {
         return toolResponse(this.unbindProject(activeTask))
       }
+      if (tool === 'restart_open_git') {
+        return toolResponse(
+          this.service.requestApplicationRestart(activeTask)
+        )
+      }
       if (tool === 'dispatch_codex_project_task') {
         return toolResponse(await this.dispatchProjectTask({
           projectQuery: args.projectQuery,
@@ -766,27 +600,18 @@ class CodexProjectSessionRouter {
           activeTask
         }))
       }
-      if (tool === 'start_new_codex_project_task') {
-        return toolResponse(await this.startConfirmedNewTask({
-          confirmationToken: args.confirmationToken,
-          activeTask
-        }))
-      }
       return toolResponse(`OpenGit 不支持动态工具：${tool}`, false)
     } catch (error) {
       return toolResponse(error?.message || String(error), false)
     }
   }
 
-  cleanup() {
-    this.confirmations.clear()
-  }
+  cleanup() {}
 }
 
 module.exports = {
   CodexProjectSessionRouter,
   CODEX_PROJECT_DYNAMIC_TOOLS,
-  CONFIRMATION_TTL_MS,
   __testables: {
     compactText,
     normalizeProjectQuery,
@@ -794,7 +619,7 @@ module.exports = {
     normalizeThreadStatus,
     scoreProjectThread,
     normalizeCandidate,
-    isExplicitNewTaskConfirmation,
+    selectProjectCandidate,
     resolveExistingDirectory,
     toolResponse
   }

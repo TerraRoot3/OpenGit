@@ -1473,6 +1473,8 @@ registerAiSessionHandlers({
 })
 
 let feishuPowerSaveBlockerId = null
+let applicationRestartTimer = null
+let codexMainSession = null
 const setFeishuKeepAlive = (enabled) => {
   const blockerStarted = feishuPowerSaveBlockerId != null
     && powerSaveBlocker.isStarted(feishuPowerSaveBlockerId)
@@ -1491,12 +1493,49 @@ const setFeishuKeepAlive = (enabled) => {
   feishuPowerSaveBlockerId = null
 }
 
-const codexMainSession = registerCodexMainSessionHandlers({
+const scheduleApplicationRestart = ({
+  reason = 'codex-session',
+  delayMs = 1500
+} = {}) => {
+  const normalizedDelayMs = Math.max(
+    500,
+    Math.min(5000, Number(delayMs) || 1500)
+  )
+  if (applicationRestartTimer) {
+    return {
+      scheduled: true,
+      alreadyScheduled: true,
+      delayMs: normalizedDelayMs
+    }
+  }
+  applicationRestartTimer = setTimeout(async () => {
+    applicationRestartTimer = null
+    safeLog(`[OpenGit] 正在执行应用内重启 (${reason})`)
+    try {
+      await Promise.race([
+        Promise.resolve(codexMainSession?.cleanup?.()),
+        new Promise((resolve) => setTimeout(resolve, 5000))
+      ])
+    } catch (error) {
+      safeError('[OpenGit] 重启前清理失败，将继续重启:', error.message)
+    }
+    app.relaunch()
+    app.quit()
+  }, normalizedDelayMs)
+  return {
+    scheduled: true,
+    alreadyScheduled: false,
+    delayMs: normalizedDelayMs
+  }
+}
+
+codexMainSession = registerCodexMainSessionHandlers({
   ipcMain,
   store,
   getMainWindow: () => mainWindow,
   createFeishuBridge: createCodexFeishuBridge,
   onFeishuKeepAliveChanged: setFeishuKeepAlive,
+  scheduleApplicationRestart,
   safeLog,
   safeError
 })

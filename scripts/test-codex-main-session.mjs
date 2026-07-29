@@ -720,10 +720,229 @@ assert.deepEqual(
     'bind_codex_project',
     'get_codex_project_binding',
     'unbind_codex_project',
-    'dispatch_codex_project_task',
-    'start_new_codex_project_task'
+    'restart_open_git',
+    'dispatch_codex_project_task'
   ]
 )
+
+const scheduledApplicationRestarts = []
+const concurrentWorkerStore = new MemoryStore()
+const concurrentWorkerService = new CodexMainSessionService({
+  store: concurrentWorkerStore,
+  getMainWindow: () => null,
+  scheduleApplicationRestart: (payload) => {
+    scheduledApplicationRestarts.push(payload)
+  }
+})
+const concurrentWorkerChat = concurrentWorkerService.getOrCreateFeishuSession({
+  connectionId: 'work',
+  connectionName: '工作飞书',
+  chatId: 'oc_parallel_tasks',
+  chatType: 'group'
+})
+concurrentWorkerService.startServer = async () => true
+const concurrentWorkerRequests = []
+let concurrentWorkerSequence = 0
+concurrentWorkerService.request = async (method, params) => {
+  concurrentWorkerRequests.push({ method, params })
+  if (method === 'thread/start') {
+    return { thread: { id: 'thread-feishu-parent' } }
+  }
+  if (method === 'thread/fork') {
+    concurrentWorkerSequence += 1
+    return {
+      thread: {
+        id: `thread-feishu-worker-${concurrentWorkerSequence}`,
+        forkedFromId: params.threadId
+      }
+    }
+  }
+  if (method === 'turn/start') {
+    return {
+      turn: {
+        id: `turn-${params.threadId}`,
+        status: 'inProgress'
+      }
+    }
+  }
+  if (method === 'thread/read') {
+    return { thread: { id: params.threadId, turns: [] } }
+  }
+  return {}
+}
+const firstParallelTask = concurrentWorkerService.enqueueInstruction({
+  text: '并行任务一',
+  source: 'feishu',
+  metadata: {
+    connectionId: 'work',
+    connectionName: '工作飞书',
+    chatId: 'oc_parallel_tasks',
+    chatType: 'group'
+  }
+})
+const secondParallelTask = concurrentWorkerService.enqueueInstruction({
+  text: '并行任务二',
+  source: 'feishu',
+  metadata: {
+    connectionId: 'work',
+    connectionName: '工作飞书',
+    chatId: 'oc_parallel_tasks',
+    chatType: 'group'
+  }
+})
+for (let index = 0; index < 20; index += 1) {
+  if (
+    concurrentWorkerRequests.filter(({ method }) => method === 'turn/start')
+      .length === 2
+  ) break
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+const initialForkRequests = concurrentWorkerRequests.filter(
+  ({ method }) => method === 'thread/fork'
+)
+assert.equal(initialForkRequests.length, 2)
+assert.equal(
+  concurrentWorkerRequests.filter(({ method }) => method === 'thread/start')
+    .length,
+  1,
+  'parallel Feishu tasks should share one parent thread and create worker forks'
+)
+assert.equal(
+  initialForkRequests.every(({ params }) => (
+    params.threadId === 'thread-feishu-parent'
+    && params.ephemeral === true
+  )),
+  true,
+  'each Feishu task should fork an ephemeral worker from the conversation parent'
+)
+assert.equal(
+  concurrentWorkerService.getActiveTasksForSession(concurrentWorkerChat.id).length,
+  2,
+  'a second Feishu message must start while the first worker is still running'
+)
+assert.equal(
+  concurrentWorkerService.getSessionQueue(concurrentWorkerChat.id).length,
+  0,
+  'Feishu workers must not enter the per-session serial queue'
+)
+const secondParallelTurnInput = concurrentWorkerRequests
+  .filter(({ method }) => method === 'turn/start')
+  .map(({ params }) => params.input.find((item) => item.type === 'text')?.text || '')
+  .find((text) => text.includes('并行任务二')) || ''
+assert.match(
+  secondParallelTurnInput,
+  /用户（该指令仍在另一个子会话执行，尚无结果）：并行任务一/,
+  'a new worker should know which earlier instruction is still running'
+)
+
+const completeWorker = (threadId, text) => {
+  concurrentWorkerService.handleNotification('item/completed', {
+    threadId,
+    item: {
+      id: `agent-${threadId}`,
+      type: 'agentMessage',
+      text
+    }
+  })
+  concurrentWorkerService.handleNotification('turn/completed', {
+    threadId,
+    turn: {
+      id: `turn-${threadId}`,
+      status: 'completed',
+      items: []
+    }
+  })
+}
+completeWorker('thread-feishu-worker-2', '并行任务二已完成。')
+const secondParallelResult = await secondParallelTask
+assert.equal(secondParallelResult.text, '并行任务二已完成。')
+assert.equal(
+  concurrentWorkerService.getActiveTasksForSession(concurrentWorkerChat.id).length,
+  1,
+  'completing one worker must not remove another active worker'
+)
+completeWorker('thread-feishu-worker-1', '并行任务一已完成。')
+const firstParallelResult = await firstParallelTask
+assert.equal(firstParallelResult.text, '并行任务一已完成。')
+assert.equal(
+  concurrentWorkerService.getActiveTasksForSession(concurrentWorkerChat.id).length,
+  0
+)
+const persistedParallelHistory = await concurrentWorkerService.getHistory(
+  concurrentWorkerChat.id
+)
+assert.deepEqual(
+  new Set(persistedParallelHistory.map(({ text }) => text)),
+  new Set([
+    '并行任务一',
+    '并行任务一已完成。',
+    '并行任务二',
+    '并行任务二已完成。'
+  ]),
+  'worker requests and replies should remain visible after history reload'
+)
+
+const contextualTask = concurrentWorkerService.enqueueInstruction({
+  text: '根据刚才的结果继续',
+  source: 'feishu',
+  metadata: {
+    connectionId: 'work',
+    connectionName: '工作飞书',
+    chatId: 'oc_parallel_tasks',
+    chatType: 'group'
+  }
+})
+for (let index = 0; index < 20; index += 1) {
+  if (
+    concurrentWorkerRequests.filter(({ method }) => method === 'turn/start')
+      .length === 3
+  ) break
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+const contextualTurn = concurrentWorkerRequests
+  .filter(({ method }) => method === 'turn/start')
+  .at(-1)
+const contextualInput = contextualTurn.params.input
+  .find((item) => item.type === 'text')?.text || ''
+assert.match(contextualInput, /当前飞书会话近期上下文/)
+assert.match(contextualInput, /并行任务一已完成/)
+assert.match(contextualInput, /并行任务二已完成/)
+completeWorker('thread-feishu-worker-3', '后续任务已完成。')
+await contextualTask
+
+const restartWorkerTask = concurrentWorkerService.enqueueInstruction({
+  text: '重启 OpenGit',
+  source: 'feishu',
+  metadata: {
+    connectionId: 'work',
+    connectionName: '工作飞书',
+    chatId: 'oc_parallel_tasks',
+    chatType: 'group'
+  }
+})
+for (let index = 0; index < 20; index += 1) {
+  if (
+    concurrentWorkerRequests.filter(({ method }) => method === 'turn/start')
+      .length === 4
+  ) break
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+const restartActiveTask = concurrentWorkerService
+  .getActiveTasksForSession(concurrentWorkerChat.id)
+  .find((task) => task.text === '重启 OpenGit')
+assert.ok(restartActiveTask)
+assert.equal(
+  concurrentWorkerService.requestApplicationRestart(restartActiveTask).status,
+  'restart_pending'
+)
+assert.equal(scheduledApplicationRestarts.length, 0)
+completeWorker('thread-feishu-worker-4', 'OpenGit 即将重启。')
+await restartWorkerTask
+assert.deepEqual(scheduledApplicationRestarts, [{
+  reason: 'codex-session',
+  sessionId: concurrentWorkerChat.id,
+  threadId: 'thread-feishu-worker-4'
+}])
 
 const bindingStore = new MemoryStore()
 const bindingService = new CodexMainSessionService({
@@ -821,7 +1040,7 @@ assert.equal(
 )
 
 const boundProjectExecutions = []
-bindingService.executeCodexProjectTask = async (payload) => {
+bindingService.enqueueCodexProjectTask = async (payload) => {
   boundProjectExecutions.push(payload)
   return {
     threadId: payload.threadId,
@@ -997,6 +1216,195 @@ assert.deepEqual(
   runningProjectRequests.map(({ method }) => method),
   ['thread/resume'],
   'a running target must not receive turn/start or turn/steer'
+)
+
+const queuedProjectService = new CodexMainSessionService({
+  store: new MemoryStore(),
+  getMainWindow: () => null,
+  projectThreadPollIntervalMs: 1000
+})
+queuedProjectService.startServer = async () => true
+let externalProjectTurnActive = true
+let queuedProjectTurnSequence = 0
+const queuedProjectRequests = []
+queuedProjectService.request = async (method, params) => {
+  queuedProjectRequests.push({ method, params })
+  if (method === 'thread/read') {
+    return {
+      thread: {
+        id: params.threadId,
+        status: {
+          type: (
+            params.threadId === 'thread-project-shared'
+            && externalProjectTurnActive
+          ) ? 'active' : 'idle'
+        }
+      }
+    }
+  }
+  if (method === 'thread/resume') {
+    return {
+      thread: {
+        id: params.threadId,
+        cwd: '/tmp',
+        status: { type: 'idle' }
+      }
+    }
+  }
+  if (method === 'turn/start') {
+    queuedProjectTurnSequence += 1
+    const turnSequence = queuedProjectTurnSequence
+    const taskText = params.input[0].text
+    queueMicrotask(() => {
+      queuedProjectService.handleNotification('item/completed', {
+        threadId: params.threadId,
+        item: {
+          id: `agent-queued-project-${turnSequence}`,
+          type: 'agentMessage',
+          text: `${taskText}已完成。`
+        }
+      })
+      queuedProjectService.handleNotification('turn/completed', {
+        threadId: params.threadId,
+        turn: {
+          id: `turn-queued-project-${turnSequence}`,
+          status: 'completed',
+          items: []
+        }
+      })
+    })
+    return {
+      turn: {
+        id: `turn-queued-project-${turnSequence}`,
+        status: 'inProgress'
+      }
+    }
+  }
+  return {}
+}
+const firstQueuedProjectTask = queuedProjectService.enqueueCodexProjectTask({
+  threadId: 'thread-project-shared',
+  cwd: '/tmp',
+  task: '排队任务一'
+})
+const secondQueuedProjectTask = queuedProjectService.enqueueCodexProjectTask({
+  threadId: 'thread-project-shared',
+  cwd: '/tmp',
+  task: '排队任务二'
+})
+const independentProjectTask = queuedProjectService.enqueueCodexProjectTask({
+  threadId: 'thread-project-independent',
+  cwd: '/tmp',
+  task: '独立项目任务'
+})
+for (let index = 0; index < 20; index += 1) {
+  if (queuedProjectRequests.some(({ method }) => method === 'thread/read')) break
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+assert.equal(
+  queuedProjectRequests.some(({ method, params }) => (
+    method === 'thread/resume'
+    && params.threadId === 'thread-project-shared'
+  )),
+  false,
+  'an active project thread must remain untouched while its task waits'
+)
+assert.equal(
+  queuedProjectRequests.some(({ method }) => method === 'thread/start'),
+  false,
+  'waiting for an active project thread must never create another project thread'
+)
+const independentProjectResult = await independentProjectTask
+assert.equal(independentProjectResult.text, '独立项目任务已完成。')
+assert.equal(independentProjectResult.queuedForActiveThread, false)
+assert.equal(
+  queuedProjectService.processingProjectThreadIds.has('thread-project-shared'),
+  true,
+  'another project should finish without releasing the busy project queue'
+)
+externalProjectTurnActive = false
+queuedProjectService.handleNotification('turn/completed', {
+  threadId: 'thread-project-shared',
+  turn: {
+    id: 'turn-external-project',
+    status: 'completed',
+    items: []
+  }
+})
+const [firstQueuedProjectResult, secondQueuedProjectResult] = await Promise.all([
+  firstQueuedProjectTask,
+  secondQueuedProjectTask
+])
+assert.equal(firstQueuedProjectResult.text, '排队任务一已完成。')
+assert.equal(secondQueuedProjectResult.text, '排队任务二已完成。')
+assert.equal(firstQueuedProjectResult.queuedForActiveThread, true)
+assert.equal(secondQueuedProjectResult.queuedForActiveThread, true)
+assert.deepEqual(
+  queuedProjectRequests
+    .filter(({ method, params }) => (
+      method === 'turn/start'
+      && params.threadId === 'thread-project-shared'
+    ))
+    .map(({ params }) => params.input[0].text),
+  ['排队任务一', '排队任务二'],
+  'tasks for the same project thread must execute in FIFO order'
+)
+assert.equal(
+  queuedProjectRequests.some(({ method, params }) => (
+    method === 'turn/steer'
+    || (
+      method === 'thread/start'
+      && params?.threadSource === 'open_git_project_task'
+    )
+  )),
+  false,
+  'queued project tasks must reuse the existing thread without steering or starting a new one'
+)
+
+const failedProjectQueueService = new CodexMainSessionService({
+  store: new MemoryStore(),
+  getMainWindow: () => null,
+  projectThreadPollIntervalMs: 1000
+})
+failedProjectQueueService.startServer = async () => true
+const failedProjectQueueRequests = []
+failedProjectQueueService.request = async (method, params) => {
+  failedProjectQueueRequests.push({ method, params })
+  if (method === 'thread/read') {
+    return {
+      thread: {
+        id: params.threadId,
+        status: { type: 'active' }
+      }
+    }
+  }
+  throw new Error(`unexpected request after queue failure: ${method}`)
+}
+const failedProjectTask = failedProjectQueueService.enqueueCodexProjectTask({
+  threadId: 'thread-project-failed-server',
+  cwd: '/tmp',
+  task: '服务退出后不能继续执行'
+})
+const failedProjectTaskAssertion = assert.rejects(
+  failedProjectTask,
+  /模拟 app-server 退出/
+)
+for (let index = 0; index < 20; index += 1) {
+  if (failedProjectQueueRequests.length > 0) break
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+failedProjectQueueService.failPending(new Error('模拟 app-server 退出'))
+await failedProjectTaskAssertion
+await new Promise((resolve) => setTimeout(resolve, 0))
+assert.deepEqual(
+  failedProjectQueueRequests.map(({ method }) => method),
+  ['thread/read'],
+  'a rejected project queue must not restart or execute its cancelled task'
+)
+assert.equal(
+  failedProjectQueueService.processingProjectThreadIds.size,
+  0,
+  'a failed project queue must release its processing lock'
 )
 
 const toolRpcService = new CodexMainSessionService({

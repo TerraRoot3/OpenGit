@@ -18,16 +18,10 @@ assert.deepEqual(
     'bind_codex_project',
     'get_codex_project_binding',
     'unbind_codex_project',
-    'dispatch_codex_project_task',
-    'start_new_codex_project_task'
+    'restart_open_git',
+    'dispatch_codex_project_task'
   ]
 )
-assert.equal(__testables.isExplicitNewTaskConfirmation('新开一个任务'), true)
-assert.equal(__testables.isExplicitNewTaskConfirmation('那就新开吧'), true)
-assert.equal(__testables.isExplicitNewTaskConfirmation('是的，帮我新开一个任务'), true)
-assert.equal(__testables.isExplicitNewTaskConfirmation('不要新开'), false)
-assert.equal(__testables.isExplicitNewTaskConfirmation('继续'), false)
-assert.equal(__testables.isExplicitNewTaskConfirmation('继续执行原任务'), false)
 
 const mainThread = {
   id: 'thread-main',
@@ -90,6 +84,7 @@ const pophieThread = {
 
 const rpcCalls = []
 const executions = []
+const restartRequests = []
 let listedThreads = [
   mainThread,
   runningApiThread,
@@ -105,12 +100,33 @@ const service = {
     }]
   ]),
   activeTasksByThreadId: new Map(),
+  requestApplicationRestart: (activeTask) => {
+    restartRequests.push(activeTask)
+    return {
+      status: 'restart_pending',
+      message: 'OpenGit 将在本条回复完成后重启。'
+    }
+  },
   request: async (method, params) => {
     rpcCalls.push({ method, params })
     assert.equal(method, 'thread/list')
     return {
       data: listedThreads,
       nextCursor: null
+    }
+  },
+  enqueueCodexProjectTask: async (payload) => {
+    executions.push(payload)
+    return {
+      threadId: payload.threadId,
+      turnId: `turn-${executions.length}`,
+      status: 'completed',
+      text: `已执行：${payload.task}`,
+      messages: [`已执行：${payload.task}`],
+      queuedForActiveThread: (
+        listedThreads.find((thread) => thread.id === payload.threadId)
+          ?.status?.type === 'active'
+      )
     }
   },
   executeCodexProjectTask: async (payload) => {
@@ -120,15 +136,15 @@ const service = {
       turnId: `turn-${executions.length}`,
       status: 'completed',
       text: `已执行：${payload.task}`,
-      messages: [`已执行：${payload.task}`]
+      messages: [`已执行：${payload.task}`],
+      createdNewSession: payload.createNew === true
     }
   }
 }
 let now = 1_000_000
 const router = new CodexProjectSessionRouter({
   service,
-  now: () => now,
-  confirmationTtlMs: 60 * 1000
+  now: () => now
 })
 const activeTask = {
   sessionId: 'feishu:work:oc_api',
@@ -157,51 +173,22 @@ assert.deepEqual(
   ['cli', 'vscode', 'exec', 'appServer']
 )
 
-const blocked = await router.dispatchProjectTask({
+idleApiThread.recencyAt = 600
+const queued = await router.dispatchProjectTask({
   projectQuery: 'api-go',
   task: '继续修复支付接口',
   activeTask
 })
-assert.equal(blocked.status, 'confirmation_required')
-assert.match(blocked.question, /正在执行/)
-assert.equal(executions.length, 0)
-
-activeTask.text = '继续'
-const notConfirmed = await router.startConfirmedNewTask({
-  confirmationToken: blocked.confirmationToken,
-  activeTask
-})
-assert.equal(notConfirmed.status, 'explicit_confirmation_required')
-assert.equal(executions.length, 0)
-
-const otherTask = {
-  ...activeTask,
-  text: '新开任务',
-  metadata: {
-    connectionId: 'personal',
-    chatId: 'oc_api'
-  }
-}
-const wrongOrigin = await router.startConfirmedNewTask({
-  confirmationToken: blocked.confirmationToken,
-  activeTask: otherTask
-})
-assert.equal(wrongOrigin.status, 'confirmation_origin_mismatch')
-assert.equal(executions.length, 0)
-
-activeTask.text = '新开一个任务'
-const confirmed = await router.startConfirmedNewTask({
-  confirmationToken: blocked.confirmationToken,
-  activeTask
-})
-assert.equal(confirmed.status, 'completed')
-assert.equal(confirmed.createdNewSession, true)
+assert.equal(queued.status, 'completed')
+assert.equal(queued.reusedExistingSession, true)
+assert.equal(queued.queuedForActiveThread, true)
 assert.deepEqual(executions[0], {
+  threadId: 'thread-api-running',
   cwd: '/tmp/api-go',
-  task: '继续修复支付接口',
-  createNew: true
+  task: '继续修复支付接口'
 })
 
+idleApiThread.recencyAt = 300
 runningApiThread.status = { type: 'idle' }
 activeTask.text = '继续修复测试'
 const reused = await router.dispatchProjectTask({
@@ -214,24 +201,8 @@ assert.equal(reused.reusedExistingSession, true)
 assert.deepEqual(executions[1], {
   threadId: 'thread-api-running',
   cwd: '/tmp/api-go',
-  task: '继续修复测试',
-  createNew: false
+  task: '继续修复测试'
 })
-
-runningApiThread.status = { type: 'active', activeFlags: [] }
-const expiring = await router.dispatchProjectTask({
-  projectQuery: 'api-go',
-  task: '检查超时确认',
-  activeTask
-})
-now += 61 * 1000
-activeTask.text = '新开任务'
-const expired = await router.startConfirmedNewTask({
-  confirmationToken: expiring.confirmationToken,
-  activeTask
-})
-assert.equal(expired.status, 'confirmation_expired')
-assert.equal(executions.length, 2)
 
 listedThreads = []
 const projectDir = fs.mkdtempSync(
@@ -277,6 +248,18 @@ assert.equal(
   JSON.parse(toolResult.contentItems[0].text).sessions[0].threadId,
   'thread-api-idle'
 )
+
+const restartToolResult = await router.handleToolCall({
+  threadId: 'thread-main',
+  tool: 'restart_open_git',
+  arguments: {}
+})
+assert.equal(restartToolResult.success, true)
+assert.equal(
+  JSON.parse(restartToolResult.contentItems[0].text).status,
+  'restart_pending'
+)
+assert.deepEqual(restartRequests, [activeTask])
 
 router.cleanup()
 console.log('codex project session router assertions passed')
