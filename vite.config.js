@@ -1,23 +1,10 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import AutoImport from 'unplugin-auto-import/vite'
-import Components from 'unplugin-vue-components/vite'
-import monacoEditorPlugin from 'vite-plugin-monaco-editor'
 
 export default defineConfig({
   base: './',  // 使用相对路径，适配 Electron
   plugins: [
-    monacoEditorPlugin({
-      languageWorkers: ['editorWorkerService', 'typescript', 'json', 'html', 'css']
-    }),
-    vue(),
-    AutoImport({
-      imports: ['vue'],
-      dts: true
-    }),
-    Components({
-      dts: true
-    })
+    vue()
   ],
   server: {
     port: 5173,

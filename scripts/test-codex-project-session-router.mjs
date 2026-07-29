@@ -18,10 +18,37 @@ assert.deepEqual(
     'bind_codex_project',
     'get_codex_project_binding',
     'unbind_codex_project',
+    'get_open_git_task_status',
     'restart_open_git',
     'dispatch_codex_project_task'
   ]
 )
+
+for (const text of [
+  '当前任务状态',
+  '刚才任务执行到哪了？',
+  '这个任务还在排队吗',
+  'api-go 当前任务进展怎么样',
+  'current task status'
+]) {
+  assert.equal(
+    __testables.isCoordinatorStatusQuery(text),
+    true,
+    `coordinator status query should stay in the main session: ${text}`
+  )
+}
+for (const text of [
+  '检查 api-go 当前代码状态并修复测试',
+  '查看仓库日志并分析报错',
+  '继续处理绑定项目里的构建失败',
+  '修改代码里的任务状态字段'
+]) {
+  assert.equal(
+    __testables.isCoordinatorStatusQuery(text),
+    false,
+    `project work should remain dispatchable: ${text}`
+  )
+}
 
 const mainThread = {
   id: 'thread-main',
@@ -85,6 +112,7 @@ const pophieThread = {
 const rpcCalls = []
 const executions = []
 const restartRequests = []
+const queueNotices = []
 let listedThreads = [
   mainThread,
   runningApiThread,
@@ -99,6 +127,9 @@ const service = {
       threadId: 'thread-main'
     }]
   ]),
+  getSession(sessionId) {
+    return this.sessions.get(sessionId) || null
+  },
   activeTasksByThreadId: new Map(),
   requestApplicationRestart: (activeTask) => {
     restartRequests.push(activeTask)
@@ -116,7 +147,19 @@ const service = {
     }
   },
   enqueueCodexProjectTask: async (payload) => {
-    executions.push(payload)
+    executions.push({
+      threadId: payload.threadId,
+      cwd: payload.cwd,
+      task: payload.task
+    })
+    if (payload.knownActive) {
+      await payload.onQueued?.({
+        threadId: payload.threadId,
+        reason: 'known-active-thread',
+        queueLength: 1
+      })
+    }
+    await payload.onStarted?.({ threadId: payload.threadId })
     return {
       threadId: payload.threadId,
       turnId: `turn-${executions.length}`,
@@ -147,9 +190,14 @@ const router = new CodexProjectSessionRouter({
   now: () => now
 })
 const activeTask = {
+  jobId: 'job-main-route',
   sessionId: 'feishu:work:oc_api',
   threadId: 'thread-main',
   text: '看下 api-go，然后继续修复支付接口',
+  source: 'feishu',
+  onAgentMessage: async (message) => {
+    queueNotices.push(message)
+  },
   metadata: {
     connectionId: 'work',
     chatId: 'oc_api'
@@ -182,6 +230,8 @@ const queued = await router.dispatchProjectTask({
 assert.equal(queued.status, 'completed')
 assert.equal(queued.reusedExistingSession, true)
 assert.equal(queued.queuedForActiveThread, true)
+assert.equal(queueNotices.length, 1)
+assert.match(queueNotices[0].text, /当前任务已排队/)
 assert.deepEqual(executions[0], {
   threadId: 'thread-api-running',
   cwd: '/tmp/api-go',
@@ -247,6 +297,58 @@ assert.equal(toolResult.success, true)
 assert.equal(
   JSON.parse(toolResult.contentItems[0].text).sessions[0].threadId,
   'thread-api-idle'
+)
+
+activeTask.text = '当前任务状态'
+const executionCountBeforeStatusQuery = executions.length
+const blockedStatusDispatch = await router.handleToolCall({
+  threadId: 'thread-main',
+  tool: 'dispatch_codex_project_task',
+  arguments: {
+    projectQuery: 'api-go',
+    task: '查询当前任务状态'
+  }
+})
+assert.equal(blockedStatusDispatch.success, true)
+assert.equal(
+  JSON.parse(blockedStatusDispatch.contentItems[0].text).status,
+  'coordinator_status_query'
+)
+assert.equal(
+  executions.length,
+  executionCountBeforeStatusQuery,
+  'a current-task status query must never enter a project session'
+)
+service.getActiveTasksForSession = () => [
+  activeTask,
+  {
+    jobId: 'job-project-waiting',
+    sessionId: activeTask.sessionId,
+    text: '继续修复 api-go 支付接口',
+    createdAt: 900,
+    projectRoute: {
+      projectQuery: 'api-go',
+      threadId: 'thread-api-running',
+      title: 'api-go 接口修复',
+      status: 'queued',
+      queued: true
+    }
+  }
+]
+const coordinatorStatusResult = await router.handleToolCall({
+  threadId: 'thread-main',
+  tool: 'get_open_git_task_status',
+  arguments: {}
+})
+assert.equal(coordinatorStatusResult.success, true)
+assert.equal(
+  JSON.parse(coordinatorStatusResult.contentItems[0].text).status,
+  'busy'
+)
+assert.equal(
+  JSON.parse(coordinatorStatusResult.contentItems[0].text)
+    .tasks[0].projectRoute.status,
+  'queued'
 )
 
 const restartToolResult = await router.handleToolCall({

@@ -165,6 +165,7 @@
 <script setup>
 import {
   computed,
+  defineAsyncComponent,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -183,13 +184,6 @@ import {
   Terminal,
   X
 } from 'lucide-vue-next'
-import ProjectDetail from '../git/ProjectDetail.vue'
-import RemoteRepo from '../git/RemoteRepo.vue'
-import FocusTerminalStack from '../terminal/FocusTerminalStack.vue'
-import StandaloneSplitTerminal from '../terminal/StandaloneSplitTerminal.vue'
-import BackupManager from './BackupManager.vue'
-import ThemePanel from './ThemePanel.vue'
-import CodexMainSession from './CodexMainSession.vue'
 import { clearProjectCache } from '../../stores/projectStore.js'
 import { clearFocusTerminalScope } from '../../stores/focusTerminalStore.js'
 import { useCodexProjectStatusStore } from '../../stores/codexProjectStatusStore.js'
@@ -207,6 +201,14 @@ import {
   restoreWorkspaceTabs,
   serializeWorkspaceTabs
 } from './projectWorkspaceNavigation.mjs'
+
+const ProjectDetail = defineAsyncComponent(() => import('../git/ProjectDetail.vue'))
+const RemoteRepo = defineAsyncComponent(() => import('../git/RemoteRepo.vue'))
+const FocusTerminalStack = defineAsyncComponent(() => import('../terminal/FocusTerminalStack.vue'))
+const StandaloneSplitTerminal = defineAsyncComponent(() => import('../terminal/StandaloneSplitTerminal.vue'))
+const BackupManager = defineAsyncComponent(() => import('./BackupManager.vue'))
+const ThemePanel = defineAsyncComponent(() => import('./ThemePanel.vue'))
+const CodexMainSession = defineAsyncComponent(() => import('./CodexMainSession.vue'))
 
 const props = defineProps({
   leadingTabInset: { type: Number, default: 0 }

@@ -17,13 +17,30 @@ const {
   parseFeishuMonitorControlIntent,
   CodexMainSessionService,
   createFeishuBridgeManager,
-  registerCodexPowerMonitorHandlers
+  registerCodexPowerMonitorHandlers,
+  MAIN_SESSION_INSTRUCTIONS
 } = require('../electron/ipc/codex-main-session.js')
 const {
   createAttachmentWorkspace,
   cleanupAttachmentWorkspace,
   collectOutboxAttachments
 } = require('../electron/ipc/codex-feishu-attachments.js')
+
+assert.match(
+  MAIN_SESSION_INSTRUCTIONS,
+  /当前任务状态使用 get_open_git_task_status，禁止调用 dispatch_codex_project_task/,
+  'task-status queries must stay in the OpenGit coordinator'
+)
+assert.match(
+  MAIN_SESSION_INSTRUCTIONS,
+  /不得仅因为当前会话绑定了项目、消息提到项目名或出现“查看\/检查”就分发/,
+  'a project binding or generic inspection wording must not force dispatch'
+)
+assert.match(
+  MAIN_SESSION_INSTRUCTIONS,
+  /只有已经判定为项目工作指令/,
+  'project binding should only provide a default target after semantic classification'
+)
 
 const previousConfig = normalizeCodexMainConfig({
   workingDirectory: '/tmp/old',
@@ -720,6 +737,7 @@ assert.deepEqual(
     'bind_codex_project',
     'get_codex_project_binding',
     'unbind_codex_project',
+    'get_open_git_task_status',
     'restart_open_git',
     'dispatch_codex_project_task'
   ]
@@ -1227,6 +1245,8 @@ queuedProjectService.startServer = async () => true
 let externalProjectTurnActive = true
 let queuedProjectTurnSequence = 0
 const queuedProjectRequests = []
+const projectQueueNotices = []
+const projectStartNotices = []
 queuedProjectService.request = async (method, params) => {
   queuedProjectRequests.push({ method, params })
   if (method === 'thread/read') {
@@ -1285,7 +1305,13 @@ queuedProjectService.request = async (method, params) => {
 const firstQueuedProjectTask = queuedProjectService.enqueueCodexProjectTask({
   threadId: 'thread-project-shared',
   cwd: '/tmp',
-  task: '排队任务一'
+  task: '排队任务一',
+  onQueued: (details) => {
+    projectQueueNotices.push(details)
+  },
+  onStarted: (details) => {
+    projectStartNotices.push(details)
+  }
 })
 const secondQueuedProjectTask = queuedProjectService.enqueueCodexProjectTask({
   threadId: 'thread-project-shared',
@@ -1301,6 +1327,13 @@ for (let index = 0; index < 20; index += 1) {
   if (queuedProjectRequests.some(({ method }) => method === 'thread/read')) break
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
+await Promise.resolve()
+assert.equal(
+  projectQueueNotices.length,
+  1,
+  'an externally active project thread should report queueing immediately'
+)
+assert.equal(projectQueueNotices[0].reason, 'project-thread-active')
 assert.equal(
   queuedProjectRequests.some(({ method, params }) => (
     method === 'thread/resume'
@@ -1339,6 +1372,7 @@ assert.equal(firstQueuedProjectResult.text, '排队任务一已完成。')
 assert.equal(secondQueuedProjectResult.text, '排队任务二已完成。')
 assert.equal(firstQueuedProjectResult.queuedForActiveThread, true)
 assert.equal(secondQueuedProjectResult.queuedForActiveThread, true)
+assert.equal(projectStartNotices.length, 1)
 assert.deepEqual(
   queuedProjectRequests
     .filter(({ method, params }) => (

@@ -36,7 +36,6 @@
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
-    "@electron/get": "^4.0.2",
     "@electron/rebuild": "^4.0.2",
     "@vitejs/plugin-vue": "^4.5.0",
     "concurrently": "^9.2.1",
@@ -44,12 +43,8 @@
     "electron-builder": "^26.0.12",
     "lucide-vue-next": "^0.294.0",
     "monaco-editor": "^0.55.1",
-    "unplugin-auto-import": "^0.16.7",
-    "unplugin-vue-components": "^0.25.2",
     "vite": "^5.0.0",
-    "vite-plugin-monaco-editor": "^1.1.0",
-    "vue": "^3.4.0",
-    "wait-on": "^9.0.1"
+    "vue": "^3.4.0"
   },
   "build": {
     "appId": "com.terraroot3.opengit",
@@ -60,10 +55,20 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/@larksuiteoapi/node-sdk/es/**/*",
+      "!node_modules/node-addon-api/**/*",
+      "!node_modules/node-pty/**/*.map",
+      "!node_modules/node-pty/**/*.test.js",
+      "!node_modules/node-pty/deps/**/*",
+      "!node_modules/node-pty/prebuilds/**/*",
+      "!node_modules/node-pty/scripts/**/*",
+      "!node_modules/node-pty/src/**/*",
+      "!node_modules/node-pty/third_party/**/*",
+      "!node_modules/node-pty/typings/**/*"
     ],
     "asarUnpack": [
-      "node_modules/node-pty/**/*"
+      "node_modules/node-pty/build/Release/**/*"
     ],
     "npmRebuild": true,
     "nodeGypRebuild": false,

@@ -83,6 +83,20 @@ const CODEX_PROJECT_DYNAMIC_TOOLS = Object.freeze([
   },
   {
     type: 'function',
+    name: 'get_open_git_task_status',
+    description: [
+      '查询当前 OpenGit 或飞书会话中正在执行、分发或排队的任务状态。',
+      '用户问“当前任务状态”“刚才任务到哪了”“还在执行或排队吗”时调用。',
+      '这是主会话协调查询，不得改用 dispatch_codex_project_task，也不会向项目会话发送新消息。'
+    ].join(''),
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
     name: 'restart_open_git',
     description: [
       '仅当用户明确要求重启整个 OpenGit 桌面应用时调用。',
@@ -100,6 +114,9 @@ const CODEX_PROJECT_DYNAMIC_TOOLS = Object.freeze([
     name: 'dispatch_codex_project_task',
     description: [
       '把项目任务路由到该项目未归档的 Codex 会话；这是飞书项目执行请求的必经入口。',
+      '仅用于需要读取、分析、修改、测试、构建、提交、发布或继续处理项目工作的指令。',
+      '当前任务状态、执行进度、排队情况、会话状态、项目绑定、监控或 OpenGit/飞书控制查询都不是项目任务，禁止调用本工具。',
+      '会话绑定只提供项目任务的默认目标，不代表每条消息都应路由到项目。',
       '同等项目匹配度下优先选择正在执行的会话并自动排队，空闲后继续使用同一个会话；没有执行中会话时才使用最近的旧会话。',
       '只要项目存在旧会话，就绝不新开项目会话、steer 或在 OpenGit 路由会话里代执行。',
       'projectQuery 省略时使用当前会话绑定的默认项目；用户明确点名其他项目时传入该项目，不会改变原绑定。',
@@ -149,6 +166,32 @@ function normalizeProjectQuery(value = '') {
   return normalizeSearchText(value)
     .replace(/(?:这个|那个)?项目$/u, '')
     .trim()
+}
+
+function normalizeIntentText(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[？?。.!！,，、:：;；"'“”‘’（）()【】]/g, '')
+}
+
+function isCoordinatorStatusQuery(value = '') {
+  const text = normalizeIntentText(value)
+  if (!text) return false
+
+  const patterns = [
+    /^(?:帮我|请|麻烦)?(?:看下|看看|查看|查询|告诉我|问下)?(?:当前|现在|刚才|上一个|上个|这个)?(?:任务|指令)(?:的)?(?:状态|进度|进展|情况)(?:怎么样|怎么样了|如何|呢)?$/,
+    /(?:当前|现在|刚才|上一个|上个|这个)?(?:任务|指令)(?:的)?(?:状态|进度|进展|情况)(?:怎么样|怎么样了|如何|呢)?$/,
+    /^(?:当前|现在|刚才|上一个|上个|这个)?(?:任务|指令)(?:怎么样|怎么样了|完成了吗|结束了吗)$/,
+    /^(?:当前|现在|刚才|这个|上个)?(?:任务|指令)?(?:执行|处理)(?:到哪|到哪了|得怎么样|情况如何|进度如何)(?:了|呢)?$/,
+    /^(?:当前|现在|这个|刚才|上个)?(?:任务|指令)?(?:还)?(?:在)?(?:执行|运行|处理|排队|等待)(?:中)?(?:吗|呢)?$/,
+    /^(?:当前|现在)?(?:队列|排队)(?:状态|情况|进度)?(?:怎么样|如何|呢)?$/,
+    /^(?:还有|有)?(?:多少个)?(?:任务|指令)(?:在)?(?:执行|运行|处理|排队|等待)(?:中)?(?:吗|呢)?$/,
+    /^(?:what(?:is|s))?(?:the)?currenttaskstatus$/,
+    /^(?:is)?the(?:current)?task(?:still)?(?:running|queued|waiting)$/
+  ]
+  return patterns.some((pattern) => pattern.test(text))
 }
 
 function normalizeLimit(value, fallback = DEFAULT_RESULT_LIMIT) {
@@ -436,6 +479,137 @@ class CodexProjectSessionRouter {
         }
   }
 
+  getOpenGitTaskStatus(activeTask = {}) {
+    const session = this.getOriginSession(activeTask)
+    if (!session) {
+      return {
+        status: 'session_not_found',
+        message: '找不到当前 OpenGit 或飞书会话。'
+      }
+    }
+    const activeTasks = (
+      this.service?.getActiveTasksForSession?.(session.id) || []
+    ).filter((task) => task?.jobId !== activeTask?.jobId)
+    const queuedTasks = Array.from(
+      this.service?.sessionQueues?.get?.(session.id) || []
+    ).filter((task) => task?.jobId !== activeTask?.jobId)
+    const tasks = [
+      ...activeTasks.map((task) => ({
+        jobId: String(task?.jobId || '').trim(),
+        text: compactText(task?.text, 160),
+        state: String(task?.projectRoute?.status || 'running').trim(),
+        projectRoute: task?.projectRoute
+          ? {
+              projectQuery: String(
+                task.projectRoute.projectQuery || ''
+              ).trim(),
+              threadId: String(task.projectRoute.threadId || '').trim(),
+              title: String(task.projectRoute.title || '').trim(),
+              status: String(task.projectRoute.status || '').trim(),
+              queued: task.projectRoute.queued === true
+            }
+          : null,
+        createdAt: Number(task?.createdAt) || 0
+      })),
+      ...queuedTasks.map((task) => ({
+        jobId: String(task?.jobId || '').trim(),
+        text: compactText(task?.text, 160),
+        state: 'queued',
+        projectRoute: null,
+        createdAt: Number(task?.createdAt) || 0
+      }))
+    ].sort((left, right) => left.createdAt - right.createdAt)
+    return {
+      status: tasks.length > 0 ? 'busy' : 'idle',
+      activeTaskCount: activeTasks.length,
+      queuedTaskCount: queuedTasks.length,
+      tasks,
+      message: tasks.length > 0
+        ? `当前会话有 ${activeTasks.length} 个执行中任务、${queuedTasks.length} 个主会话排队任务。`
+        : '当前会话没有其他正在执行或排队中的任务。'
+    }
+  }
+
+  setProjectRouteState(activeTask = {}, changes = {}) {
+    if (!activeTask || typeof activeTask !== 'object') return null
+    activeTask.projectRoute = {
+      ...(activeTask.projectRoute || {}),
+      ...changes,
+      updatedAt: this.now()
+    }
+    this.service?.broadcastState?.()
+    return activeTask.projectRoute
+  }
+
+  notifyProjectTaskQueued({
+    activeTask,
+    candidate,
+    projectQuery,
+    queueLength = 0,
+    reason = 'project-thread-busy'
+  } = {}) {
+    if (!activeTask || !candidate?.threadId) return null
+    const noticeId = [
+      'project-queue',
+      String(activeTask.jobId || activeTask.threadId || 'task').trim(),
+      String(candidate.threadId).trim()
+    ].join(':')
+    activeTask.projectQueueNoticeIds ||= new Set()
+    if (activeTask.projectQueueNoticeIds.has(noticeId)) return null
+    activeTask.projectQueueNoticeIds.add(noticeId)
+
+    const projectTitle = String(
+      candidate.title
+      || (candidate.cwd ? path.basename(candidate.cwd) : '')
+      || projectQuery
+      || '目标项目'
+    ).trim()
+    const text = `项目 ${projectTitle} 的 Codex 会话当前正忙，当前任务已排队，会在前序任务完成后自动继续。`
+    this.setProjectRouteState(activeTask, {
+      projectQuery: String(projectQuery || '').trim(),
+      threadId: String(candidate.threadId || '').trim(),
+      title: projectTitle,
+      status: 'queued',
+      queued: true,
+      queueLength: Number(queueLength) || 0,
+      queueReason: String(reason || '').trim()
+    })
+    const message = {
+      id: noticeId,
+      role: 'assistant',
+      text,
+      status: 'completed',
+      source: 'codex',
+      createdAt: this.now()
+    }
+    this.service?.broadcast?.('message', {
+      sessionId: activeTask.sessionId,
+      message
+    })
+    if (activeTask.source === 'feishu') {
+      this.service?.appendWorkerHistory?.(activeTask.sessionId, [message])
+    }
+    if (typeof activeTask.onAgentMessage === 'function') {
+      try {
+        Promise.resolve(activeTask.onAgentMessage({
+          id: noticeId,
+          text
+        })).catch((error) => {
+          this.service?.safeError?.(
+            '[Codex Project Router] 排队提示回传失败:',
+            error?.message || String(error)
+          )
+        })
+      } catch (error) {
+        this.service?.safeError?.(
+          '[Codex Project Router] 排队提示回传失败:',
+          error?.message || String(error)
+        )
+      }
+    }
+    return message
+  }
+
   unbindProject(activeTask = {}) {
     const session = this.getOriginSession(activeTask)
     if (!session) throw new Error('找不到要解除项目绑定的 OpenGit 会话')
@@ -488,11 +662,42 @@ class CodexProjectSessionRouter {
     }
 
     if (candidate) {
-      const result = await this.service.enqueueCodexProjectTask({
+      this.setProjectRouteState(activeTask, {
+        projectQuery: target.projectQuery,
         threadId: candidate.threadId,
-        cwd: candidate.cwd,
-        task: normalizedTask
+        title: candidate.title,
+        status: candidate.status === 'running' ? 'queued' : 'dispatching',
+        queued: candidate.status === 'running'
       })
+      let result
+      try {
+        result = await this.service.enqueueCodexProjectTask({
+          threadId: candidate.threadId,
+          cwd: candidate.cwd,
+          task: normalizedTask,
+          knownActive: candidate.status === 'running',
+          onQueued: (details = {}) => this.notifyProjectTaskQueued({
+            activeTask,
+            candidate,
+            projectQuery: target.projectQuery,
+            queueLength: details.queueLength,
+            reason: details.reason
+          }),
+          onStarted: () => this.setProjectRouteState(activeTask, {
+            status: 'running'
+          })
+        })
+        this.setProjectRouteState(activeTask, {
+          status: 'completed',
+          queued: result.queuedForActiveThread === true
+        })
+      } catch (error) {
+        this.setProjectRouteState(activeTask, {
+          status: 'error',
+          error: error?.message || String(error)
+        })
+        throw error
+      }
       return {
         status: 'completed',
         usedProjectBinding: target.usedProjectBinding,
@@ -513,11 +718,31 @@ class CodexProjectSessionRouter {
         message: '没有找到该项目的未归档旧会话；请提供项目绝对路径后再新建独立任务。'
       }
     }
-    const result = await this.service.executeCodexProjectTask({
-      cwd: projectCwd,
-      task: normalizedTask,
-      createNew: true
+    this.setProjectRouteState(activeTask, {
+      projectQuery: target.projectQuery,
+      threadId: '',
+      title: path.basename(projectCwd),
+      status: 'running',
+      queued: false
     })
+    let result
+    try {
+      result = await this.service.executeCodexProjectTask({
+        cwd: projectCwd,
+        task: normalizedTask,
+        createNew: true
+      })
+      this.setProjectRouteState(activeTask, {
+        threadId: String(result?.threadId || '').trim(),
+        status: 'completed'
+      })
+    } catch (error) {
+      this.setProjectRouteState(activeTask, {
+        status: 'error',
+        error: error?.message || String(error)
+      })
+      throw error
+    }
     return {
       status: 'completed',
       usedProjectBinding: target.usedProjectBinding,
@@ -586,12 +811,21 @@ class CodexProjectSessionRouter {
       if (tool === 'unbind_codex_project') {
         return toolResponse(this.unbindProject(activeTask))
       }
+      if (tool === 'get_open_git_task_status') {
+        return toolResponse(this.getOpenGitTaskStatus(activeTask))
+      }
       if (tool === 'restart_open_git') {
         return toolResponse(
           this.service.requestApplicationRestart(activeTask)
         )
       }
       if (tool === 'dispatch_codex_project_task') {
+        if (isCoordinatorStatusQuery(activeTask.text)) {
+          return toolResponse({
+            status: 'coordinator_status_query',
+            message: '这是当前 OpenGit 会话的任务状态查询，不应分发到项目会话；请调用 get_open_git_task_status。'
+          })
+        }
         return toolResponse(await this.dispatchProjectTask({
           projectQuery: args.projectQuery,
           task: args.task,
@@ -615,6 +849,8 @@ module.exports = {
   __testables: {
     compactText,
     normalizeProjectQuery,
+    normalizeIntentText,
+    isCoordinatorStatusQuery,
     normalizeLimit,
     normalizeThreadStatus,
     scoreProjectThread,

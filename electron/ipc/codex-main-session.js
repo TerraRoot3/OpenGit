@@ -35,17 +35,21 @@ const MAX_WORKER_CONTEXT_MESSAGES = 24
 const MAX_WORKER_CONTEXT_CHARS = 16000
 const PROJECT_THREAD_POLL_INTERVAL_MS = 5000
 const FEISHU_POWER_RECOVERY_DELAY_MS = 2500
-const PROJECT_ROUTING_TOOL_VERSION = 4
+const PROJECT_ROUTING_TOOL_VERSION = 5
 
 const MAIN_SESSION_INSTRUCTIONS = [
   '你是 OpenGit 内置的持久 Codex 路由协调会话。',
   '你会接收 OpenGit 页面或当前飞书会话转发的用户指令，并负责理解需求、路由任务和总结结果。',
   '任务执行期间可以使用 Codex 可用的工具；在真正缺少用户选择或外部权限时才说明阻塞。',
-  '当飞书用户要求查看、检查、修改、继续或执行某个项目的任务时，必须先调用 dispatch_codex_project_task；不得在当前 OpenGit 主会话中直接使用文件、终端或代码工具代替目标项目会话执行。',
+  '每轮先按语义区分“主会话协调/状态查询”和“项目工作指令”，不得仅因为当前会话绑定了项目、消息提到项目名或出现“查看/检查”就分发。',
+  '主会话协调/状态查询包括：当前或刚才任务的状态与进度、是否正在执行或排队、当前会话/队列/项目绑定/监控/飞书连接/OpenGit 状态及其控制操作。这些请求必须留在主会话；当前任务状态使用 get_open_git_task_status，禁止调用 dispatch_codex_project_task。',
+  '项目工作指令是需要进入目标工作目录读取或分析代码/文件/仓库状态，或者修改、测试、构建、提交、发布、部署及继续处理项目问题的请求。只有这类请求才调用 dispatch_codex_project_task；不得在当前 OpenGit 主会话中直接使用文件、终端或代码工具代替目标项目会话执行。',
+  '边界示例：“当前任务状态”“刚才任务到哪了”“还在排队吗”属于主会话状态查询；“检查 api-go 当前代码改动并修复测试”“继续处理绑定项目里的构建失败”属于项目工作指令；“当前绑定什么项目”只调用 get_codex_project_binding。',
+  '语义仍不明确且缺少可执行的项目对象或动作时先简短追问，不要猜测并分发。',
   '每个 OpenGit 会话都可以绑定一个默认项目。用户要求把某个项目绑定到当前会话时调用 bind_codex_project；查询当前绑定时调用 get_codex_project_binding；解除绑定时调用 unbind_codex_project。',
   '只有用户明确要求重启整个 OpenGit 桌面应用时才调用 restart_open_git。不要把重启 Codex server、飞书连接、终端或项目任务误解为重启 OpenGit；调用前应说明其他正在运行的 OpenGit 任务会被中断。',
-  '当前会话绑定项目后，用户没有明确点名其他项目的项目任务也必须调用 dispatch_codex_project_task，并省略 projectQuery 以使用绑定项目。用户明确点名其他项目时，以本次点名为准，但不要自动改变原绑定。',
-  'dispatch_codex_project_task 会优先选择该项目正在执行的未归档、未删除会话并自动排队，在其空闲后继续使用同一个会话；没有执行中会话时才恢复最近的旧会话。只要项目存在旧会话，就不得新开项目会话、steer 或在当前路由会话中代执行。',
+  '当前会话绑定项目后，只有已经判定为项目工作指令、且用户没有明确点名其他项目时，才省略 projectQuery 使用绑定项目。用户明确点名其他项目时，以本次点名为准，但不要自动改变原绑定。',
+  'dispatch_codex_project_task 会优先选择该项目正在执行的未归档、未删除会话并自动排队，在其空闲后继续使用同一个会话；没有执行中会话时才恢复最近的旧会话。项目会话正忙时 OpenGit 会立即向用户发送排队提示；不要重复发送同义提示。只要项目存在旧会话，就不得新开项目会话、steer 或在当前路由会话中代执行。',
   '用户只查询项目现有 Codex 会话时使用 find_codex_project_sessions。没有旧会话且缺少项目绝对路径时，先向用户询问路径。',
   '目标项目任务完成后，把项目会话工具返回的真实 Codex 结果直接总结并回复；不要声称任务由当前主会话执行。',
   '飞书任务可能附带本地文件与本轮专属 outbox；需要回传附件时，只把最终交付文件写入指定 outbox，不要写入临时产物，也不要读取或发送 outbox 之外的本机文件。',
@@ -2086,6 +2090,50 @@ class CodexMainSessionService {
     })
   }
 
+  notifyQueuedProjectTask(queuedTask, reason = 'project-thread-busy') {
+    if (!queuedTask || queuedTask.queueNoticeSent === true) return
+    queuedTask.queueNoticeSent = true
+    if (typeof queuedTask.onQueued !== 'function') return
+    try {
+      Promise.resolve(queuedTask.onQueued({
+        threadId: queuedTask.threadId,
+        reason: String(reason || '').trim(),
+        queueLength: this.getProjectTaskQueue(queuedTask.threadId).length
+      })).catch((error) => {
+        this.safeError(
+          '[Codex Main] 项目任务排队提示失败:',
+          error?.message || String(error)
+        )
+      })
+    } catch (error) {
+      this.safeError(
+        '[Codex Main] 项目任务排队提示失败:',
+        error?.message || String(error)
+      )
+    }
+  }
+
+  notifyProjectTaskStarted(queuedTask) {
+    if (!queuedTask || queuedTask.startedNoticeSent === true) return
+    queuedTask.startedNoticeSent = true
+    if (typeof queuedTask.onStarted !== 'function') return
+    try {
+      Promise.resolve(queuedTask.onStarted({
+        threadId: queuedTask.threadId
+      })).catch((error) => {
+        this.safeError(
+          '[Codex Main] 项目任务开始状态更新失败:',
+          error?.message || String(error)
+        )
+      })
+    } catch (error) {
+      this.safeError(
+        '[Codex Main] 项目任务开始状态更新失败:',
+        error?.message || String(error)
+      )
+    }
+  }
+
   async waitForProjectThreadIdle(threadId, queuedTask = null) {
     const normalizedThreadId = String(threadId || '').trim()
     let waited = false
@@ -2099,6 +2147,7 @@ class CodexMainSessionService {
       const status = String(result?.thread?.status?.type || '').trim()
       if (status !== 'active') return waited
       waited = true
+      this.notifyQueuedProjectTask(queuedTask, 'project-thread-active')
       await this.waitForProjectThreadSignal(normalizedThreadId)
     }
   }
@@ -2106,7 +2155,10 @@ class CodexMainSessionService {
   enqueueCodexProjectTask({
     threadId = '',
     cwd = '',
-    task = ''
+    task = '',
+    knownActive = false,
+    onQueued = null,
+    onStarted = null
   } = {}) {
     const normalizedThreadId = String(threadId || '').trim()
     const normalizedTask = String(task || '').trim()
@@ -2114,19 +2166,31 @@ class CodexMainSessionService {
     if (!normalizedTask) throw new Error('项目任务不能为空')
     const queue = this.getProjectTaskQueue(normalizedThreadId)
     const queuedAtEnqueue = (
-      this.processingProjectThreadIds.has(normalizedThreadId)
+      knownActive === true
+      || this.processingProjectThreadIds.has(normalizedThreadId)
       || queue.length > 0
     )
     return new Promise((resolve, reject) => {
-      queue.push({
+      const queuedTask = {
         threadId: normalizedThreadId,
         cwd: String(cwd || '').trim(),
         task: normalizedTask,
         queuedAtEnqueue,
+        queueNoticeSent: false,
+        startedNoticeSent: false,
+        onQueued: typeof onQueued === 'function' ? onQueued : null,
+        onStarted: typeof onStarted === 'function' ? onStarted : null,
         cancelled: false,
         resolve,
         reject
-      })
+      }
+      queue.push(queuedTask)
+      if (queuedAtEnqueue) {
+        this.notifyQueuedProjectTask(
+          queuedTask,
+          knownActive === true ? 'known-active-thread' : 'local-project-queue'
+        )
+      }
       void this.drainProjectTaskQueue(normalizedThreadId)
     })
   }
@@ -2148,6 +2212,7 @@ class CodexMainSessionService {
             queuedTask
           )
           if (queuedTask.cancelled) continue
+          this.notifyProjectTaskStarted(queuedTask)
           let result
           try {
             result = await this.executeCodexProjectTask({
@@ -2158,10 +2223,15 @@ class CodexMainSessionService {
             })
           } catch (error) {
             if (error?.code !== 'CODEX_PROJECT_THREAD_ACTIVE') throw error
-              queuedTask.queuedAtEnqueue = true
-              await this.waitForProjectThreadSignal(normalizedThreadId)
-              continue
-            }
+            queuedTask.queuedAtEnqueue = true
+            queuedTask.startedNoticeSent = false
+            this.notifyQueuedProjectTask(
+              queuedTask,
+              'project-thread-became-active'
+            )
+            await this.waitForProjectThreadSignal(normalizedThreadId)
+            continue
+          }
           if (queue[0] === queuedTask) queue.shift()
           queuedTask.resolve({
             ...result,
