@@ -5,6 +5,9 @@ const THREAD_PAGE_LIMIT = 100
 const MAX_THREAD_PAGES = 20
 const DEFAULT_RESULT_LIMIT = 8
 const MAX_RESULT_LIMIT = 20
+const GLOBAL_TASK_ACTIVITY_WINDOW_MS = 5 * 60 * 1000
+const GLOBAL_TASK_CONFIRMATION_DELAY_MS = 1500
+const MAX_GLOBAL_TASK_CANDIDATES = 24
 const SOURCE_KINDS = Object.freeze([
   'cli',
   'vscode',
@@ -88,6 +91,21 @@ const CODEX_PROJECT_DYNAMIC_TOOLS = Object.freeze([
       '查询当前 OpenGit 或飞书会话中正在执行、分发或排队的任务状态。',
       '用户问“当前任务状态”“刚才任务到哪了”“还在执行或排队吗”时调用。',
       '这是主会话协调查询，不得改用 dispatch_codex_project_task，也不会向项目会话发送新消息。'
+    ].join(''),
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
+    name: 'list_running_codex_tasks',
+    description: [
+      '查询这台电脑上所有正在执行的 Codex 任务，不限于当前 OpenGit 或飞书会话。',
+      '用户问“所有进行中的 Codex 任务”“有哪些任务正在跑”“全局任务状态”时调用。',
+      '该工具会合并 OpenGit 内部任务与 Codex 原生未结束 turn；不得用当前会话任务为 0 推断全局任务为 0。',
+      '这是只读查询，不会恢复、终止或向其他会话发送消息。'
     ].join(''),
     inputSchema: {
       type: 'object',
@@ -181,6 +199,13 @@ function isCoordinatorStatusQuery(value = '') {
   if (!text) return false
 
   const patterns = [
+    /^(?:帮我|请|麻烦)?(?:看下|看看|查看|查询)?(?:现在|当前)?(?:还)?(?:有|还有)(?:什么|哪些)(?:在|正|正在)?(?:跑|执行|进行|运行|处理|排队|等待)(?:中)?(?:吗|呢)?$/,
+    /^(?:帮我|请|麻烦)?(?:看下|看看|查看|查询)?(?:现在|当前)?(?:还)?(?:有|还有)(?:什么|哪些)?(?:codex)?(?:任务|会话)(?:在|正|正在)?(?:跑|执行|进行|运行|处理|排队|等待)(?:中)?(?:吗|呢)?$/,
+    /^(?:帮我|请|麻烦)?(?:看下|看看|查看|查询)?(?:现在|当前)?(?:还)?(?:有|还有)(?:什么|哪些)?(?:在|正|正在)?(?:跑|执行|进行|运行|处理|排队|等待)(?:中)?(?:的)?(?:codex)?(?:任务|会话)(?:吗|呢)?$/,
+    /^(?:当前|现在|刚才|上个|上一个|这个)?(?:codex)?(?:任务|会话)(?:呢|怎么样|怎么样了)$/,
+    /^(?:刚才|上个|上一个|之前)(?:那个)?(?:任务|指令|会话)?呢$/,
+    /^(?:帮我|请|麻烦)?(?:看下|看看|查看|查询|告诉我)?(?:有|还有|有哪些|哪些|所有|全部|全局)?(?:正在|还在)?(?:执行|进行|运行|处理|排队|等待)(?:中)?的?(?:codex)?(?:任务|会话)(?:状态|进度|情况)?$/,
+    /^(?:帮我|请|麻烦)?(?:看下|看看|查看|查询)?(?:所有|全部|全局)(?:正在|还在)?(?:执行|进行|运行|处理|排队|等待)(?:中)?的?(?:codex)?(?:任务|会话)(?:状态|进度|情况)?$/,
     /^(?:帮我|请|麻烦)?(?:看下|看看|查看|查询|告诉我|问下)?(?:当前|现在|刚才|上一个|上个|这个)?(?:任务|指令)(?:的)?(?:状态|进度|进展|情况)(?:怎么样|怎么样了|如何|呢)?$/,
     /(?:当前|现在|刚才|上一个|上个|这个)?(?:任务|指令)(?:的)?(?:状态|进度|进展|情况)(?:怎么样|怎么样了|如何|呢)?$/,
     /^(?:当前|现在|刚才|上一个|上个|这个)?(?:任务|指令)(?:怎么样|怎么样了|完成了吗|结束了吗)$/,
@@ -261,6 +286,51 @@ function normalizeCandidate(thread = {}, score = 0) {
   }
 }
 
+function isRecentGlobalTaskThread(thread = {}, nowMs = Date.now()) {
+  if (String(thread?.status?.type || '') === 'active') return true
+  const updatedAt = toTimestampMs(
+    thread.updatedAt || thread.recencyAt || thread.createdAt
+  )
+  return updatedAt > 0
+    && Math.max(0, Number(nowMs) || Date.now()) - updatedAt
+      <= GLOBAL_TASK_ACTIVITY_WINDOW_MS
+}
+
+function isRunningGlobalCodexTurn(
+  thread = {},
+  turn = null,
+  nowMs = Date.now()
+) {
+  if (String(thread?.status?.type || '') === 'active') return true
+  if (!turn || !isRecentGlobalTaskThread(thread, nowMs)) return false
+  const status = String(turn.status || '').trim()
+  if (status === 'inProgress') return true
+  return status === 'interrupted'
+    && toTimestampMs(turn.completedAt) === 0
+}
+
+function normalizeGlobalCodexTask(thread = {}, turn = {}) {
+  const cwd = String(thread.cwd || '').trim()
+  return {
+    threadId: String(thread.id || '').trim(),
+    turnId: String(turn?.id || '').trim(),
+    title: compactText(
+      thread.name
+        || thread.preview
+        || (cwd ? path.basename(cwd) : '')
+        || `Codex ${String(thread.id || '').slice(-8)}`,
+      100
+    ),
+    cwd,
+    state: 'running',
+    source: 'codex',
+    startedAt: toTimestampMs(turn?.startedAt || thread.recencyAt),
+    updatedAt: toTimestampMs(thread.updatedAt || thread.recencyAt),
+    threadStatus: String(thread?.status?.type || '').trim(),
+    turnStatus: String(turn?.status || '').trim()
+  }
+}
+
 function selectProjectCandidate(candidates = [], requestedThreadId = '') {
   const requestedId = String(requestedThreadId || '').trim()
   if (requestedId) {
@@ -301,10 +371,15 @@ function resolveExistingDirectory(value = '') {
 class CodexProjectSessionRouter {
   constructor({
     service,
-    now = () => Date.now()
+    now = () => Date.now(),
+    globalTaskConfirmationDelayMs = GLOBAL_TASK_CONFIRMATION_DELAY_MS
   } = {}) {
     this.service = service
     this.now = now
+    this.globalTaskConfirmationDelayMs = Math.max(
+      0,
+      Number(globalTaskConfirmationDelayMs) || 0
+    )
   }
 
   getManagedMainThreadIds() {
@@ -527,6 +602,212 @@ class CodexProjectSessionRouter {
       message: tasks.length > 0
         ? `当前会话有 ${activeTasks.length} 个执行中任务、${queuedTasks.length} 个主会话排队任务。`
         : '当前会话没有其他正在执行或排队中的任务。'
+    }
+  }
+
+  async listRunningCodexTasks(activeTask = {}) {
+    const currentJobId = String(activeTask?.jobId || '').trim()
+    const allActiveTasks = Array.from(
+      this.service?.activeTasks?.values?.() || []
+    ).filter((task) => String(task?.jobId || '').trim() !== currentJobId)
+    const allQueuedTasks = Array.from(
+      this.service?.sessionQueues?.values?.() || []
+    ).flatMap((queue) => Array.from(queue || []))
+      .filter((task) => String(task?.jobId || '').trim() !== currentJobId)
+    const openGitTasks = [
+      ...allActiveTasks.map((task) => {
+        const session = this.service?.getSession?.(task?.sessionId)
+        const routeStatus = String(
+          task?.projectRoute?.status || ''
+        ).trim()
+        return {
+          jobId: String(task?.jobId || '').trim(),
+          threadId: String(task?.projectRoute?.threadId || '').trim(),
+          title: compactText(
+            task?.projectRoute?.title || session?.title || task?.text,
+            100
+          ),
+          text: compactText(task?.text, 160),
+          state: routeStatus === 'queued' ? 'queued' : 'running',
+          phase: routeStatus || 'running',
+          source: 'open_git',
+          projectQuery: String(
+            task?.projectRoute?.projectQuery || ''
+          ).trim(),
+          createdAt: Number(task?.createdAt) || 0,
+          updatedAt: Number(task?.projectRoute?.updatedAt) || 0
+        }
+      }),
+      ...allQueuedTasks.map((task) => {
+        const session = this.service?.getSession?.(task?.sessionId)
+        return {
+          jobId: String(task?.jobId || '').trim(),
+          threadId: '',
+          title: compactText(session?.title || task?.text, 100),
+          text: compactText(task?.text, 160),
+          state: 'queued',
+          source: 'open_git',
+          projectQuery: '',
+          createdAt: Number(task?.createdAt) || 0,
+          updatedAt: 0
+        }
+      })
+    ]
+    const trackedProjectThreadIds = new Set(
+      openGitTasks.map((task) => task.threadId).filter(Boolean)
+    )
+    const excludedThreadIds = this.getManagedMainThreadIds()
+    for (const task of allActiveTasks) {
+      const threadId = String(task?.threadId || '').trim()
+      if (threadId) excludedThreadIds.add(threadId)
+    }
+
+    let globalScanError = ''
+    const candidateErrors = []
+    let totalCandidateCount = 0
+    let checkedCandidateCount = 0
+    let scanTruncated = false
+    let nativeTasks = []
+    try {
+      const nowMs = this.now()
+      const allCandidates = (await this.listThreads())
+        .filter((thread) => {
+          const threadId = String(thread?.id || '').trim()
+          return threadId
+            && !excludedThreadIds.has(threadId)
+            && !trackedProjectThreadIds.has(threadId)
+            && thread?.ephemeral !== true
+            && !String(thread?.parentThreadId || '').trim()
+            && isRecentGlobalTaskThread(thread, nowMs)
+        })
+        .sort((left, right) => (
+          toTimestampMs(right.updatedAt || right.recencyAt)
+          - toTimestampMs(left.updatedAt || left.recencyAt)
+        ))
+      totalCandidateCount = allCandidates.length
+      scanTruncated = totalCandidateCount > MAX_GLOBAL_TASK_CANDIDATES
+      const candidates = allCandidates.slice(0, MAX_GLOBAL_TASK_CANDIDATES)
+      checkedCandidateCount = candidates.length
+      const ambiguousThreads = []
+      const inspected = await Promise.all(candidates.map(async (thread) => {
+        try {
+          const result = await this.service.request('thread/turns/list', {
+            threadId: thread.id,
+            limit: 1,
+            sortDirection: 'desc',
+            itemsView: 'notLoaded'
+          }, 30 * 1000)
+          const turn = Array.isArray(result?.data) ? result.data[0] : null
+          if (
+            String(thread?.status?.type || '') !== 'active'
+            && String(turn?.status || '').trim() === 'interrupted'
+            && toTimestampMs(turn?.completedAt) === 0
+            && isRecentGlobalTaskThread(thread, nowMs)
+          ) {
+            ambiguousThreads.push({ thread, turn })
+            return null
+          }
+          return isRunningGlobalCodexTurn(thread, turn, nowMs)
+            ? normalizeGlobalCodexTask(thread, turn)
+            : null
+        } catch (error) {
+          if (String(thread?.status?.type || '') === 'active') {
+            return normalizeGlobalCodexTask(thread)
+          }
+          candidateErrors.push({
+            threadId: String(thread?.id || '').trim(),
+            error: error?.message || String(error)
+          })
+          return null
+        }
+      }))
+      nativeTasks = inspected.filter(Boolean)
+      if (ambiguousThreads.length > 0) {
+        if (this.globalTaskConfirmationDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(
+            resolve,
+            this.globalTaskConfirmationDelayMs
+          ))
+        }
+        try {
+          const refreshedThreads = new Map(
+            (await this.listThreads()).map((thread) => [
+              String(thread?.id || '').trim(),
+              thread
+            ])
+          )
+          for (const { thread, turn } of ambiguousThreads) {
+            const threadId = String(thread?.id || '').trim()
+            const refreshed = refreshedThreads.get(threadId)
+            const previousUpdatedAt = toTimestampMs(
+              thread.updatedAt || thread.recencyAt
+            )
+            const refreshedUpdatedAt = toTimestampMs(
+              refreshed?.updatedAt || refreshed?.recencyAt
+            )
+            if (
+              refreshed
+              && (
+                String(refreshed?.status?.type || '') === 'active'
+                || refreshedUpdatedAt > previousUpdatedAt
+              )
+            ) {
+              nativeTasks.push(normalizeGlobalCodexTask(refreshed, turn))
+            }
+          }
+        } catch (error) {
+          candidateErrors.push({
+            threadId: '',
+            error: `ambiguous task confirmation failed: ${error?.message || String(error)}`
+          })
+        }
+      }
+    } catch (error) {
+      globalScanError = error?.message || String(error)
+    }
+
+    const tasks = [...openGitTasks, ...nativeTasks]
+      .sort((left, right) => (
+        Number(left.createdAt || left.startedAt || 0)
+        - Number(right.createdAt || right.startedAt || 0)
+      ))
+    const runningTaskCount = tasks.filter((task) => task.state !== 'queued').length
+    const queuedTaskCount = tasks.filter((task) => task.state === 'queued').length
+    const scanIncomplete = Boolean(
+      globalScanError || candidateErrors.length > 0 || scanTruncated
+    )
+    let status = tasks.length > 0 ? 'busy' : 'idle'
+    if (scanIncomplete) status = tasks.length > 0 ? 'partial' : 'unavailable'
+    let message
+    if (status === 'unavailable') {
+      message = scanTruncated
+        ? `近期候选会话共有 ${totalCandidateCount} 个，本次只检查了 ${checkedCandidateCount} 个，不能据此判断当前没有运行中任务。`
+        : '全局 Codex 会话状态暂时无法读取，不能据此判断当前没有运行中任务。'
+    } else if (status === 'partial') {
+      const partialReason = scanTruncated
+        ? `近期候选会话共有 ${totalCandidateCount} 个，本次只检查了 ${checkedCandidateCount} 个`
+        : '部分全局会话状态读取失败'
+      message = `已确认 ${runningTaskCount} 个执行中任务、${queuedTaskCount} 个排队任务；${partialReason}。`
+    } else if (tasks.length > 0) {
+      message = `当前共有 ${runningTaskCount} 个执行中任务、${queuedTaskCount} 个排队任务。`
+    } else {
+      message = '当前未发现正在执行或排队中的 Codex 任务。'
+    }
+    return {
+      status,
+      runningTaskCount,
+      queuedTaskCount,
+      openGitTaskCount: openGitTasks.length,
+      nativeTaskCount: nativeTasks.length,
+      tasks,
+      globalScan: {
+        totalCandidateCount,
+        checkedCandidateCount,
+        truncated: scanTruncated,
+        failureCount: candidateErrors.length,
+        error: globalScanError
+      },
+      message
     }
   }
 
@@ -814,6 +1095,9 @@ class CodexProjectSessionRouter {
       if (tool === 'get_open_git_task_status') {
         return toolResponse(this.getOpenGitTaskStatus(activeTask))
       }
+      if (tool === 'list_running_codex_tasks') {
+        return toolResponse(await this.listRunningCodexTasks(activeTask))
+      }
       if (tool === 'restart_open_git') {
         return toolResponse(
           this.service.requestApplicationRestart(activeTask)
@@ -821,9 +1105,14 @@ class CodexProjectSessionRouter {
       }
       if (tool === 'dispatch_codex_project_task') {
         if (isCoordinatorStatusQuery(activeTask.text)) {
+          const globalQuery = /(?:所有|全部|全局|有哪些|哪些).*?(?:codex)?(?:任务|会话)|(?:正在|进行中|执行中|运行中).*?(?:codex)?(?:任务|会话)/i.test(
+            String(activeTask.text || '')
+          )
           return toolResponse({
             status: 'coordinator_status_query',
-            message: '这是当前 OpenGit 会话的任务状态查询，不应分发到项目会话；请调用 get_open_git_task_status。'
+            message: globalQuery
+              ? '这是全局 Codex 任务状态查询，不应分发到项目会话；请调用 list_running_codex_tasks。'
+              : '这是当前 OpenGit 会话的任务状态查询，不应分发到项目会话；请调用 get_open_git_task_status。'
           })
         }
         return toolResponse(await this.dispatchProjectTask({
@@ -855,6 +1144,9 @@ module.exports = {
     normalizeThreadStatus,
     scoreProjectThread,
     normalizeCandidate,
+    isRecentGlobalTaskThread,
+    isRunningGlobalCodexTurn,
+    normalizeGlobalCodexTask,
     selectProjectCandidate,
     resolveExistingDirectory,
     toolResponse

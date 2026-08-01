@@ -19,6 +19,7 @@ assert.deepEqual(
     'get_codex_project_binding',
     'unbind_codex_project',
     'get_open_git_task_status',
+    'list_running_codex_tasks',
     'restart_open_git',
     'dispatch_codex_project_task'
   ]
@@ -29,6 +30,13 @@ for (const text of [
   '刚才任务执行到哪了？',
   '这个任务还在排队吗',
   'api-go 当前任务进展怎么样',
+  '看下所有进行中的codex任务',
+  '有哪些正在运行的 Codex 会话？',
+  '现在还有什么在跑',
+  '现在有什么任务在跑',
+  '还有哪些任务在执行',
+  '任务呢',
+  '刚才那个呢',
   'current task status'
 ]) {
   assert.equal(
@@ -350,6 +358,246 @@ assert.equal(
     .tasks[0].projectRoute.status,
   'queued'
 )
+
+const globalStatusCalls = []
+let globalThreadListCount = 0
+const globalCallerTask = {
+  jobId: 'job-global-query',
+  sessionId: 'feishu:work:oc_global',
+  threadId: 'thread-global-worker',
+  text: '看下所有进行中的 Codex 任务'
+}
+const globalService = {
+  sessions: new Map([
+    ['feishu:work:oc_global', {
+      id: 'feishu:work:oc_global',
+      threadId: 'thread-global-main',
+      title: '全局状态查询'
+    }],
+    ['feishu:work:oc_project', {
+      id: 'feishu:work:oc_project',
+      threadId: 'thread-project-main',
+      title: '项目群'
+    }]
+  ]),
+  getSession(sessionId) {
+    return this.sessions.get(sessionId) || null
+  },
+  activeTasks: new Map([
+    [globalCallerTask.jobId, globalCallerTask],
+    ['job-open-git-project', {
+      jobId: 'job-open-git-project',
+      sessionId: 'feishu:work:oc_project',
+      threadId: 'thread-project-worker',
+      text: '继续修复 api-go',
+      createdAt: 700,
+      projectRoute: {
+        projectQuery: 'api-go',
+        threadId: 'thread-project-target',
+        title: 'api-go 修复',
+        status: 'running',
+        updatedAt: 900
+      }
+    }]
+  ]),
+  activeTasksByThreadId: new Map([
+    [globalCallerTask.threadId, globalCallerTask]
+  ]),
+  sessionQueues: new Map([
+    ['feishu:work:oc_project', [{
+      jobId: 'job-open-git-queued',
+      sessionId: 'feishu:work:oc_project',
+      text: '随后执行回归测试',
+      createdAt: 800
+    }]]
+  ]),
+  request: async (method, params) => {
+    globalStatusCalls.push({ method, params })
+    if (method === 'thread/list') {
+      globalThreadListCount += 1
+      return {
+        data: [
+          {
+            id: 'thread-global-main',
+            name: 'OpenGit 主会话',
+            cwd: '/tmp',
+            updatedAt: 999,
+            recencyAt: 990,
+            status: { type: 'notLoaded' }
+          },
+          {
+            id: 'thread-codex-running',
+            name: 'content_studio',
+            cwd: '/tmp/content_studio',
+            updatedAt: globalThreadListCount > 1 ? 997 : 995,
+            recencyAt: 900,
+            status: { type: 'notLoaded' }
+          },
+          {
+            id: 'thread-codex-stopped',
+            name: 'manually stopped',
+            cwd: '/tmp/stopped',
+            updatedAt: 993,
+            recencyAt: 919,
+            status: { type: 'notLoaded' }
+          },
+          {
+            id: 'thread-codex-completed',
+            name: 'recently completed',
+            cwd: '/tmp/completed',
+            updatedAt: 994,
+            recencyAt: 920,
+            status: { type: 'notLoaded' }
+          },
+          {
+            id: 'thread-codex-stale',
+            name: 'stale interrupted',
+            cwd: '/tmp/stale',
+            updatedAt: 100,
+            recencyAt: 90,
+            status: { type: 'notLoaded' }
+          },
+          {
+            id: 'thread-codex-subagent',
+            name: 'subagent',
+            cwd: '/tmp/content_studio',
+            updatedAt: 996,
+            recencyAt: 910,
+            parentThreadId: 'thread-codex-running',
+            status: { type: 'notLoaded' }
+          }
+        ],
+        nextCursor: null
+      }
+    }
+    if (method === 'thread/turns/list') {
+      if (params.threadId === 'thread-codex-running') {
+        return {
+          data: [{
+            id: 'turn-codex-running',
+            status: 'interrupted',
+            startedAt: 900,
+            completedAt: null
+          }]
+        }
+      }
+      if (params.threadId === 'thread-codex-stopped') {
+        return {
+          data: [{
+            id: 'turn-codex-stopped',
+            status: 'interrupted',
+            startedAt: 919,
+            completedAt: null
+          }]
+        }
+      }
+      return {
+        data: [{
+          id: 'turn-codex-completed',
+          status: 'completed',
+          startedAt: 920,
+          completedAt: 994
+        }]
+      }
+    }
+    throw new Error(`unexpected method: ${method}`)
+  }
+}
+const globalRouter = new CodexProjectSessionRouter({
+  service: globalService,
+  now: () => 1_000_000,
+  globalTaskConfirmationDelayMs: 0
+})
+const globalStatusResult = await globalRouter.handleToolCall({
+  threadId: globalCallerTask.threadId,
+  tool: 'list_running_codex_tasks',
+  arguments: {}
+})
+assert.equal(globalStatusResult.success, true)
+const globalStatus = JSON.parse(globalStatusResult.contentItems[0].text)
+assert.equal(globalStatus.status, 'busy')
+assert.equal(globalStatus.runningTaskCount, 2)
+assert.equal(globalStatus.queuedTaskCount, 1)
+assert.equal(globalStatus.openGitTaskCount, 2)
+assert.equal(globalStatus.nativeTaskCount, 1)
+assert.deepEqual(
+  globalStatus.tasks.map((task) => task.title),
+  ['api-go 修复', '项目群', 'content_studio']
+)
+assert.equal(
+  globalStatusCalls.some(({ method, params }) => (
+    method === 'thread/turns/list'
+    && params.threadId === 'thread-codex-running'
+    && params.limit === 1
+  )),
+  true,
+  'global status should inspect the latest native turn'
+)
+assert.equal(
+  globalStatusCalls.some(({ method, params }) => (
+    method === 'thread/turns/list'
+    && params.threadId === 'thread-codex-stale'
+  )),
+  false,
+  'stale interrupted sessions must not be reported as running'
+)
+assert.equal(
+  globalStatus.tasks.some((task) => task.threadId === 'thread-codex-stopped'),
+  false,
+  'an interrupted turn without a continuing activity heartbeat must not be reported as running'
+)
+
+const truncatedThreads = Array.from({ length: 25 }, (_, index) => ({
+  id: `thread-truncated-${index}`,
+  name: `running ${index}`,
+  cwd: `/tmp/running-${index}`,
+  updatedAt: 995 - index,
+  recencyAt: 995 - index,
+  status: { type: 'active' }
+}))
+const truncatedRouter = new CodexProjectSessionRouter({
+  service: {
+    sessions: new Map(),
+    activeTasks: new Map([[globalCallerTask.jobId, globalCallerTask]]),
+    sessionQueues: new Map(),
+    getSession: () => null,
+    request: async (method) => {
+      if (method === 'thread/list') {
+        return { data: truncatedThreads, nextCursor: null }
+      }
+      if (method === 'thread/turns/list') return { data: [] }
+      throw new Error(`unexpected method: ${method}`)
+    }
+  },
+  now: () => 1_000_000,
+  globalTaskConfirmationDelayMs: 0
+})
+const truncatedStatus = await truncatedRouter.listRunningCodexTasks(
+  globalCallerTask
+)
+assert.equal(truncatedStatus.status, 'partial')
+assert.equal(truncatedStatus.globalScan.truncated, true)
+assert.equal(truncatedStatus.globalScan.totalCandidateCount, 25)
+assert.equal(truncatedStatus.globalScan.checkedCandidateCount, 24)
+assert.match(truncatedStatus.message, /只检查了 24 个/)
+
+const unavailableRouter = new CodexProjectSessionRouter({
+  service: {
+    sessions: new Map(),
+    activeTasks: new Map([[globalCallerTask.jobId, globalCallerTask]]),
+    sessionQueues: new Map(),
+    getSession: () => null,
+    request: async () => {
+      throw new Error('native status unavailable')
+    }
+  },
+  now: () => 1_000_000
+})
+const unavailableStatus = await unavailableRouter.listRunningCodexTasks(
+  globalCallerTask
+)
+assert.equal(unavailableStatus.status, 'unavailable')
+assert.match(unavailableStatus.message, /不能据此判断/)
 
 const restartToolResult = await router.handleToolCall({
   threadId: 'thread-main',

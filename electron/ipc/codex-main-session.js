@@ -35,14 +35,26 @@ const MAX_WORKER_CONTEXT_MESSAGES = 24
 const MAX_WORKER_CONTEXT_CHARS = 16000
 const PROJECT_THREAD_POLL_INTERVAL_MS = 5000
 const FEISHU_POWER_RECOVERY_DELAY_MS = 2500
-const PROJECT_ROUTING_TOOL_VERSION = 5
+const PROJECT_ROUTING_TOOL_VERSION = 6
+const CODEX_MODEL_PLAN_CACHE_MS = 5 * 60 * 1000
+const CODEX_CAPACITY_RETRY_DELAYS_MS = Object.freeze([1500, 4000])
+const CODEX_CAPACITY_FALLBACK_DELAY_MS = 1000
+const CODEX_CAPACITY_FALLBACK_MODELS = Object.freeze([
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.4-mini'
+])
 
 const MAIN_SESSION_INSTRUCTIONS = [
   '你是 OpenGit 内置的持久 Codex 路由协调会话。',
   '你会接收 OpenGit 页面或当前飞书会话转发的用户指令，并负责理解需求、路由任务和总结结果。',
   '任务执行期间可以使用 Codex 可用的工具；在真正缺少用户选择或外部权限时才说明阻塞。',
   '每轮先按语义区分“主会话协调/状态查询”和“项目工作指令”，不得仅因为当前会话绑定了项目、消息提到项目名或出现“查看/检查”就分发。',
-  '主会话协调/状态查询包括：当前或刚才任务的状态与进度、是否正在执行或排队、当前会话/队列/项目绑定/监控/飞书连接/OpenGit 状态及其控制操作。这些请求必须留在主会话；当前任务状态使用 get_open_git_task_status，禁止调用 dispatch_codex_project_task。',
+  '主会话协调/状态查询包括：当前或刚才任务的状态与进度、是否正在执行或排队、当前会话/队列/项目绑定/监控/飞书连接/OpenGit 状态及其控制操作。这些请求必须留在主会话，禁止调用 dispatch_codex_project_task。',
+  '用户查询“当前/刚才/这个任务”的状态时使用 get_open_git_task_status；用户查询“所有/全部/全局/有哪些正在进行中的 Codex 任务”时必须使用 list_running_codex_tasks。不得用当前飞书会话任务为 0 推断全局任务为 0，也不得把原生 notLoaded 直接当成空闲。',
+  '“现在还有什么在跑”“任务呢”“刚才那个呢”等省略式追问必须结合最近上下文理解为状态查询；仍无法判断是当前任务还是全局任务时先简短追问，禁止分发到项目会话。',
   '项目工作指令是需要进入目标工作目录读取或分析代码/文件/仓库状态，或者修改、测试、构建、提交、发布、部署及继续处理项目问题的请求。只有这类请求才调用 dispatch_codex_project_task；不得在当前 OpenGit 主会话中直接使用文件、终端或代码工具代替目标项目会话执行。',
   '边界示例：“当前任务状态”“刚才任务到哪了”“还在排队吗”属于主会话状态查询；“检查 api-go 当前代码改动并修复测试”“继续处理绑定项目里的构建失败”属于项目工作指令；“当前绑定什么项目”只调用 get_codex_project_binding。',
   '语义仍不明确且缺少可执行的项目对象或动作时先简短追问，不要猜测并分发。',
@@ -317,7 +329,69 @@ function buildCodexTaskInput(task = {}) {
 function createRpcError(payload = null, fallbackMessage = 'Codex app-server 请求失败') {
   const error = new Error(payload?.message || fallbackMessage)
   if (payload?.code != null) error.rpcCode = payload.code
+  if (payload?.data?.codexErrorInfo != null) {
+    error.codexErrorInfo = payload.data.codexErrorInfo
+  }
   return error
+}
+
+function createTurnFailureError(turn = {}, fallbackMessage = 'Codex 任务执行失败') {
+  const payload = turn?.error
+  const error = new Error(String(payload?.message || payload || fallbackMessage))
+  if (payload?.codexErrorInfo != null) {
+    error.codexErrorInfo = payload.codexErrorInfo
+  }
+  return error
+}
+
+function isCodexCapacityError(error) {
+  const info = error?.codexErrorInfo
+  const normalizedInfo = typeof info === 'string'
+    ? info.replace(/[_\s-]+/g, '').toLowerCase()
+    : ''
+  if (normalizedInfo === 'serveroverloaded') return true
+  const message = String(error?.message || error || '').toLowerCase()
+  return /selected model is at capacity|server[_\s-]*overloaded|model.{0,24}(?:at|over) capacity|capacity.{0,24}model/.test(
+    message
+  )
+}
+
+function selectCodexCapacityModelPlan(models = [], configuredModel = '') {
+  const availableModels = (Array.isArray(models) ? models : [])
+    .filter((model) => (
+      model
+      && model.hidden !== true
+      && String(model.model || model.id || '').trim()
+    ))
+  const requestedPrimaryModel = String(configuredModel || '').trim()
+  const primaryEntry = availableModels.find((model) => (
+    String(model.model || model.id || '').trim() === requestedPrimaryModel
+  ))
+    || availableModels.find((model) => model.isDefault === true)
+    || availableModels[0]
+    || null
+  const primaryModel = String(
+    requestedPrimaryModel || primaryEntry?.model || primaryEntry?.id || ''
+  ).trim()
+  const byName = new Map(
+    availableModels.map((model) => {
+      const name = String(model.model || model.id || '').trim()
+      return [name, model]
+    })
+  )
+  const fallbackModels = CODEX_CAPACITY_FALLBACK_MODELS
+    .map((name) => byName.get(name))
+    .filter((model) => (
+      model
+      && String(model.model || model.id || '').trim() !== primaryModel
+    ))
+    .map((model) => String(model.model || model.id || '').trim())
+    .filter((model, index, values) => model && values.indexOf(model) === index)
+  return {
+    primaryModel,
+    fallbackModel: fallbackModels[0] || '',
+    fallbackModels
+  }
 }
 
 function toTimestampMs(value) {
@@ -574,6 +648,8 @@ class CodexMainSessionService {
     safeLog = () => {},
     safeError = () => {},
     projectThreadPollIntervalMs = PROJECT_THREAD_POLL_INTERVAL_MS,
+    capacityRetryDelaysMs = CODEX_CAPACITY_RETRY_DELAYS_MS,
+    capacityFallbackDelayMs = CODEX_CAPACITY_FALLBACK_DELAY_MS,
     scheduleApplicationRestart = null
   }) {
     this.store = store
@@ -615,6 +691,16 @@ class CodexMainSessionService {
       25,
       Number(projectThreadPollIntervalMs) || PROJECT_THREAD_POLL_INTERVAL_MS
     )
+    this.capacityRetryDelaysMs = (
+      Array.isArray(capacityRetryDelaysMs)
+        ? capacityRetryDelaysMs
+        : CODEX_CAPACITY_RETRY_DELAYS_MS
+    ).map((delay) => Math.max(0, Number(delay) || 0))
+    this.capacityFallbackDelayMs = Math.max(
+      0,
+      Number(capacityFallbackDelayMs) || 0
+    )
+    this.modelPlanCache = new Map()
     this.liveMessages = new Map()
     this.feishuBridge = null
     this.proactiveNotificationMonitor = null
@@ -1512,6 +1598,14 @@ class CodexMainSessionService {
       }
       if (method === 'turn/completed') {
         const completedTurn = params?.turn || {}
+        const completedTurnId = String(completedTurn.id || '').trim()
+        if (
+          managedProjectTurn.turnId
+          && completedTurnId
+          && completedTurnId !== managedProjectTurn.turnId
+        ) {
+          return
+        }
         for (const item of Array.isArray(completedTurn.items)
           ? completedTurn.items
           : []) {
@@ -1526,18 +1620,18 @@ class CodexMainSessionService {
             String(item.text || '').trim()
           )
         }
-        this.managedProjectTurns.delete(threadId)
         const status = String(completedTurn.status || 'completed')
         const messages = Array.from(managedProjectTurn.agentMessages.values())
         const fallbackText = status === 'interrupted'
           ? '任务已中断。'
           : '任务已完成。'
         if (status === 'failed') {
-          const errorText = completedTurn?.error?.message
-            || completedTurn?.error
-            || 'Codex 项目任务执行失败'
-          managedProjectTurn.reject(new Error(String(errorText)))
+          void this.handleManagedProjectTurnFailure(
+            managedProjectTurn,
+            createTurnFailureError(completedTurn, 'Codex 项目任务执行失败')
+          )
         } else {
+          this.managedProjectTurns.delete(threadId)
           managedProjectTurn.resolve({
             threadId,
             turnId: String(
@@ -1628,6 +1722,14 @@ class CodexMainSessionService {
 
     if (method === 'turn/completed') {
       const completedTurn = params?.turn || {}
+      const completedTurnId = String(completedTurn.id || '').trim()
+      if (
+        activeTask.turnId
+        && completedTurnId
+        && completedTurnId !== String(activeTask.turnId).trim()
+      ) {
+        return
+      }
       activeTask.turnId = completedTurn.id || activeTask.turnId
       const responseItems = this.collectTurnResponseItems(
         activeTask,
@@ -1643,9 +1745,8 @@ class CodexMainSessionService {
       const replyMessages = replyItems.map((item) => item.text)
       activeTask.finalText = replyMessages.join('\n\n')
       const status = String(completedTurn.status || 'completed')
-      const errorText = completedTurn?.error?.message || completedTurn?.error || ''
       if (status === 'failed') {
-        activeTask.reject(new Error(String(errorText || 'Codex 任务执行失败')))
+        activeTask.reject(createTurnFailureError(completedTurn))
       } else {
         activeTask.resolve({
           jobId: activeTask.jobId,
@@ -1903,6 +2004,189 @@ class CodexMainSessionService {
     return this.account
   }
 
+  async getCodexModelPlan(cwd = this.config.workingDirectory) {
+    const now = Date.now()
+    const planCwd = resolveWorkingDirectory(cwd)
+    const cached = this.modelPlanCache.get(planCwd)
+    if (
+      cached
+      && now - cached.loadedAt < CODEX_MODEL_PLAN_CACHE_MS
+    ) {
+      return cached.plan
+    }
+    let configuredModel = ''
+    try {
+      const configResult = await this.request('config/read', {
+        cwd: planCwd,
+        includeLayers: false
+      }, 60 * 1000)
+      configuredModel = String(configResult?.config?.model || '').trim()
+    } catch (error) {
+      this.safeError(
+        '[Codex Main] 读取有效模型配置失败，将使用模型目录默认值:',
+        error.message
+      )
+    }
+    try {
+      const result = await this.request('model/list', {
+        limit: 100,
+        includeHidden: false
+      }, 60 * 1000)
+      const plan = selectCodexCapacityModelPlan(result?.data, configuredModel)
+      this.modelPlanCache.set(planCwd, { loadedAt: now, plan })
+      return plan
+    } catch (error) {
+      this.safeError('[Codex Main] 读取模型目录失败，将沿用当前模型:', error.message)
+      return {
+        primaryModel: '',
+        fallbackModel: '',
+        fallbackModels: []
+      }
+    }
+  }
+
+  async startActiveTaskTurn(activeTask, {
+    model = '',
+    delayMs = 0
+  } = {}) {
+    const retryDelay = Math.max(0, Number(delayMs) || 0)
+    if (retryDelay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelay))
+    }
+    if (this.activeTasks.get(activeTask.jobId) !== activeTask) return false
+    activeTask.retryScheduled = false
+    activeTask.turnId = ''
+    activeTask.finalText = ''
+    const params = {
+      ...activeTask.turnStartParams,
+      ...(model ? { model } : {})
+    }
+    const response = await this.request('turn/start', params)
+    activeTask.turnId = response?.turn?.id || activeTask.turnId
+    this.broadcastState()
+    return true
+  }
+
+  async handleActiveTaskFailure(activeTask, error) {
+    if (this.activeTasks.get(activeTask.jobId) !== activeTask) return
+    const canRetry = (
+      isCodexCapacityError(error)
+      && activeTask.turnStartParams
+      && activeTask.threadId
+      && activeTask.agentMessageIds.size === 0
+    )
+    if (!canRetry) {
+      activeTask.rejectFinal(error)
+      return
+    }
+    if (activeTask.retryScheduled) return
+    activeTask.retryScheduled = true
+    activeTask.capacityFailureCount += 1
+
+    let model = activeTask.primaryModel || ''
+    let delayMs = 0
+    const retryIndex = activeTask.capacityFailureCount - 1
+    if (retryIndex < this.capacityRetryDelaysMs.length) {
+      delayMs = this.capacityRetryDelaysMs[retryIndex]
+      this.safeLog(
+        `[Codex Main] ${model || '当前模型'} 容量不足，`
+        + `${delayMs}ms 后重试（${retryIndex + 1}/`
+        + `${this.capacityRetryDelaysMs.length}）`
+      )
+    } else {
+      model = activeTask.fallbackModels[activeTask.nextFallbackIndex] || ''
+      if (!model) {
+        activeTask.retryScheduled = false
+        activeTask.rejectFinal(error)
+        return
+      }
+      activeTask.nextFallbackIndex += 1
+      delayMs = this.capacityFallbackDelayMs
+      this.safeLog(
+        `[Codex Main] 容量仍不足，${delayMs}ms 后降级到 ${model}`
+      )
+    }
+
+    try {
+      await this.startActiveTaskTurn(activeTask, { model, delayMs })
+    } catch (retryError) {
+      activeTask.retryScheduled = false
+      activeTask.reject(retryError)
+    }
+  }
+
+  async startManagedProjectTurn(managedTurn, {
+    model = '',
+    delayMs = 0
+  } = {}) {
+    const retryDelay = Math.max(0, Number(delayMs) || 0)
+    if (retryDelay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelay))
+    }
+    if (this.managedProjectTurns.get(managedTurn.threadId) !== managedTurn) {
+      return false
+    }
+    managedTurn.retryScheduled = false
+    managedTurn.turnId = ''
+    const response = await this.request('turn/start', {
+      ...managedTurn.turnStartParams,
+      ...(model ? { model } : {})
+    }, 60 * 1000)
+    managedTurn.turnId = String(
+      response?.turn?.id || managedTurn.turnId || ''
+    ).trim()
+    return true
+  }
+
+  async handleManagedProjectTurnFailure(managedTurn, error) {
+    if (this.managedProjectTurns.get(managedTurn.threadId) !== managedTurn) return
+    const canRetry = (
+      isCodexCapacityError(error)
+      && managedTurn.turnStartParams
+      && managedTurn.agentMessages.size === 0
+    )
+    if (!canRetry) {
+      this.managedProjectTurns.delete(managedTurn.threadId)
+      managedTurn.reject(error)
+      return
+    }
+    if (managedTurn.retryScheduled) return
+    managedTurn.retryScheduled = true
+    managedTurn.capacityFailureCount += 1
+
+    let model = managedTurn.primaryModel || ''
+    let delayMs = 0
+    const retryIndex = managedTurn.capacityFailureCount - 1
+    if (retryIndex < this.capacityRetryDelaysMs.length) {
+      delayMs = this.capacityRetryDelaysMs[retryIndex]
+      this.safeLog(
+        `[Codex Main] 项目会话 ${model || '当前模型'} 容量不足，`
+        + `${delayMs}ms 后重试（${retryIndex + 1}/`
+        + `${this.capacityRetryDelaysMs.length}）`
+      )
+    } else {
+      model = managedTurn.fallbackModels[managedTurn.nextFallbackIndex] || ''
+      if (!model) {
+        managedTurn.retryScheduled = false
+        this.managedProjectTurns.delete(managedTurn.threadId)
+        managedTurn.reject(error)
+        return
+      }
+      managedTurn.nextFallbackIndex += 1
+      delayMs = this.capacityFallbackDelayMs
+      this.safeLog(
+        `[Codex Main] 项目会话容量仍不足，${delayMs}ms 后降级到 ${model}`
+      )
+    }
+
+    try {
+      await this.startManagedProjectTurn(managedTurn, { model, delayMs })
+    } catch (retryError) {
+      managedTurn.retryScheduled = false
+      void this.handleManagedProjectTurnFailure(managedTurn, retryError)
+    }
+  }
+
   async ensureThread(sessionId = this.activeSessionId) {
     const session = this.getSession(sessionId)
     if (!session) throw new Error('会话不存在或已失效')
@@ -1945,6 +2229,9 @@ class CodexMainSessionService {
         this.safeError(
           `[Codex Main] 归档旧会话 ${storedThreadId} 失败:`,
           error.message
+        )
+        throw new Error(
+          `升级当前会话的项目路由工具失败：无法归档旧会话。${error.message}`
         )
       }
       storedThreadId = ''
@@ -2341,29 +2628,36 @@ class CodexMainSessionService {
       turnId: '',
       cwd: resolvedCwd,
       agentMessages: new Map(),
+      turnStartParams: null,
+      primaryModel: '',
+      fallbackModels: [],
+      capacityFailureCount: 0,
+      nextFallbackIndex: 0,
+      retryScheduled: false,
       resolve: resolveCompletion,
       reject: rejectCompletion
     }
     this.managedProjectTurns.set(resolvedThreadId, managedTurn)
 
     try {
-      const response = await this.request('turn/start', {
+      const modelPlan = await this.getCodexModelPlan(resolvedCwd)
+      managedTurn.primaryModel = modelPlan.primaryModel
+      managedTurn.fallbackModels = modelPlan.fallbackModels
+      managedTurn.turnStartParams = {
         threadId: resolvedThreadId,
         input: [{ type: 'text', text: normalizedTask }],
         cwd: resolvedCwd,
         approvalPolicy: this.config.approvalPolicy,
         sandboxPolicy: buildTurnSandboxPolicy(this.config, resolvedCwd),
+        ...(managedTurn.primaryModel
+          ? { model: managedTurn.primaryModel }
+          : {}),
         ...(this.config.reasoningEffort
           ? { effort: this.config.reasoningEffort }
           : {})
-      }, 60 * 1000)
-      managedTurn.turnId = String(
-        response?.turn?.id || managedTurn.turnId || ''
-      ).trim()
-    } catch (error) {
-      if (this.managedProjectTurns.get(resolvedThreadId) === managedTurn) {
-        this.managedProjectTurns.delete(resolvedThreadId)
       }
+      await this.startManagedProjectTurn(managedTurn)
+    } catch (error) {
       if (
         !createNew
         && /(?:active|running|in.?progress|正在执行)/i.test(
@@ -2372,7 +2666,13 @@ class CodexMainSessionService {
       ) {
         error.code = 'CODEX_PROJECT_THREAD_ACTIVE'
       }
-      throw error
+      if (error.code === 'CODEX_PROJECT_THREAD_ACTIVE') {
+        if (this.managedProjectTurns.get(resolvedThreadId) === managedTurn) {
+          this.managedProjectTurns.delete(resolvedThreadId)
+        }
+        throw error
+      }
+      void this.handleManagedProjectTurnFailure(managedTurn, error)
     }
 
     const result = await completionPromise
@@ -2523,6 +2823,12 @@ class CodexMainSessionService {
       finalText: '',
       agentMessageIds: new Set(),
       forwardedAgentMessageIds: new Set(),
+      turnStartParams: null,
+      primaryModel: '',
+      fallbackModels: [],
+      capacityFailureCount: 0,
+      nextFallbackIndex: 0,
+      retryScheduled: false,
       resolve: (result) => {
         if (this.activeTasks.get(task.jobId) !== activeTask) return
         this.activeTasks.delete(task.jobId)
@@ -2558,6 +2864,9 @@ class CodexMainSessionService {
         this.triggerRequestedApplicationRestart(activeTask)
       },
       reject: (error) => {
+        void this.handleActiveTaskFailure(activeTask, error)
+      },
+      rejectFinal: (error) => {
         if (this.activeTasks.get(task.jobId) !== activeTask) return
         this.activeTasks.delete(task.jobId)
         if (
@@ -2586,7 +2895,10 @@ class CodexMainSessionService {
       activeTask.parentThreadId = worker.parentThreadId
       activeTask.forked = worker.forked
       this.activeTasksByThreadId.set(activeTask.threadId, activeTask)
-      const response = await this.request('turn/start', {
+      const modelPlan = await this.getCodexModelPlan()
+      activeTask.primaryModel = modelPlan.primaryModel
+      activeTask.fallbackModels = modelPlan.fallbackModels
+      activeTask.turnStartParams = {
         threadId: activeTask.threadId,
         input: turnInput,
         cwd,
@@ -2598,12 +2910,14 @@ class CodexMainSessionService {
             ? [task.attachmentWorkspace.rootDir]
             : []
         ),
+        ...(activeTask.primaryModel
+          ? { model: activeTask.primaryModel }
+          : {}),
         ...(this.config.reasoningEffort
           ? { effort: this.config.reasoningEffort }
           : {})
-      })
-      activeTask.turnId = response?.turn?.id || activeTask.turnId
-      this.broadcastState()
+      }
+      await this.startActiveTaskTurn(activeTask)
     } catch (error) {
       activeTask.reject(error)
     }
@@ -3104,6 +3418,8 @@ module.exports = {
   resolveWorkingDirectory,
   buildTurnSandboxPolicy,
   buildCodexTaskInput,
+  isCodexCapacityError,
+  selectCodexCapacityModelPlan,
   extractThreadMessages,
   normalizeStoredSessions,
   normalizeProjectBinding,

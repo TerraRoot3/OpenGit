@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
 
@@ -9,6 +10,8 @@ const {
   publicCodexMainConfig,
   buildTurnSandboxPolicy,
   buildCodexTaskInput,
+  isCodexCapacityError,
+  selectCodexCapacityModelPlan,
   extractThreadMessages,
   normalizeStoredSessions,
   normalizeProjectBinding,
@@ -28,8 +31,13 @@ const {
 
 assert.match(
   MAIN_SESSION_INSTRUCTIONS,
-  /当前任务状态使用 get_open_git_task_status，禁止调用 dispatch_codex_project_task/,
+  /当前\/刚才\/这个任务.*get_open_git_task_status/,
   'task-status queries must stay in the OpenGit coordinator'
+)
+assert.match(
+  MAIN_SESSION_INSTRUCTIONS,
+  /所有\/全部\/全局.*list_running_codex_tasks/,
+  'global Codex task queries must use the global read-only status tool'
 )
 assert.match(
   MAIN_SESSION_INSTRUCTIONS,
@@ -40,6 +48,42 @@ assert.match(
   MAIN_SESSION_INSTRUCTIONS,
   /只有已经判定为项目工作指令/,
   'project binding should only provide a default target after semantic classification'
+)
+assert.equal(
+  isCodexCapacityError({
+    codexErrorInfo: 'serverOverloaded',
+    message: 'Selected model is at capacity. Please try a different model.'
+  }),
+  true
+)
+assert.equal(
+  isCodexCapacityError({
+    codexErrorInfo: 'usageLimitExceeded',
+    message: 'Usage limit exceeded'
+  }),
+  false,
+  'usage limits must not trigger automatic model fallback'
+)
+assert.deepEqual(
+  selectCodexCapacityModelPlan([
+    {
+      id: 'gpt-5.6-sol',
+      model: 'gpt-5.6-sol',
+      isDefault: true,
+      hidden: false
+    },
+    {
+      id: 'gpt-5.6-terra',
+      model: 'gpt-5.6-terra',
+      isDefault: false,
+      hidden: false
+    }
+  ]),
+  {
+    primaryModel: 'gpt-5.6-sol',
+    fallbackModel: 'gpt-5.6-terra',
+    fallbackModels: ['gpt-5.6-terra']
+  }
 )
 
 const previousConfig = normalizeCodexMainConfig({
@@ -377,6 +421,215 @@ assert.deepEqual(
 assert.equal(
   completedNotificationResult.text,
   '我会先生成图片。\n\n图片已经生成，正在整理。\n\n图片已随消息发送。'
+)
+
+const capacityRetryLogs = []
+const capacityRetryService = new CodexMainSessionService({
+  store: new MemoryStore(),
+  getMainWindow: () => null,
+  safeLog: (...args) => capacityRetryLogs.push(args.join(' ')),
+  capacityRetryDelaysMs: [0, 0],
+  capacityFallbackDelayMs: 0
+})
+capacityRetryService.startServer = async () => true
+const capacityRetryRequests = []
+let capacityTurnSequence = 0
+capacityRetryService.request = async (method, params) => {
+  capacityRetryRequests.push({ method, params })
+  if (method === 'thread/start') {
+    return { thread: { id: 'thread-capacity-parent' } }
+  }
+  if (method === 'thread/fork') {
+    return { thread: { id: 'thread-capacity-worker' } }
+  }
+  if (method === 'model/list') {
+    return {
+      data: [
+        {
+          id: 'gpt-5.6-sol',
+          model: 'gpt-5.6-sol',
+          isDefault: true,
+          hidden: false
+        },
+        {
+          id: 'gpt-5.6-terra',
+          model: 'gpt-5.6-terra',
+          isDefault: false,
+          hidden: false
+        },
+        {
+          id: 'gpt-5.6-luna',
+          model: 'gpt-5.6-luna',
+          isDefault: false,
+          hidden: false
+        }
+      ]
+    }
+  }
+  if (method === 'turn/start') {
+    capacityTurnSequence += 1
+    return {
+      turn: {
+        id: `turn-capacity-${capacityTurnSequence}`,
+        status: 'inProgress'
+      }
+    }
+  }
+  return {}
+}
+const capacityTask = capacityRetryService.enqueueInstruction({
+  text: '检查当前任务状态',
+  source: 'feishu',
+  metadata: {
+    connectionId: 'work',
+    connectionName: '工作飞书',
+    chatId: 'oc_capacity',
+    chatType: 'p2p'
+  }
+})
+const waitForCapacityTurnCount = async (expectedCount) => {
+  for (let index = 0; index < 40; index += 1) {
+    const count = capacityRetryRequests
+      .filter(({ method }) => method === 'turn/start')
+      .length
+    if (count >= expectedCount) return
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  assert.fail(`timed out waiting for ${expectedCount} capacity turn attempts`)
+}
+const failCapacityTurn = (sequence, error = {
+  message: 'Selected model is at capacity. Please try a different model.',
+  codexErrorInfo: 'serverOverloaded'
+}) => {
+  capacityRetryService.handleNotification('turn/completed', {
+    threadId: 'thread-capacity-worker',
+    turn: {
+      id: `turn-capacity-${sequence}`,
+      status: 'failed',
+      error,
+      items: []
+    }
+  })
+}
+await waitForCapacityTurnCount(1)
+failCapacityTurn(1)
+await waitForCapacityTurnCount(2)
+failCapacityTurn(2)
+await waitForCapacityTurnCount(3)
+failCapacityTurn(3)
+await waitForCapacityTurnCount(4)
+failCapacityTurn(4)
+await waitForCapacityTurnCount(5)
+capacityRetryService.handleNotification('item/completed', {
+  threadId: 'thread-capacity-worker',
+  item: {
+    id: 'agent-capacity-result',
+    type: 'agentMessage',
+    text: '降级模型执行成功。'
+  }
+})
+capacityRetryService.handleNotification('turn/completed', {
+  threadId: 'thread-capacity-worker',
+  turn: {
+    id: 'turn-capacity-5',
+    status: 'completed',
+    items: []
+  }
+})
+const capacityResult = await capacityTask
+assert.equal(capacityResult.text, '降级模型执行成功。')
+const capacityTurnRequests = capacityRetryRequests
+  .filter(({ method }) => method === 'turn/start')
+assert.deepEqual(
+  capacityTurnRequests.map(({ params }) => params.model),
+  [
+    'gpt-5.6-sol',
+    'gpt-5.6-sol',
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna'
+  ],
+  'capacity failures should retry the default model twice and continue through fallbacks'
+)
+assert.equal(
+  capacityTurnRequests.every(({ params }) => params.serviceTier == null),
+  true,
+  'capacity recovery must not enable the priority service tier'
+)
+assert.equal(
+  capacityRetryRequests.filter(({ method }) => method === 'model/list').length,
+  1,
+  'the model plan should be reused for all retries of one task'
+)
+assert.equal(
+  capacityRetryLogs.some((message) => message.includes('降级到 gpt-5.6-terra')),
+  true
+)
+assert.equal(
+  capacityRetryLogs.some((message) => message.includes('降级到 gpt-5.6-luna')),
+  true
+)
+
+const projectCapacityTask = capacityRetryService.executeCodexProjectTask({
+  threadId: 'thread-project-capacity',
+  cwd: os.tmpdir(),
+  task: '继续处理项目任务',
+  createNew: false
+})
+const failProjectCapacityTurn = (sequence) => {
+  capacityRetryService.handleNotification('turn/completed', {
+    threadId: 'thread-project-capacity',
+    turn: {
+      id: `turn-capacity-${sequence}`,
+      status: 'failed',
+      error: {
+        message: 'Selected model is at capacity. Please try a different model.',
+        codexErrorInfo: 'serverOverloaded'
+      },
+      items: []
+    }
+  })
+}
+await waitForCapacityTurnCount(6)
+failProjectCapacityTurn(6)
+await waitForCapacityTurnCount(7)
+failProjectCapacityTurn(7)
+await waitForCapacityTurnCount(8)
+failProjectCapacityTurn(8)
+await waitForCapacityTurnCount(9)
+failProjectCapacityTurn(9)
+await waitForCapacityTurnCount(10)
+capacityRetryService.handleNotification('item/completed', {
+  threadId: 'thread-project-capacity',
+  item: {
+    id: 'agent-project-capacity-result',
+    type: 'agentMessage',
+    text: '项目会话降级成功。'
+  }
+})
+capacityRetryService.handleNotification('turn/completed', {
+  threadId: 'thread-project-capacity',
+  turn: {
+    id: 'turn-capacity-10',
+    status: 'completed',
+    items: []
+  }
+})
+const projectCapacityResult = await projectCapacityTask
+assert.equal(projectCapacityResult.text, '项目会话降级成功。')
+assert.deepEqual(
+  capacityRetryRequests
+    .filter(({ method }) => method === 'turn/start')
+    .slice(-5)
+    .map(({ params }) => params.model),
+  [
+    'gpt-5.6-sol',
+    'gpt-5.6-sol',
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna'
+  ],
+  'managed project turns must use the same retry and fallback chain'
 )
 
 const workChat = service.getOrCreateFeishuSession({
@@ -738,9 +991,47 @@ assert.deepEqual(
     'get_codex_project_binding',
     'unbind_codex_project',
     'get_open_git_task_status',
+    'list_running_codex_tasks',
     'restart_open_git',
     'dispatch_codex_project_task'
   ]
+)
+
+const failedMigrationService = new CodexMainSessionService({
+  store: new MemoryStore({
+    'codex-main-sessions-v2': [{
+      id: 'main',
+      title: '主会话',
+      source: 'ui',
+      threadId: 'thread-migration-must-survive'
+    }]
+  }),
+  getMainWindow: () => null,
+  safeError: () => {}
+})
+failedMigrationService.startServer = async () => true
+const failedMigrationRequests = []
+failedMigrationService.request = async (method, params) => {
+  failedMigrationRequests.push({ method, params })
+  if (method === 'thread/archive') throw new Error('archive unavailable')
+  if (method === 'thread/start') {
+    return { thread: { id: 'thread-must-not-be-created' } }
+  }
+  return {}
+}
+await assert.rejects(
+  failedMigrationService.ensureThread('main'),
+  /无法归档旧会话/
+)
+assert.equal(
+  failedMigrationService.getSession('main').threadId,
+  'thread-migration-must-survive',
+  'failed tool migration must preserve the old thread reference'
+)
+assert.equal(
+  failedMigrationRequests.some(({ method }) => method === 'thread/start'),
+  false,
+  'a replacement thread must not be created until the old thread is archived'
 )
 
 const scheduledApplicationRestarts = []
@@ -1191,7 +1482,7 @@ assert.equal(projectExecutionResult.text, '目标项目会话已经完成。')
 assert.equal(projectExecutionResult.createdNewSession, false)
 assert.deepEqual(
   projectExecutionRequests.map(({ method }) => method),
-  ['thread/resume', 'turn/start']
+  ['thread/resume', 'config/read', 'model/list', 'turn/start']
 )
 assert.equal(
   projectExecutionRequests.some(({ method }) => method === 'turn/steer'),
