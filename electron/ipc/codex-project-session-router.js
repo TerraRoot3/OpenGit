@@ -1,13 +1,13 @@
 const fs = require('fs')
 const path = require('path')
+const {
+  createCodexSessionStateSource
+} = require('./codex-session-state-source')
 
 const THREAD_PAGE_LIMIT = 100
 const MAX_THREAD_PAGES = 20
 const DEFAULT_RESULT_LIMIT = 8
 const MAX_RESULT_LIMIT = 20
-const GLOBAL_TASK_ACTIVITY_WINDOW_MS = 5 * 60 * 1000
-const GLOBAL_TASK_CONFIRMATION_DELAY_MS = 1500
-const MAX_GLOBAL_TASK_CANDIDATES = 24
 const SOURCE_KINDS = Object.freeze([
   'cli',
   'vscode',
@@ -286,36 +286,14 @@ function normalizeCandidate(thread = {}, score = 0) {
   }
 }
 
-function isRecentGlobalTaskThread(thread = {}, nowMs = Date.now()) {
-  if (String(thread?.status?.type || '') === 'active') return true
-  const updatedAt = toTimestampMs(
-    thread.updatedAt || thread.recencyAt || thread.createdAt
-  )
-  return updatedAt > 0
-    && Math.max(0, Number(nowMs) || Date.now()) - updatedAt
-      <= GLOBAL_TASK_ACTIVITY_WINDOW_MS
-}
-
-function isRunningGlobalCodexTurn(
-  thread = {},
-  turn = null,
-  nowMs = Date.now()
-) {
-  if (String(thread?.status?.type || '') === 'active') return true
-  if (!turn || !isRecentGlobalTaskThread(thread, nowMs)) return false
-  const status = String(turn.status || '').trim()
-  if (status === 'inProgress') return true
-  return status === 'interrupted'
-    && toTimestampMs(turn.completedAt) === 0
-}
-
-function normalizeGlobalCodexTask(thread = {}, turn = {}) {
+function normalizeGlobalCodexTask(thread = {}, lifecycle = {}) {
   const cwd = String(thread.cwd || '').trim()
   return {
     threadId: String(thread.id || '').trim(),
-    turnId: String(turn?.id || '').trim(),
+    turnId: String(lifecycle?.turnId || '').trim(),
     title: compactText(
       thread.name
+        || thread.title
         || thread.preview
         || (cwd ? path.basename(cwd) : '')
         || `Codex ${String(thread.id || '').slice(-8)}`,
@@ -324,10 +302,12 @@ function normalizeGlobalCodexTask(thread = {}, turn = {}) {
     cwd,
     state: 'running',
     source: 'codex',
-    startedAt: toTimestampMs(turn?.startedAt || thread.recencyAt),
+    startedAt: toTimestampMs(
+      lifecycle?.at || thread.recencyAt || thread.createdAt
+    ),
     updatedAt: toTimestampMs(thread.updatedAt || thread.recencyAt),
     threadStatus: String(thread?.status?.type || '').trim(),
-    turnStatus: String(turn?.status || '').trim()
+    turnStatus: lifecycle?.status === 'running' ? 'inProgress' : ''
   }
 }
 
@@ -372,14 +352,15 @@ class CodexProjectSessionRouter {
   constructor({
     service,
     now = () => Date.now(),
-    globalTaskConfirmationDelayMs = GLOBAL_TASK_CONFIRMATION_DELAY_MS
+    sessionStateSource = null
   } = {}) {
     this.service = service
     this.now = now
-    this.globalTaskConfirmationDelayMs = Math.max(
-      0,
-      Number(globalTaskConfirmationDelayMs) || 0
-    )
+    this.sessionStateSource = sessionStateSource
+      || createCodexSessionStateSource({
+        safeLog: (...args) => this.service?.safeLog?.(...args),
+        safeError: (...args) => this.service?.safeError?.(...args)
+      })
   }
 
   getManagedMainThreadIds() {
@@ -657,114 +638,72 @@ class CodexProjectSessionRouter {
       openGitTasks.map((task) => task.threadId).filter(Boolean)
     )
     const excludedThreadIds = this.getManagedMainThreadIds()
+    const currentThreadId = String(activeTask?.threadId || '').trim()
+    if (currentThreadId) excludedThreadIds.add(currentThreadId)
     for (const task of allActiveTasks) {
       const threadId = String(task?.threadId || '').trim()
       if (threadId) excludedThreadIds.add(threadId)
     }
 
     let globalScanError = ''
-    const candidateErrors = []
+    const scanErrors = []
     let totalCandidateCount = 0
     let checkedCandidateCount = 0
-    let scanTruncated = false
     let nativeTasks = []
-    try {
-      const nowMs = this.now()
-      const allCandidates = (await this.listThreads())
-        .filter((thread) => {
-          const threadId = String(thread?.id || '').trim()
-          return threadId
-            && !excludedThreadIds.has(threadId)
-            && !trackedProjectThreadIds.has(threadId)
-            && thread?.ephemeral !== true
-            && !String(thread?.parentThreadId || '').trim()
-            && isRecentGlobalTaskThread(thread, nowMs)
-        })
-        .sort((left, right) => (
-          toTimestampMs(right.updatedAt || right.recencyAt)
-          - toTimestampMs(left.updatedAt || left.recencyAt)
+    const [threadListResult, processStateResult] = await Promise.allSettled([
+      this.listThreads(),
+      this.sessionStateSource.listRunningThreads()
+    ])
+    const nativeTaskByThreadId = new Map()
+
+    if (threadListResult.status === 'fulfilled') {
+      for (const thread of threadListResult.value) {
+        const threadId = String(thread?.id || '').trim()
+        if (
+          !threadId
+          || excludedThreadIds.has(threadId)
+          || trackedProjectThreadIds.has(threadId)
+          || thread?.ephemeral === true
+          || String(thread?.parentThreadId || '').trim()
+          || String(thread?.status?.type || '') !== 'active'
+        ) continue
+        nativeTaskByThreadId.set(
+          threadId,
+          normalizeGlobalCodexTask(thread)
+        )
+      }
+    }
+
+    if (processStateResult.status === 'fulfilled') {
+      const snapshot = processStateResult.value || {}
+      totalCandidateCount = Number(snapshot.openRolloutCount) || 0
+      checkedCandidateCount = Number(snapshot.inspectedThreadCount) || 0
+      if (snapshot.available !== true) {
+        globalScanError = Array.isArray(snapshot.errors)
+          ? snapshot.errors.join('; ')
+          : 'Codex process state is unavailable'
+      } else {
+        scanErrors.push(...(
+          Array.isArray(snapshot.errors) ? snapshot.errors : []
         ))
-      totalCandidateCount = allCandidates.length
-      scanTruncated = totalCandidateCount > MAX_GLOBAL_TASK_CANDIDATES
-      const candidates = allCandidates.slice(0, MAX_GLOBAL_TASK_CANDIDATES)
-      checkedCandidateCount = candidates.length
-      const ambiguousThreads = []
-      const inspected = await Promise.all(candidates.map(async (thread) => {
-        try {
-          const result = await this.service.request('thread/turns/list', {
-            threadId: thread.id,
-            limit: 1,
-            sortDirection: 'desc',
-            itemsView: 'notLoaded'
-          }, 30 * 1000)
-          const turn = Array.isArray(result?.data) ? result.data[0] : null
+        for (const thread of snapshot.threads || []) {
+          const threadId = String(thread?.id || '').trim()
           if (
-            String(thread?.status?.type || '') !== 'active'
-            && String(turn?.status || '').trim() === 'interrupted'
-            && toTimestampMs(turn?.completedAt) === 0
-            && isRecentGlobalTaskThread(thread, nowMs)
-          ) {
-            ambiguousThreads.push({ thread, turn })
-            return null
-          }
-          return isRunningGlobalCodexTurn(thread, turn, nowMs)
-            ? normalizeGlobalCodexTask(thread, turn)
-            : null
-        } catch (error) {
-          if (String(thread?.status?.type || '') === 'active') {
-            return normalizeGlobalCodexTask(thread)
-          }
-          candidateErrors.push({
-            threadId: String(thread?.id || '').trim(),
-            error: error?.message || String(error)
-          })
-          return null
-        }
-      }))
-      nativeTasks = inspected.filter(Boolean)
-      if (ambiguousThreads.length > 0) {
-        if (this.globalTaskConfirmationDelayMs > 0) {
-          await new Promise((resolve) => setTimeout(
-            resolve,
-            this.globalTaskConfirmationDelayMs
-          ))
-        }
-        try {
-          const refreshedThreads = new Map(
-            (await this.listThreads()).map((thread) => [
-              String(thread?.id || '').trim(),
-              thread
-            ])
+            !threadId
+            || excludedThreadIds.has(threadId)
+            || trackedProjectThreadIds.has(threadId)
+          ) continue
+          nativeTaskByThreadId.set(
+            threadId,
+            normalizeGlobalCodexTask(thread, thread.lifecycle)
           )
-          for (const { thread, turn } of ambiguousThreads) {
-            const threadId = String(thread?.id || '').trim()
-            const refreshed = refreshedThreads.get(threadId)
-            const previousUpdatedAt = toTimestampMs(
-              thread.updatedAt || thread.recencyAt
-            )
-            const refreshedUpdatedAt = toTimestampMs(
-              refreshed?.updatedAt || refreshed?.recencyAt
-            )
-            if (
-              refreshed
-              && (
-                String(refreshed?.status?.type || '') === 'active'
-                || refreshedUpdatedAt > previousUpdatedAt
-              )
-            ) {
-              nativeTasks.push(normalizeGlobalCodexTask(refreshed, turn))
-            }
-          }
-        } catch (error) {
-          candidateErrors.push({
-            threadId: '',
-            error: `ambiguous task confirmation failed: ${error?.message || String(error)}`
-          })
         }
       }
-    } catch (error) {
-      globalScanError = error?.message || String(error)
+    } else {
+      globalScanError = processStateResult.reason?.message
+        || String(processStateResult.reason || 'Codex process state is unavailable')
     }
+    nativeTasks = Array.from(nativeTaskByThreadId.values())
 
     const tasks = [...openGitTasks, ...nativeTasks]
       .sort((left, right) => (
@@ -774,20 +713,15 @@ class CodexProjectSessionRouter {
     const runningTaskCount = tasks.filter((task) => task.state !== 'queued').length
     const queuedTaskCount = tasks.filter((task) => task.state === 'queued').length
     const scanIncomplete = Boolean(
-      globalScanError || candidateErrors.length > 0 || scanTruncated
+      globalScanError || scanErrors.length > 0
     )
     let status = tasks.length > 0 ? 'busy' : 'idle'
     if (scanIncomplete) status = tasks.length > 0 ? 'partial' : 'unavailable'
     let message
     if (status === 'unavailable') {
-      message = scanTruncated
-        ? `近期候选会话共有 ${totalCandidateCount} 个，本次只检查了 ${checkedCandidateCount} 个，不能据此判断当前没有运行中任务。`
-        : '全局 Codex 会话状态暂时无法读取，不能据此判断当前没有运行中任务。'
+      message = '全局 Codex 会话状态暂时无法读取，不能据此判断当前没有运行中任务。'
     } else if (status === 'partial') {
-      const partialReason = scanTruncated
-        ? `近期候选会话共有 ${totalCandidateCount} 个，本次只检查了 ${checkedCandidateCount} 个`
-        : '部分全局会话状态读取失败'
-      message = `已确认 ${runningTaskCount} 个执行中任务、${queuedTaskCount} 个排队任务；${partialReason}。`
+      message = `已确认 ${runningTaskCount} 个执行中任务、${queuedTaskCount} 个排队任务；部分全局会话状态读取失败。`
     } else if (tasks.length > 0) {
       message = `当前共有 ${runningTaskCount} 个执行中任务、${queuedTaskCount} 个排队任务。`
     } else {
@@ -803,8 +737,8 @@ class CodexProjectSessionRouter {
       globalScan: {
         totalCandidateCount,
         checkedCandidateCount,
-        truncated: scanTruncated,
-        failureCount: candidateErrors.length,
+        truncated: false,
+        failureCount: scanErrors.length,
         error: globalScanError
       },
       message
@@ -1144,8 +1078,6 @@ module.exports = {
     normalizeThreadStatus,
     scoreProjectThread,
     normalizeCandidate,
-    isRecentGlobalTaskThread,
-    isRunningGlobalCodexTurn,
     normalizeGlobalCodexTask,
     selectProjectCandidate,
     resolveExistingDirectory,

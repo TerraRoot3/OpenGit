@@ -4,6 +4,9 @@ const MAX_DEDUP_MESSAGES = 2000
 const FEISHU_PING_TIMEOUT_SECONDS = 15
 const FEISHU_HANDSHAKE_TIMEOUT_MS = 60 * 1000
 const FEISHU_TYPING_REACTION = 'Typing'
+const SAFE_WS_TERMINATE_GUARD = Symbol.for(
+  'opengit.safe-websocket-connecting-terminate'
+)
 const {
   createAttachmentWorkspace,
   cleanupAttachmentWorkspace,
@@ -11,6 +14,38 @@ const {
   downloadFeishuAttachments,
   sendFeishuOutputAttachment
 } = require('./codex-feishu-attachments')
+
+function installSafeWebSocketTerminateGuard(WebSocketClass) {
+  const prototype = WebSocketClass?.prototype
+  if (
+    !prototype
+    || typeof prototype.terminate !== 'function'
+    || prototype[SAFE_WS_TERMINATE_GUARD]
+  ) return false
+
+  const originalTerminate = prototype.terminate
+  prototype.terminate = function safeTerminate(...args) {
+    if (
+      this?.readyState === WebSocketClass.CONNECTING
+      && typeof this.listenerCount === 'function'
+      && typeof this.once === 'function'
+      && this.listenerCount('error') === 0
+    ) {
+      // The Lark SDK handshake watchdog removes every listener before calling
+      // terminate(). ws emits an error when terminating CONNECTING sockets; with
+      // no listener that becomes an uncaught Electron main-process exception.
+      this.once('error', () => {})
+    }
+    return originalTerminate.apply(this, args)
+  }
+  Object.defineProperty(prototype, SAFE_WS_TERMINATE_GUARD, {
+    configurable: false,
+    enumerable: false,
+    value: true,
+    writable: false
+  })
+  return true
+}
 
 function parseMaybeJson(value) {
   if (!value) return null
@@ -627,6 +662,7 @@ function createCodexFeishuBridge({
     try {
       pruneExpiredAttachmentWorkspaces()
       lark ||= require('@larksuiteoapi/node-sdk')
+      installSafeWebSocketTerminateGuard(require('ws'))
       apiClient = new lark.Client({
         appId,
         appSecret,
@@ -722,6 +758,7 @@ module.exports = {
   parseFeishuMessageEvent,
   parseFeishuMessageAttachments,
   isFeishuInstructionAllowed,
+  installSafeWebSocketTerminateGuard,
   resolveFeishuBotOpenId,
   splitFeishuText,
   stripFeishuMentions

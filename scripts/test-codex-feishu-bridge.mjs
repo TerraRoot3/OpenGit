@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import { Readable } from 'node:stream'
@@ -9,10 +10,43 @@ const {
   parseFeishuMessageEvent,
   parseFeishuMessageAttachments,
   isFeishuInstructionAllowed,
+  installSafeWebSocketTerminateGuard,
   resolveFeishuBotOpenId,
   splitFeishuText,
   stripFeishuMentions
 } = require('../electron/ipc/codex-feishu-bridge.js')
+
+class UnsafeConnectingWebSocket extends EventEmitter {
+  static CONNECTING = 0
+
+  constructor() {
+    super()
+    this.readyState = UnsafeConnectingWebSocket.CONNECTING
+  }
+
+  terminate() {
+    this.emit(
+      'error',
+      new Error('WebSocket was closed before the connection was established')
+    )
+  }
+}
+
+assert.equal(
+  installSafeWebSocketTerminateGuard(UnsafeConnectingWebSocket),
+  true
+)
+assert.equal(
+  installSafeWebSocketTerminateGuard(UnsafeConnectingWebSocket),
+  false,
+  'the WebSocket terminate guard must only be installed once'
+)
+const connectingSocket = new UnsafeConnectingWebSocket()
+connectingSocket.removeAllListeners()
+assert.doesNotThrow(
+  () => connectingSocket.terminate(),
+  'terminating a CONNECTING socket without SDK listeners must be contained'
+)
 
 const groupMessage = parseFeishuMessageEvent({
   sender: {

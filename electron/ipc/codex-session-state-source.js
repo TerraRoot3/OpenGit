@@ -13,7 +13,31 @@ const SQLITE_SEPARATOR = '\u001f'
 const SQLITE_TIMEOUT_MS = 1500
 const SQLITE_MAX_BUFFER = 2 * 1024 * 1024
 const ROLLOUT_TAIL_BYTES = 256 * 1024
+const ROLLOUT_SCAN_CHUNK_BYTES = 256 * 1024
+const ROLLOUT_SCAN_OVERLAP_BYTES = 1024
 const CACHE_TTL_MS = 1200
+const LSOF_TIMEOUT_MS = 3000
+const LSOF_MAX_BUFFER = 4 * 1024 * 1024
+const LSOF_BIN_CANDIDATES = process.platform === 'darwin'
+  ? ['/usr/sbin/lsof', 'lsof']
+  : ['/usr/bin/lsof', '/usr/sbin/lsof', 'lsof']
+const ROLLOUT_LIFECYCLE_MARKERS = Object.freeze([
+  {
+    token: '"payload":{"type":"task_started"',
+    status: 'running',
+    reason: 'rollout.task_started'
+  },
+  {
+    token: '"payload":{"type":"task_complete"',
+    status: 'ended',
+    reason: 'rollout.task_complete'
+  },
+  {
+    token: '"payload":{"type":"turn_aborted"',
+    status: 'ended',
+    reason: 'rollout.turn_aborted'
+  }
+])
 
 function sqlQuote(value) {
   return `'${String(value || '').replace(/'/g, "''")}'`
@@ -69,6 +93,73 @@ function readTailText(filePath, maxBytes = ROLLOUT_TAIL_BYTES) {
   } catch {
     return ''
   }
+}
+
+function readLatestRolloutLifecycleEvent(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null
+  let fd = null
+  try {
+    const stat = fs.statSync(filePath)
+    if (!stat.isFile() || stat.size <= 0) return null
+    fd = fs.openSync(filePath, 'r')
+    let end = stat.size
+    let overlap = Buffer.alloc(0)
+
+    while (end > 0) {
+      const start = Math.max(0, end - ROLLOUT_SCAN_CHUNK_BYTES)
+      const bytesToRead = end - start
+      const chunk = Buffer.allocUnsafe(bytesToRead)
+      const bytesRead = fs.readSync(fd, chunk, 0, bytesToRead, start)
+      const combined = Buffer.concat([
+        chunk.subarray(0, bytesRead),
+        overlap
+      ]).toString('utf8')
+      let selected = null
+      for (const marker of ROLLOUT_LIFECYCLE_MARKERS) {
+        const index = combined.lastIndexOf(marker.token)
+        if (index >= 0 && (!selected || index > selected.index)) {
+          selected = { ...marker, index }
+        }
+      }
+      if (selected) {
+        const lineStart = combined.lastIndexOf('\n', selected.index) + 1
+        const prefix = combined.slice(lineStart, selected.index + selected.token.length + 256)
+        const timestamp = /"timestamp":"([^"]+)"/.exec(prefix)?.[1] || ''
+        const turnId = /"turn_id":"([^"]+)"/.exec(prefix)?.[1] || ''
+        return {
+          at: parseMillis(timestamp),
+          status: selected.status,
+          reason: selected.reason,
+          turnId
+        }
+      }
+
+      overlap = chunk.subarray(
+        0,
+        Math.min(bytesRead, ROLLOUT_SCAN_OVERLAP_BYTES)
+      )
+      end = start
+    }
+  } catch {
+    return null
+  } finally {
+    if (fd != null) fs.closeSync(fd)
+  }
+  return null
+}
+
+function parseOpenRolloutPaths(output = '') {
+  const sessionRoot = `${path.join(CODEX_HOME, 'sessions')}${path.sep}`
+  return Array.from(new Set(
+    String(output || '')
+      .split('\n')
+      .filter((line) => line.startsWith('n'))
+      .map((line) => line.slice(1).trim())
+      .filter((filePath) => (
+        filePath.startsWith(sessionRoot)
+        && filePath.endsWith('.jsonl')
+      ))
+  ))
 }
 
 function parseRolloutSignals(text) {
@@ -193,6 +284,7 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
   const rolloutCache = new Map()
   const logCache = new Map()
   let sqliteBinary = null
+  let lsofBinary = null
 
   const logWarn = (...args) => {
     if (typeof safeError === 'function') safeError(...args)
@@ -240,6 +332,136 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
 
     attempt(0)
   })
+
+  const listOpenRolloutPaths = () => new Promise((resolve) => {
+    const candidates = lsofBinary ? [lsofBinary] : [...LSOF_BIN_CANDIDATES]
+
+    const attempt = (index) => {
+      if (index >= candidates.length) {
+        resolve({
+          available: false,
+          paths: [],
+          error: 'lsof is unavailable'
+        })
+        return
+      }
+
+      const binary = candidates[index]
+      execFile(
+        binary,
+        ['-nP', '-Fpcn', '-c', 'codex'],
+        {
+          timeout: LSOF_TIMEOUT_MS,
+          maxBuffer: LSOF_MAX_BUFFER
+        },
+        (error, stdout, stderr) => {
+          if (!error) {
+            lsofBinary = binary
+            resolve({
+              available: true,
+              paths: parseOpenRolloutPaths(stdout),
+              error: ''
+            })
+            return
+          }
+          if (error.code === 'ENOENT') {
+            attempt(index + 1)
+            return
+          }
+          // lsof exits with 1 when no matching process/file exists. That is a
+          // valid empty snapshot, not a status-source failure.
+          if (Number(error.code) === 1 && !String(stderr || '').trim()) {
+            lsofBinary = binary
+            resolve({ available: true, paths: [], error: '' })
+            return
+          }
+          const message = error?.message || String(error)
+          logWarn('⚠️ list open Codex rollouts failed:', message)
+          resolve({ available: false, paths: [], error: message })
+        }
+      )
+    }
+
+    attempt(0)
+  })
+
+  const listThreadsByRolloutPaths = async (rolloutPaths = []) => {
+    const normalizedPaths = Array.from(new Set(
+      rolloutPaths.map((value) => String(value || '').trim()).filter(Boolean)
+    ))
+    if (!normalizedPaths.length) return []
+
+    const sql = [
+      'SELECT id, hex(COALESCE(name,\'\')), hex(COALESCE(title,\'\')),',
+      'hex(COALESCE(preview,\'\')), hex(COALESCE(cwd,\'\')),',
+      'created_at_ms, updated_at_ms, rollout_path',
+      'FROM threads',
+      'WHERE archived = 0',
+      `AND rollout_path IN (${normalizedPaths.map(sqlQuote).join(', ')})`
+    ].join(' ')
+
+    const stdout = await execSqlite(STATE_DB_PATH, sql)
+    if (!stdout) return []
+    const rows = []
+    for (const line of stdout.split('\n')) {
+      if (!line) continue
+      const parts = line.split(SQLITE_SEPARATOR)
+      if (parts.length < 8) continue
+      rows.push({
+        id: parts[0] || '',
+        name: decodeHexUtf8(parts[1]),
+        title: decodeHexUtf8(parts[2]),
+        preview: decodeHexUtf8(parts[3]),
+        cwd: decodeHexUtf8(parts[4]),
+        createdAt: parseMillis(parts[5]),
+        updatedAt: parseMillis(parts[6]),
+        rolloutPath: parts[7] || ''
+      })
+    }
+    return rows
+  }
+
+  const listRunningThreads = async () => {
+    const openRollouts = await listOpenRolloutPaths()
+    if (!openRollouts.available) {
+      return {
+        available: false,
+        threads: [],
+        openRolloutCount: 0,
+        inspectedThreadCount: 0,
+        errors: openRollouts.error ? [openRollouts.error] : []
+      }
+    }
+
+    const rows = await listThreadsByRolloutPaths(openRollouts.paths)
+    const rowByRolloutPath = new Map(
+      rows.map((row) => [row.rolloutPath, row])
+    )
+    const threads = []
+    const errors = []
+    for (const rolloutPath of openRollouts.paths) {
+      const row = rowByRolloutPath.get(rolloutPath)
+      if (!row) {
+        errors.push(`missing thread metadata for open rollout: ${rolloutPath}`)
+        continue
+      }
+      const lifecycle = readLatestRolloutLifecycleEvent(rolloutPath)
+      if (lifecycle?.status !== 'running') continue
+      threads.push({
+        ...row,
+        status: { type: 'active', activeFlags: [] },
+        lifecycle
+      })
+    }
+
+    return {
+      available: true,
+      threads,
+      openRolloutCount: openRollouts.paths.length,
+      inspectedThreadCount: rows.length,
+      errors
+    }
+  }
 
   const listActiveThreads = async (projectPaths = []) => {
     const normalizedPaths = Array.from(new Set(projectPaths.filter(Boolean)))
@@ -383,6 +605,7 @@ function createCodexSessionStateSource({ safeLog, safeError } = {}) {
     stateDbPath: STATE_DB_PATH,
     logsDbPath: LOGS_DB_PATH,
     listActiveThreads,
+    listRunningThreads,
     getThread,
     resolveThreadStatus
   }
@@ -392,8 +615,10 @@ module.exports = {
   createCodexSessionStateSource,
   __testables: {
     parseMillis,
+    parseOpenRolloutPaths,
     parseLogSignals,
     parseRolloutSignals,
+    readLatestRolloutLifecycleEvent,
     resolveThreadStatusSignals
   }
 }

@@ -360,7 +360,6 @@ assert.equal(
 )
 
 const globalStatusCalls = []
-let globalThreadListCount = 0
 const globalCallerTask = {
   jobId: 'job-global-query',
   sessionId: 'feishu:work:oc_global',
@@ -413,92 +412,16 @@ const globalService = {
   ]),
   request: async (method, params) => {
     globalStatusCalls.push({ method, params })
-    if (method === 'thread/list') {
-      globalThreadListCount += 1
-      return {
-        data: [
-          {
-            id: 'thread-global-main',
-            name: 'OpenGit 主会话',
-            cwd: '/tmp',
-            updatedAt: 999,
-            recencyAt: 990,
-            status: { type: 'notLoaded' }
-          },
-          {
-            id: 'thread-codex-running',
-            name: 'content_studio',
-            cwd: '/tmp/content_studio',
-            updatedAt: globalThreadListCount > 1 ? 997 : 995,
-            recencyAt: 900,
-            status: { type: 'notLoaded' }
-          },
-          {
-            id: 'thread-codex-stopped',
-            name: 'manually stopped',
-            cwd: '/tmp/stopped',
-            updatedAt: 993,
-            recencyAt: 919,
-            status: { type: 'notLoaded' }
-          },
-          {
-            id: 'thread-codex-completed',
-            name: 'recently completed',
-            cwd: '/tmp/completed',
-            updatedAt: 994,
-            recencyAt: 920,
-            status: { type: 'notLoaded' }
-          },
-          {
-            id: 'thread-codex-stale',
-            name: 'stale interrupted',
-            cwd: '/tmp/stale',
-            updatedAt: 100,
-            recencyAt: 90,
-            status: { type: 'notLoaded' }
-          },
-          {
-            id: 'thread-codex-subagent',
-            name: 'subagent',
-            cwd: '/tmp/content_studio',
-            updatedAt: 996,
-            recencyAt: 910,
-            parentThreadId: 'thread-codex-running',
-            status: { type: 'notLoaded' }
-          }
-        ],
-        nextCursor: null
-      }
-    }
-    if (method === 'thread/turns/list') {
-      if (params.threadId === 'thread-codex-running') {
-        return {
-          data: [{
-            id: 'turn-codex-running',
-            status: 'interrupted',
-            startedAt: 900,
-            completedAt: null
-          }]
-        }
-      }
-      if (params.threadId === 'thread-codex-stopped') {
-        return {
-          data: [{
-            id: 'turn-codex-stopped',
-            status: 'interrupted',
-            startedAt: 919,
-            completedAt: null
-          }]
-        }
-      }
-      return {
-        data: [{
-          id: 'turn-codex-completed',
-          status: 'completed',
-          startedAt: 920,
-          completedAt: 994
-        }]
-      }
+    if (method === 'thread/list') return {
+      data: [{
+        id: 'thread-codex-content',
+        name: 'content_studio',
+        cwd: '/tmp/content_studio',
+        updatedAt: 995,
+        recencyAt: 900,
+        status: { type: 'active' }
+      }],
+      nextCursor: null
     }
     throw new Error(`unexpected method: ${method}`)
   }
@@ -506,7 +429,50 @@ const globalService = {
 const globalRouter = new CodexProjectSessionRouter({
   service: globalService,
   now: () => 1_000_000,
-  globalTaskConfirmationDelayMs: 0
+  sessionStateSource: {
+    listRunningThreads: async () => ({
+      available: true,
+      openRolloutCount: 4,
+      inspectedThreadCount: 4,
+      errors: [],
+      threads: [
+        {
+          id: 'thread-codex-content',
+          title: 'content_studio',
+          cwd: '/tmp/content_studio',
+          updatedAt: 995,
+          lifecycle: {
+            at: 900,
+            status: 'running',
+            turnId: 'turn-content'
+          }
+        },
+        {
+          id: 'thread-codex-medical',
+          title: 'medical_sci_ai',
+          cwd: '/tmp/medical_sci_ai',
+          updatedAt: 996,
+          lifecycle: {
+            at: 850,
+            status: 'running',
+            turnId: 'turn-medical'
+          }
+        },
+        {
+          id: 'thread-project-target',
+          title: 'api-go duplicate',
+          cwd: '/tmp/api-go',
+          lifecycle: { at: 800, status: 'running' }
+        },
+        {
+          id: 'thread-global-worker',
+          title: 'current status query',
+          cwd: '/tmp',
+          lifecycle: { at: 999, status: 'running' }
+        }
+      ]
+    })
+  }
 })
 const globalStatusResult = await globalRouter.handleToolCall({
   threadId: globalCallerTask.threadId,
@@ -516,35 +482,25 @@ const globalStatusResult = await globalRouter.handleToolCall({
 assert.equal(globalStatusResult.success, true)
 const globalStatus = JSON.parse(globalStatusResult.contentItems[0].text)
 assert.equal(globalStatus.status, 'busy')
-assert.equal(globalStatus.runningTaskCount, 2)
+assert.equal(globalStatus.runningTaskCount, 3)
 assert.equal(globalStatus.queuedTaskCount, 1)
 assert.equal(globalStatus.openGitTaskCount, 2)
-assert.equal(globalStatus.nativeTaskCount, 1)
+assert.equal(globalStatus.nativeTaskCount, 2)
 assert.deepEqual(
   globalStatus.tasks.map((task) => task.title),
-  ['api-go 修复', '项目群', 'content_studio']
+  ['api-go 修复', '项目群', 'medical_sci_ai', 'content_studio']
 )
 assert.equal(
-  globalStatusCalls.some(({ method, params }) => (
-    method === 'thread/turns/list'
-    && params.threadId === 'thread-codex-running'
-    && params.limit === 1
-  )),
-  true,
-  'global status should inspect the latest native turn'
-)
-assert.equal(
-  globalStatusCalls.some(({ method, params }) => (
-    method === 'thread/turns/list'
-    && params.threadId === 'thread-codex-stale'
-  )),
+  globalStatusCalls.some(({ method }) => method === 'thread/turns/list'),
   false,
-  'stale interrupted sessions must not be reported as running'
+  'global status must not infer activity from interrupted turns'
 )
-assert.equal(
-  globalStatus.tasks.some((task) => task.threadId === 'thread-codex-stopped'),
-  false,
-  'an interrupted turn without a continuing activity heartbeat must not be reported as running'
+assert.deepEqual(
+  globalStatus.tasks
+    .filter((task) => task.threadId === 'thread-project-target')
+    .map((task) => task.source),
+  ['open_git'],
+  'OpenGit project tasks must not be duplicated as native tasks'
 )
 
 const truncatedThreads = Array.from({ length: 25 }, (_, index) => ({
@@ -562,24 +518,32 @@ const truncatedRouter = new CodexProjectSessionRouter({
     sessionQueues: new Map(),
     getSession: () => null,
     request: async (method) => {
-      if (method === 'thread/list') {
-        return { data: truncatedThreads, nextCursor: null }
-      }
-      if (method === 'thread/turns/list') return { data: [] }
+      if (method === 'thread/list') return { data: [], nextCursor: null }
       throw new Error(`unexpected method: ${method}`)
     }
   },
   now: () => 1_000_000,
-  globalTaskConfirmationDelayMs: 0
+  sessionStateSource: {
+    listRunningThreads: async () => ({
+      available: true,
+      openRolloutCount: 25,
+      inspectedThreadCount: 25,
+      errors: [],
+      threads: truncatedThreads.map((thread) => ({
+        ...thread,
+        lifecycle: { at: thread.updatedAt, status: 'running' }
+      }))
+    })
+  }
 })
 const truncatedStatus = await truncatedRouter.listRunningCodexTasks(
   globalCallerTask
 )
-assert.equal(truncatedStatus.status, 'partial')
-assert.equal(truncatedStatus.globalScan.truncated, true)
+assert.equal(truncatedStatus.status, 'busy')
+assert.equal(truncatedStatus.nativeTaskCount, 25)
+assert.equal(truncatedStatus.globalScan.truncated, false)
 assert.equal(truncatedStatus.globalScan.totalCandidateCount, 25)
-assert.equal(truncatedStatus.globalScan.checkedCandidateCount, 24)
-assert.match(truncatedStatus.message, /只检查了 24 个/)
+assert.equal(truncatedStatus.globalScan.checkedCandidateCount, 25)
 
 const unavailableRouter = new CodexProjectSessionRouter({
   service: {
@@ -591,7 +555,16 @@ const unavailableRouter = new CodexProjectSessionRouter({
       throw new Error('native status unavailable')
     }
   },
-  now: () => 1_000_000
+  now: () => 1_000_000,
+  sessionStateSource: {
+    listRunningThreads: async () => ({
+      available: false,
+      threads: [],
+      openRolloutCount: 0,
+      inspectedThreadCount: 0,
+      errors: ['native status unavailable']
+    })
+  }
 })
 const unavailableStatus = await unavailableRouter.listRunningCodexTasks(
   globalCallerTask
