@@ -24,7 +24,8 @@
     "release:notes": "node scripts/release-manager.mjs notes",
     "electron:clean-cache": "bash scripts/clear-electron-cache.sh",
     "generate-icon": "node scripts/generate-icon.js",
-    "convert-icon": "bash scripts/convert-icon.sh"
+    "convert-icon": "bash scripts/convert-icon.sh",
+    "codexbar:build": "bash CodexBar/scripts/build-app.sh"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.71.1",

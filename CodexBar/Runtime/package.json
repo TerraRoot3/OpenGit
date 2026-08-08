@@ -1,0 +1,9 @@
+{
+  "name": "codexbar-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "1.71.1",
+    "ws": "8.21.1"
+  }
+}

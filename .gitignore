@@ -25,6 +25,8 @@ dist-ssr
 
 # Electron
 dist-electron/
+CodexBar/.build/
+CodexBar/dist/
 out/
 
 # macOS
